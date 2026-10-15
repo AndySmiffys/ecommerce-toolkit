@@ -2,9 +2,10 @@ import { syncStorefrontSnapshot } from "../modules/promotions/services/storefron
 import { useEmbeddedAppUrl } from "../modules/navigation/embeddedAppUrl";
 import { useMemo, useState } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData } from "react-router";
 
 import { authenticate } from "../shopify.server";
+import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { getDiscounts } from "../modules/promotions/services/discounts.server";
 import { mapDiscountsToPromotions } from "../modules/promotions/mappers/promotionMapper";
 import { attachPromotionSettings } from "../modules/promotions/services/promotionSettings.server";
@@ -22,21 +23,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let syncError: string | null = null;
   try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `Promotions loaded, but storefront sync failed: ${error instanceof Error ? error.message : "Please retry."}`; }
   return { promotions, syncError };
-}
-
-function getStatusTone(
-  status: PromotionRecord["shopify"]["general"]["status"],
-) {
-  switch (status) {
-    case "ACTIVE":
-      return "success";
-    case "SCHEDULED":
-      return "info";
-    case "EXPIRED":
-      return "critical";
-    default:
-      return "neutral";
-  }
 }
 
 function getPromotionValue(promotion: PromotionRecord): string {
@@ -178,13 +164,18 @@ function getPromotionIconType(promotion: PromotionRecord): DiscountIconType {
   }
 }
 
+const discountTypes: { type: string; title: string; description: string; icon: DiscountIconType }[] = [
+  { type: "product", title: "Amount off products", description: "Discount specific products or collections of products", icon: "tag" },
+  { type: "bxgy", title: "Buy X get Y", description: "Reward customers who buy specific items", icon: "tag" },
+  { type: "order", title: "Amount off order", description: "Discount the total order amount", icon: "order" },
+  { type: "shipping", title: "Free shipping", description: "Offer free shipping on an order", icon: "truck" },
+];
+
 export default function PromotionsPage() {
   const appUrl = useEmbeddedAppUrl();
   const { promotions, syncError } = useLoaderData<typeof loader>();
-  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [showCreateDiscount, setShowCreateDiscount] = useState(false);
 
   const filteredPromotions = useMemo(() => {
     const normalisedQuery = query.trim().toLowerCase();
@@ -207,64 +198,18 @@ export default function PromotionsPage() {
 
   return (
     <s-page heading="Promotions" inlineSize="large">
-      <div
-        style={{
-          width: "100%",
-        }}
-      >
+      <s-button slot="primary-action" variant="primary" commandFor="create-discount-modal" command="--show">
+        Create discount
+      </s-button>
+      <s-button slot="secondary-actions" href="shopify:admin/discounts" target="_blank">
+        Open Shopify discounts
+      </s-button>
+      <div style={{ width: "100%" }}>
         <s-stack direction="block" gap="large">
           {syncError && <s-banner tone="warning">{syncError}</s-banner>}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              gap: "18px",
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color: "#202223",
-                  fontSize: "14px",
-                  lineHeight: 1.5,
-                }}
-              >
-                Review Shopify discounts and manage their Promotion Engine settings.
-              </div>
-              <div
-                style={{
-                  marginTop: "4px",
-                  color: "#616161",
-                  fontSize: "13px",
-                }}
-              >
-                {promotions.length} promotion{promotions.length === 1 ? "" : "s"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                flexWrap: "wrap",
-              }}
-            >
-              <s-button
-                type="button"
-                variant="primary"
-                onClick={() => setShowCreateDiscount(true)}
-              >
-                Create discount
-              </s-button>
-
-              <s-button href="shopify:admin/discounts" target="_blank">
-                Open Shopify discounts
-              </s-button>
-            </div>
-          </div>
+          <s-text color="subdued">
+            Review Shopify discounts and manage their Promotion Engine settings. {promotions.length} promotion{promotions.length === 1 ? "" : "s"}
+          </s-text>
 
           <style>{`
             .promotion-filters {
@@ -407,15 +352,7 @@ export default function PromotionsPage() {
             }
           `}</style>
 
-          <section
-            style={{
-              overflow: "hidden",
-              border: "1px solid #dedede",
-              borderRadius: "12px",
-              background: "#ffffff",
-              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
-            }}
-          >
+          <s-section padding="none">
             <div className="promotion-filters">
               <s-text-field
                 label="Search promotions"
@@ -585,187 +522,35 @@ export default function PromotionsPage() {
                 })}
               </div>
             )}
-          </section>
+          </s-section>
         </s-stack>
       </div>
 
-      {showCreateDiscount && (
-        <div
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setShowCreateDiscount(false);
-          }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 100,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-            background: "rgba(0, 0, 0, 0.48)",
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-discount-title"
-            style={{
-              width: "min(100%, 560px)",
-              overflow: "hidden",
-              borderRadius: "16px",
-              background: "#ffffff",
-              boxShadow: "0 18px 48px rgba(0, 0, 0, 0.24)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "16px",
-                padding: "18px 20px 14px",
-              }}
+      <s-modal id="create-discount-modal" heading="Select discount type">
+        <s-stack direction="block" gap="small">
+          {discountTypes.map((discountType) => (
+            <s-clickable
+              key={discountType.type}
+              href={appUrl(`/app/promotions/new?type=${discountType.type}`)}
+              accessibilityLabel={discountType.title}
+              border="base"
+              borderRadius="base"
+              padding="base"
             >
-              <div
-                id="create-discount-title"
-                style={{
-                  color: "#202223",
-                  fontSize: "18px",
-                  fontWeight: 700,
-                }}
-              >
-                Select discount type
-              </div>
-
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={() => setShowCreateDiscount(false)}
-                style={{
-                  width: "34px",
-                  height: "34px",
-                  border: "1px solid #dedede",
-                  borderRadius: "10px",
-                  background: "#ffffff",
-                  color: "#202223",
-                  fontSize: "20px",
-                  lineHeight: 1,
-                  cursor: "pointer",
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            {[
-              {
-                type: "product",
-                title: "Amount off products",
-                description: "Discount specific products or collections of products",
-                icon: "tag",
-              },
-              {
-                type: "bxgy",
-                title: "Buy X get Y",
-                description: "Discount specific products or collections of products",
-                icon: "tag",
-              },
-              {
-                type: "order",
-                title: "Amount off order",
-                description: "Discount the total order amount",
-                icon: "order",
-              },
-              {
-                type: "shipping",
-                title: "Free shipping",
-                description: "Offer free shipping on an order",
-                icon: "truck",
-              },
-            ].map((discountType) => (
-              <button
-                key={discountType.type}
-                type="button"
-                onClick={() => {
-                  setShowCreateDiscount(false);
-                  navigate(appUrl(`/app/promotions/new?type=${discountType.type}`));
-                }}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "28px minmax(0, 1fr) 20px",
-                  alignItems: "center",
-                  gap: "12px",
-                  width: "100%",
-                  padding: "15px 20px",
-                  border: "0",
-                  borderTop: "1px solid #eeeeee",
-                  background: "#ffffff",
-                  color: "#202223",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <DiscountTypeIcon
-                  type={discountType.icon as DiscountIconType}
-                  size={20}
-                />
-
-                <span style={{ minWidth: 0 }}>
-                  <span
-                    style={{
-                      display: "block",
-                      fontSize: "14px",
-                      fontWeight: 650,
-                    }}
-                  >
-                    {discountType.title}
-                  </span>
-                  <span
-                    style={{
-                      display: "block",
-                      marginTop: "3px",
-                      color: "#616161",
-                      fontSize: "12px",
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {discountType.description}
-                  </span>
-                </span>
-
-                <span
-                  aria-hidden="true"
-                  style={{
-                    color: "#616161",
-                    fontSize: "20px",
-                    textAlign: "right",
-                  }}
-                >
-                  ›
-                </span>
-              </button>
-            ))}
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                padding: "14px 20px 18px",
-                borderTop: "1px solid #eeeeee",
-              }}
-            >
-              <s-button
-                type="button"
-                variant="secondary"
-                onClick={() => setShowCreateDiscount(false)}
-              >
-                Cancel
-              </s-button>
-            </div>
-          </div>
-        </div>
-      )}
+              <s-stack direction="inline" gap="base" alignItems="center">
+                <DiscountTypeIcon type={discountType.icon} size={20} />
+                <s-stack direction="block" gap="small-300">
+                  <s-text type="strong">{discountType.title}</s-text>
+                  <s-text color="subdued">{discountType.description}</s-text>
+                </s-stack>
+              </s-stack>
+            </s-clickable>
+          ))}
+        </s-stack>
+        <s-button slot="secondary-actions" commandFor="create-discount-modal" command="--hide">
+          Cancel
+        </s-button>
+      </s-modal>
     </s-page>
   );
 }

@@ -1,3 +1,4 @@
+import { getStatusTone } from "../design/statusTone";
 import type { PromotionRecord } from "../models/promotion";
 
 import { PromotionBxgyTab } from "./PromotionBxgyTab";
@@ -6,21 +7,6 @@ import { SummaryCard } from "./SummaryCard";
 type PromotionGeneralTabProps = {
   promotion: PromotionRecord;
 };
-
-function getStatusTone(
-  status: PromotionRecord["shopify"]["general"]["status"],
-) {
-  switch (status) {
-    case "ACTIVE":
-      return "success";
-    case "SCHEDULED":
-      return "info";
-    case "EXPIRED":
-      return "critical";
-    default:
-      return "neutral";
-  }
-}
 
 function formatDate(value: string | null): string {
   if (!value) {

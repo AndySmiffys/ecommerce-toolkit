@@ -1,3 +1,4 @@
+import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { getShippingCountries, validateShippingCountries } from "../modules/promotions/services/shippingCountries.server";
 import { PromotionSaveError } from "../modules/promotions/components/PromotionSaveError";
@@ -256,64 +257,22 @@ export default function PromotionDetailsPage() {
   if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} />;
 
   return (
-    <s-page heading={general.title}>
+    <s-page heading={general.title} inlineSize="large">
+      <s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
+      <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotion.routeId}`} target="_blank">Edit in Shopify</s-button>
       <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} invalid={validateWebsite(website, promotion.endsAt).length > 0} onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
       <PromotionSaveError error={actionData !== dismissedAction ? actionData?.error : undefined} />
       <div
         style={{
-          maxWidth: "1180px",
-          margin: "0 auto",
+          width: "100%",
         }}
       >
         <s-stack
           direction="block"
           gap="large"
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "16px",
-              flexWrap: "wrap",
-            }}
-          >
-            <s-button
-              href={appUrl("/app/promotions")}
-              variant="secondary"
-            >
-              Back to promotions
-            </s-button>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-              }}
-            >
-              <s-badge
-                tone={
-                  general.status === "ACTIVE"
-                    ? "success"
-                    : general.status === "SCHEDULED"
-                      ? "info"
-                      : general.status === "EXPIRED"
-                        ? "critical"
-                        : "neutral"
-                }
-              >
-                {general.status}
-              </s-badge>
-
-              <s-button
-                href={`shopify:admin/discounts/${promotion.routeId}`}
-                target="_blank"
-                variant="secondary"
-              >
-                Edit in Shopify
-              </s-button>
-            </div>
+          <div>
+            <s-badge tone={getStatusTone(general.status)}>{general.status}</s-badge>
           </div>
 
           {editRulesMessage && <s-banner tone="info">{editRulesMessage}</s-banner>}

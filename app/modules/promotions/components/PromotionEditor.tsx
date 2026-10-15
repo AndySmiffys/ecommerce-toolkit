@@ -1,3 +1,4 @@
+import { getStatusTone } from "../design/statusTone";
 import { ShippingCountryPicker } from "./ShippingCountryPicker";
 import type { ShippingCountries } from "../services/shippingCountries.server";
 import { PromotionSaveError } from "./PromotionSaveError";
@@ -213,32 +214,7 @@ children,
 title: string;
 children: React.ReactNode;
 }) {
-return (
-<section>
-<div
-style={{
-marginBottom: "8px",
-color: "#202223",
-fontSize: "14px",
-fontWeight: 650,
-}}
->
-{title}
-</div>
-
-<div
-style={{
-border: "1px solid #dedede",
-borderRadius: "12px",
-background: "#ffffff",
-boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
-padding: "16px",
-}}
->
-{children}
-</div>
-</section>
-);
+return <s-section heading={title}>{children}</s-section>;
 }
 
 export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null }) {
@@ -722,6 +698,8 @@ createFetcher.submit({ intent: promotionId ? "updatePromotion" : "createPromotio
 
 return (
 <s-page heading={promotionId ? "Edit promotion" : "Create discount"} inlineSize="large">
+<s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
+{promotionId && <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotionId.split("/").pop()}`} target="_blank">Edit in Shopify</s-button>}
 <PromotionSaveBar ref={saveBarRef} dirty={hasUnsavedChanges} saving={createFetcher.state !== "idle"} busy={assetsBusy} discardDisabled={!promotionId && codeListLocked && !createdDiscountId} invalid={validateWebsite(websiteDraft, hasEndDate ? endDateTime : null).length > 0} onSave={savePromotion} onDiscard={discardChanges} />
 <PromotionSaveError error={submissionError || (createFetcher.data !== dismissedResponse ? createFetcher.data?.error : undefined)} />
 <div
@@ -732,12 +710,7 @@ margin: 0,
 }}
 >
 <s-stack direction="block" gap="large">
-<div>
-<s-button href={appUrl("/app/promotions")} variant="secondary">
-Back to promotions
-</s-button>
-{promotionId && <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}><s-badge tone={shopifyStatus === "ACTIVE" ? "success" : "neutral"}>{shopifyStatus || "Promotion"}</s-badge><s-button href={`shopify:admin/discounts/${promotionId.split("/").pop()}`} target="_blank" variant="secondary">Edit in Shopify</s-button></div>}
-</div>
+{promotionId && <div><s-badge tone={getStatusTone(shopifyStatus)}>{shopifyStatus || "Promotion"}</s-badge></div>}
 
 <div
 className="create-discount-layout"

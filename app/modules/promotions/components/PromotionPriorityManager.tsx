@@ -27,7 +27,7 @@ export function PromotionPriorityManager({ sections, errors, refreshing, onRefre
     setSaveError(null);
     fetcher.submit({ changes: JSON.stringify(changes.map(([id, priority]) => ({ id, priority: Number(priority), expectedPriority: Number(baseline[id]) }))) }, { method: "post", action: appUrl("/app/storefront-priorities") });
   }
-  return <s-page heading="Storefront priorities">
+  return <s-page heading="Storefront priorities" inlineSize="large">
     <PromotionSaveBar dirty={dirty} saving={saving} busy={refreshing} invalid={invalid} onSave={save} onDiscard={() => { setEdits({}); setSaveError(null); }} />
     <div style={{ display: "grid", gap: 20, padding: "20px 0" }}>
       {saveError && <s-banner tone="critical">{saveError}</s-banner>}
@@ -38,8 +38,7 @@ export function PromotionPriorityManager({ sections, errors, refreshing, onRefre
       </div>
       <small style={{ color: "#616161" }}>Edit priorities here, then use Save or Discard at the top. A promotion shares one priority across its selected blocks; changing it in one list updates the others. Lists reorder after saving. Draft and customer-restricted promotions remain visible for review.</small>
       {errors.length > 0 && <s-banner tone="warning"><ul style={{ margin: 0, paddingLeft: 18 }}>{errors.map(error => <li key={error}>{error}</li>)}</ul></s-banner>}
-      {sections.map(section => <section key={section.id} aria-label={`${section.title} priorities`} style={{ border: "1px solid #dedede", borderRadius: 12, background: "#fff", padding: 20, display: "grid", gap: 12 }}>
-        <h2 style={{ fontSize: 16, margin: 0 }}>{section.title}</h2>
+      {sections.map(section => <s-section key={section.id} heading={section.title}>
         {!section.rows.length ? <p style={{ margin: 0, color: "#616161" }}>No promotions have this block selected.</p> : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead><tr><th scope="col" style={cell}>Priority</th><th scope="col" style={cell}>Promotion</th><th scope="col" style={cell}>Audience</th><th scope="col" style={cell}>Visibility</th></tr></thead>
           <tbody>{section.rows.map(row => <tr key={row.id}>
@@ -49,7 +48,7 @@ export function PromotionPriorityManager({ sections, errors, refreshing, onRefre
             <td style={cell}><div style={{ display: "grid", gap: 6 }}><s-badge tone={row.status === "Available" ? "success" : row.status === "Customer restricted" ? "warning" : "neutral"}>{row.status}</s-badge><span>{row.detail}</span></div></td>
           </tr>)}</tbody>
         </table></div>}
-      </section>)}
+      </s-section>)}
     </div>
   </s-page>;
 }
