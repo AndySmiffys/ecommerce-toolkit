@@ -33,7 +33,7 @@ import {
 } from "react-router";
 
 import { authenticate } from "../shopify.server";
-import { readWebsite, websiteFromSettings, websiteStorage, validateWebsite } from "../modules/promotions/design/design";
+import { readWebsite, websiteFromSettings, websiteStorage, validateWebsite, type Placement } from "../modules/promotions/design/design";
 import { PromotionWebsiteEditor } from "../modules/promotions/components/PromotionWebsiteEditor";
 import { PromotionPreview } from "../modules/promotions/components/PromotionPreview";
 import { getPreviewProducts } from "../modules/promotions/services/previewProducts.server";
@@ -241,6 +241,7 @@ export default function PromotionDetailsPage() {
   const savedWebsite = useMemo(() => websiteFromSettings(promotion.settings), [promotion.settings]);
   const [website, setWebsite] = useState(savedWebsite);
   const [assetsBusy, setAssetsBusy] = useState(false);
+  const [previewPlacement, setPreviewPlacement] = useState<Placement | undefined>();
   const formRef = useRef<HTMLFormElement>(null);
   const previousSavedWebsite = useRef(savedWebsite);
   const submittedWebsite = useRef(savedWebsite);
@@ -353,8 +354,8 @@ export default function PromotionDetailsPage() {
 
           <input type="hidden" name="website" value={JSON.stringify(website)} />
           <div style={{ display: activeTab === "website" || activeTab === "messages" ? "grid" : "none", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,360px),1fr))", gap: 20 }}>
-            <PromotionWebsiteEditor value={website} onChange={setWebsite} endsAt={promotion.endsAt} onBusyChange={setAssetsBusy} />
-            <div style={{ alignSelf: "start", position: "sticky", top: 20 }}><PromotionPreview discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} /></div>
+            <PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} value={website} onChange={setWebsite} endsAt={promotion.endsAt} onBusyChange={setAssetsBusy} />
+            <div style={{ alignSelf: "start", position: "sticky", top: 20 }}><PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} /></div>
           </div>
 
           </Form>

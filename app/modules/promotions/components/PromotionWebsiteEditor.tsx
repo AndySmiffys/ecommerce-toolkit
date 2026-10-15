@@ -1,7 +1,7 @@
 import { PolarisSelect, PolarisCheckbox, PolarisNumberField } from "./PolarisControls";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import { PromotionImageField } from "./PromotionImageField";
+import { LinkDestinationField } from "./LinkDestinationField";
 import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign, selectedCampaignPlacements, type CampaignPatch } from "../design/sharedCampaign";
 import { contrastRatio, copyLimits, placements, presetDesign, promotionBlock, setPromotionBlock, validateWebsite, type BlockVisibility, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "../design/design";
 
@@ -35,36 +35,11 @@ const numberSettings = {
   radius: { label: "Corner radius (px)", min: 0, max: 32, details: "Rounds this block and its buttons. Use 0 for square corners." },
 };
 
-function ButtonLinkField({ value, onChange, onBusy }: { value: string; onChange: (value: string) => void; onBusy: (busy: boolean) => void }) {
-  const shopify = useAppBridge();
-  const [linkType, setLinkType] = useState<"product" | "collection">("collection");
-  const [linkError, setLinkError] = useState("");
-  const [picking, setPicking] = useState(false);
-  const busyRef = useRef(onBusy); busyRef.current = onBusy;
-  useEffect(() => { busyRef.current(picking); }, [picking]);
-  useEffect(() => () => busyRef.current(false), []);
-  async function choose() {
-    setPicking(true);
-    try {
-      const selected = await shopify.resourcePicker({ type: linkType, multiple: false, action: "select" });
-      if (selected?.[0]) onChange(`/${linkType === "product" ? "products" : "collections"}/${selected[0].handle}`);
-      setLinkError("");
-    } catch { setLinkError("The selector could not be opened. Enter the button link instead."); }
-    finally { setPicking(false); }
-  }
-  return <>
-    <TextField label="Button link" value={value} details="Use a shop path or an http/https address." onChange={onChange} />
-    <PolarisSelect label="Link destination" value={linkType} onChange={event => setLinkType(event.currentTarget.value as typeof linkType)}><s-option value="collection">Collection</s-option><s-option value="product">Product</s-option></PolarisSelect>
-    <s-button type="button" variant="secondary" disabled={picking} onClick={choose}>{linkType === "collection" ? "Select collection" : "Select product"}</s-button>
-    {linkError && <small role="alert">{linkError}</small>}
-  </>;
-}
-
 type ChangeBlock = (change: (current: PromotionBlock) => PromotionBlock) => void;
 function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placement: Placement; block: PromotionBlock; onChange: ChangeBlock; onBusy: (busy: boolean) => void }) {
-  const [busySlots, setBusySlots] = useState({ desktop: false, mobile: false, link: false });
+  const [busySlots, setBusySlots] = useState({ desktop: false, mobile: false });
   const busyRef = useRef(onBusy); busyRef.current = onBusy;
-  useEffect(() => { busyRef.current(busySlots.desktop || busySlots.mobile || busySlots.link); }, [busySlots]);
+  useEffect(() => { busyRef.current(busySlots.desktop || busySlots.mobile); }, [busySlots]);
   useEffect(() => () => busyRef.current(false), []);
   const isBadge = placement === "badge";
   const hasImages = placement === "collection" || placement === "product";
@@ -107,7 +82,7 @@ function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placemen
         {visibility("button", "Show button")}
         {block.visibility.button && <>
           <TextField label="Button text" value={block.buttonText} maxLength={copyLimits.buttonText} details="Leave blank to omit the button." onChange={next => set("buttonText", next)} />
-          <ButtonLinkField value={block.buttonUrl} onChange={next => set("buttonUrl", next)} onBusy={busy => setBusySlots(current => ({ ...current, link: busy }))} />
+          <LinkDestinationField value={block.buttonUrl} onChange={next => set("buttonUrl", next)} />
         </>}
         {placement === "product" && <>
           {visibility("discountCode", "Show discount code", "Applies to code discounts. Automatic discounts use the discount message instead.")}
@@ -163,9 +138,9 @@ function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placemen
 }
 
 function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDraft; onChange: (patch: CampaignPatch) => void; onMatch: (placement: Placement) => void; onBusy: (busy: boolean) => void }) {
-  const [busy, setBusy] = useState({ desktop: false, mobile: false, link: false });
+  const [busy, setBusy] = useState({ desktop: false, mobile: false });
   const busyRef = useRef(onBusy); busyRef.current = onBusy;
-  useEffect(() => { busyRef.current(busy.desktop || busy.mobile || busy.link); }, [busy]);
+  useEffect(() => { busyRef.current(busy.desktop || busy.mobile); }, [busy]);
   useEffect(() => () => busyRef.current(false), []);
   const selected = selectedCampaignPlacements(value);
   const titles = (ids: string[]) => ids.map(id => placements.find(p => p.id === id)!.title).join(", ");
@@ -181,7 +156,7 @@ function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDr
       <TextField label="Headline" value={text("headline")} maxLength={copyLimits.headline} onChange={next => onChange({ headline: next })} />
       <TextField label="Body" value={text("body")} maxLength={copyLimits.body} multiline onChange={next => onChange({ body: next })} />
       <TextField label="Button text" value={text("buttonText")} maxLength={copyLimits.buttonText} details="Leave blank to omit the button." onChange={next => onChange({ buttonText: next })} />
-      <ButtonLinkField value={campaignValue(value, "buttonUrl") ?? ""} onChange={next => onChange({ buttonUrl: next })} onBusy={next => setBusy(current => ({ ...current, link: next }))} />
+      <LinkDestinationField value={campaignValue(value, "buttonUrl") ?? ""} onChange={next => onChange({ buttonUrl: next })} />
       <TextField label="Countdown label" value={text("countdownText")} maxLength={copyLimits.countdownText} details="Needs an end date in Schedule." onChange={next => onChange({ countdownText: next })} />
     </ControlGroup>
     {showImages && <ControlGroup title="Images" description="Used by the Collection and Product blocks. Mobile uses the desktop image if left blank.">
@@ -202,7 +177,7 @@ function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDr
   </section>;
 }
 
-export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, publicationDisabled = false }: { value: WebsiteDraft; onChange: (value: WebsiteDraft) => void; endsAt?: string | null; onBusyChange: (busy: boolean) => void; publicationDisabled?: boolean }) {
+export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, onActiveBlockChange, publicationDisabled = false }: { value: WebsiteDraft; onActiveBlockChange?: (placement: Placement) => void; onChange: (value: WebsiteDraft) => void; endsAt?: string | null; onBusyChange: (busy: boolean) => void; publicationDisabled?: boolean }) {
   const latestValue = useRef(value); latestValue.current = value;
   const [busyBlocks, setBusyBlocks] = useState<Partial<Record<Placement | "campaign", boolean>>>({});
   const busy = Object.values(busyBlocks).some(Boolean);
@@ -218,6 +193,12 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
   const errors = validateWebsite(value, endsAt);
   const hasCampaign = selectedCampaignPlacements(value).length > 0;
   const selected = placements.filter(p => value[p.flag]);
+  const [openBlock, setOpenBlock] = useState<Placement | null>(null);
+  const openId = selected.some(p => p.id === openBlock) ? openBlock : null;
+  function toggleBlock(placement: Placement, isOpen: boolean) {
+    if (isOpen) { setOpenBlock(placement); onActiveBlockChange?.(placement); }
+    else setOpenBlock(current => current === placement ? null : current);
+  }
   return <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 20 }}>
     <section aria-label="Website promotion" style={sectionStyle}>
       <h2 style={{ fontSize: 16, margin: 0 }}>Website promotion</h2>
@@ -233,7 +214,7 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
       </div>
     </section>
     {hasCampaign && <CampaignEditor value={value} onChange={changeCampaign} onMatch={matchBlock} onBusy={next => setBusyBlocks(current => current.campaign === next ? current : { ...current, campaign: next })} />}
-    {selected.map(p => <details key={p.id} data-promotion-block={p.id} open={!hasCampaign || p.id === "badge"} style={{ border: "1px solid #dedede", borderRadius: 12, background: "#fff", minWidth: 0 }}>
+    {selected.map(p => <details key={p.id} data-promotion-block={p.id} open={openId === p.id} onToggle={event => toggleBlock(p.id, event.currentTarget.open)} style={{ border: "1px solid #dedede", borderRadius: 12, background: "#fff", minWidth: 0 }}>
       <summary style={{ cursor: "pointer", fontWeight: 600, padding: 16 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>{hasCampaign && p.id !== "badge" ? `Fine-tune ${p.title.toLowerCase()}` : p.title}<s-badge tone="success">Selected</s-badge></span></summary>
       <PromotionBlockEditor placement={p.id} block={promotionBlock(value, p.id)} onChange={change => changeBlock(p.id, change)} onBusy={next => setBusyBlocks(current => current[p.id] === next ? current : { ...current, [p.id]: next })} />
     </details>)}

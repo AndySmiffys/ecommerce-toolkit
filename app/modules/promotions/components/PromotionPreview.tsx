@@ -64,8 +64,10 @@ export function PromotionMarkup({ value, placement, products, endsAt, now, mobil
     {placement === "badge" && <div className="pe-context pe-cards">{products.length ? products.slice(0,3).map(p => <div key={p.id} className="pe-card">{p.image ? <img src={p.image} alt={p.title} /> : <div className="pe-placeholder">No image</div>}{offer}<div className="pe-card-info"><strong>{p.title}</strong><p>{p.price || "Price unavailable"}</p></div></div>) : <div className="pe-placeholder">Choose a preview product</div>}</div>}
   </div>;
 }
-export function PromotionPreview({ value, products, endsAt, productOptions = [], onProductChange, selectedProductId = "", loading = false, sample = false, offerNote, discountCode, visibilityNotices = [] }: { value: WebsiteDraft; products: PreviewProduct[]; endsAt?: string | null; productOptions?: PreviewProduct[]; onProductChange?: (id: string) => void; selectedProductId?: string; loading?: boolean; sample?: boolean; offerNote?: string; discountCode?: string | null; visibilityNotices?: VisibilityNotice[] }) {
-  const [placement, setPlacement] = useState<Placement>("collection");
+export function PromotionPreview({ value, products, endsAt, productOptions = [], onProductChange, selectedProductId = "", loading = false, sample = false, offerNote, discountCode, visibilityNotices = [], placement: requestedPlacement, onPlacementChange }: { placement?: Placement; onPlacementChange?: (placement: Placement) => void; value: WebsiteDraft; products: PreviewProduct[]; endsAt?: string | null; productOptions?: PreviewProduct[]; onProductChange?: (id: string) => void; selectedProductId?: string; loading?: boolean; sample?: boolean; offerNote?: string; discountCode?: string | null; visibilityNotices?: VisibilityNotice[] }) {
+  const [localPlacement, setLocalPlacement] = useState<Placement>("collection");
+  const placement = requestedPlacement ?? localPlacement;
+  const setPlacement = (next: Placement) => { setLocalPlacement(next); onPlacementChange?.(next); };
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [now, setNow] = useState(0);
   const [available, setAvailable] = useState(400);

@@ -14,7 +14,7 @@ import type { CreateDiscountDraft } from "../services/createPromotion.server";
 import type { EditorDiscountDraft } from "../design/editorDraft";
 import { toLocalDateTime } from "../design/editorDraft";
 import type { LinkResource, ResourceSearchItem, EligibilityResource, PromotionActionData } from "../design/editorTypes";
-import { defaultDesign, validateWebsite, type WebsiteDraft } from "../design/design";
+import { defaultDesign, validateWebsite, type Placement, type WebsiteDraft } from "../design/design";
 import { customerVisibilityMessage, storefrontVisibilityNotices } from "../design/storefrontVisibility";
 import { PromotionWebsiteEditor } from "./PromotionWebsiteEditor";
 import { PromotionPreview, type PreviewProduct } from "./PromotionPreview";
@@ -584,7 +584,8 @@ useEffect(() => { previewSubmitRef.current({ selection: eligibleSelection }, { m
 const productOptions: PreviewProduct[] = products.map(p=>({ id:p.id, title:p.title, image:p.featuredImage?.url, price:formatPreviewPrice(p) }));
 const eligibleProducts = previewFetcher.data?.key === eligibleSelection ? previewFetcher.data.products : [];
 const previewProducts = previewProductId ? productOptions.filter(p=>p.id===previewProductId) : eligibleProducts;
-const websitePreview = <PromotionPreview visibilityNotices={visibilityNotices} discountCode={method === "code" && !isCodeList ? discountCode : null} offerNote={isCodeList ? "Use your individual code at checkout." : method === "code" ? discountCode ? `Use code: ${discountCode}` : "Add a discount code" : "Applied automatically at checkout."} value={websiteDraft} products={previewProducts} endsAt={hasEndDate ? endDateTime : null} productOptions={productOptions} onProductChange={setPreviewProductId} selectedProductId={previewProductId} loading={previewFetcher.state !== "idle"} sample={eligibleSelection === '{"productIds":[],"collectionIds":[]}' && discountType !== "order" && discountType !== "shipping"} />;
+const [previewPlacement, setPreviewPlacement] = useState<Placement | undefined>();
+const websitePreview = <PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} visibilityNotices={visibilityNotices} discountCode={method === "code" && !isCodeList ? discountCode : null} offerNote={isCodeList ? "Use your individual code at checkout." : method === "code" ? discountCode ? `Use code: ${discountCode}` : "Add a discount code" : "Applied automatically at checkout."} value={websiteDraft} products={previewProducts} endsAt={hasEndDate ? endDateTime : null} productOptions={productOptions} onProductChange={setPreviewProductId} selectedProductId={previewProductId} loading={previewFetcher.state !== "idle"} sample={eligibleSelection === '{"productIds":[],"collectionIds":[]}' && discountType !== "order" && discountType !== "shipping"} />;
 async function browseBxgy(scope: "buy" | "get") {
 const type = (scope === "buy" ? buyAppliesTo : getAppliesTo) === "products" ? "product" : "collection";
 const selected = await shopify.resourcePicker({ type, action: "select", multiple: true });
@@ -1927,7 +1928,7 @@ setEndDateTime("");
 </div>
 </FormSection>
 
-<PromotionWebsiteEditor publicationDisabled={isCodeList} value={websiteDraft} onChange={value => updateWebsite(isCodeList ? { ...value, websiteEnabled: false } : value)} endsAt={hasEndDate ? endDateTime : null} onBusyChange={setAssetsBusy} />
+<PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} publicationDisabled={isCodeList} value={websiteDraft} onChange={value => updateWebsite(isCodeList ? { ...value, websiteEnabled: false } : value)} endsAt={hasEndDate ? endDateTime : null} onBusyChange={setAssetsBusy} />
 {previewFetcher.data?.error && <s-banner tone="warning">{previewFetcher.data.error}</s-banner>}
 {!promotionId && createdDiscountId && <s-button href={appUrl(`/app/promotions/${createdDiscountId.split("/").pop()}`)} variant="secondary">Open saved promotion</s-button>}
 {promotionId && createFetcher.data?.success && !hasUnsavedChanges && <s-banner tone="success">Promotion saved.</s-banner>}
