@@ -1,5 +1,4 @@
 import type { PromotionCapabilities } from "../../../models/shopify";
-import type { ShopifyDiscountNode } from "../../../types/discount";
 import type { PromotionTypeData } from "../types";
 import { PromotionProvider } from "./PromotionProvider";
 import { mapEmptyProducts } from "./shared";
@@ -24,11 +23,11 @@ export class UnknownProvider extends PromotionProvider {
     supportsHealthChecks: false,
   };
 
-  supports(_node: ShopifyDiscountNode): boolean {
+  supports(): boolean {
     return true;
   }
 
-  map(_node: ShopifyDiscountNode): PromotionTypeData {
+  map(): PromotionTypeData {
     return {
       products: mapEmptyProducts("Not yet supported"),
       bxgy: null,

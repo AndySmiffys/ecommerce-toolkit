@@ -318,7 +318,7 @@ export function PromotionGeneralTab({
                   {general.title}
                 </div>
 
-                <s-text tone="subdued">{general.summary}</s-text>
+                <s-text color="subdued">{general.summary}</s-text>
 
                 <s-stack direction="inline" gap="base">
                   <s-badge tone={getStatusTone(general.status)}>

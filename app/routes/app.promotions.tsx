@@ -446,7 +446,7 @@ export default function PromotionsPage() {
                   textAlign: "center",
                 }}
               >
-                <s-text fontWeight="semibold">No promotions found</s-text>
+                <s-text type="strong">No promotions found</s-text>
                 <div
                   style={{
                     marginTop: "6px",
@@ -592,7 +592,9 @@ export default function PromotionsPage() {
       {showCreateDiscount && (
         <div
           role="presentation"
-          onClick={() => setShowCreateDiscount(false)}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setShowCreateDiscount(false);
+          }}
           style={{
             position: "fixed",
             inset: 0,
@@ -608,7 +610,6 @@ export default function PromotionsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-discount-title"
-            onClick={(event) => event.stopPropagation()}
             style={{
               width: "min(100%, 560px)",
               overflow: "hidden",

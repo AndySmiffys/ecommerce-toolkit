@@ -312,8 +312,8 @@ function ScopePanel({
     >
       <s-stack direction="block" gap="large">
         <s-stack direction="block" gap="small">
-          <s-text fontWeight="semibold">{heading}</s-text>
-          <s-text tone="subdued">{description}</s-text>
+          <s-text type="strong">{heading}</s-text>
+          <s-text color="subdued">{description}</s-text>
         </s-stack>
 
         <s-banner tone={hasTargets ? "info" : "warning"}>
@@ -368,7 +368,7 @@ export function PromotionBxgyTab({ promotion }: PromotionBxgyTabProps) {
         }}
       >
         <s-stack direction="block" gap="large">
-          <s-text fontWeight="semibold">Offer summary</s-text>
+          <s-text type="strong">Offer summary</s-text>
 
           <div
             style={{

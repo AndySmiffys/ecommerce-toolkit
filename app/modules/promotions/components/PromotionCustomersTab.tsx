@@ -37,8 +37,8 @@ export function PromotionCustomersTab({
       >
         <s-stack direction="block" gap="large">
           <s-stack direction="block" gap="small">
-            <s-text fontWeight="semibold">Customer eligibility</s-text>
-            <s-text tone="subdued">
+            <s-text type="strong">Customer eligibility</s-text>
+            <s-text color="subdued">
               The customers who are eligible to use this promotion.
             </s-text>
           </s-stack>
@@ -114,8 +114,8 @@ export function PromotionCustomersTab({
         >
           <s-stack direction="block" gap="base">
             <s-stack direction="block" gap="small">
-              <s-text fontWeight="semibold">Customer segments</s-text>
-              <s-text tone="subdued">
+              <s-text type="strong">Customer segments</s-text>
+              <s-text color="subdued">
                 Customers in these Shopify segments can use the promotion.
               </s-text>
             </s-stack>
@@ -165,8 +165,8 @@ export function PromotionCustomersTab({
         >
           <s-stack direction="block" gap="base">
             <s-stack direction="block" gap="small">
-              <s-text fontWeight="semibold">Selected customers</s-text>
-              <s-text tone="subdued">
+              <s-text type="strong">Selected customers</s-text>
+              <s-text color="subdued">
                 Only these individual Shopify customers can use the promotion.
               </s-text>
             </s-stack>

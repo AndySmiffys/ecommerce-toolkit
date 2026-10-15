@@ -303,7 +303,7 @@ export function PromotionProductsTab({
           <s-stack direction="block" gap="base">
             <s-banner tone={hasHealthIssues ? "warning" : "success"}>
               {hasHealthIssues
-                ? `${getHealthLabel(healthScore)}: some covered products may require attention.`
+                ? `${healthScore === null ? "Attention needed" : getHealthLabel(healthScore)}: some covered products may require attention.`
                 : "Healthy: no product status or inventory issues were found."}
             </s-banner>
 
