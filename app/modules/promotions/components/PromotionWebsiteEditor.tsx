@@ -59,8 +59,8 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
   function visibility(name: keyof BlockVisibility, label: string, details?: string) {
     return <PolarisCheckbox label={label} details={details} checked={block.visibility[name]} onChange={event => visible(name, event.currentTarget.checked)} />;
   }
-  function numberField(name: keyof typeof numberSettings) {
-    const setting = numberSettings[name];
+  function numberField(name: keyof typeof numberSettings, override: Partial<{ label: string; details: string }> = {}) {
+    const setting = { ...numberSettings[name], ...override };
     return <s-number-field label={setting.label} details={setting.details} min={setting.min} max={setting.max} value={String(style[name])} onInput={event => { const next = Number(event.currentTarget.value); if (event.currentTarget.value && Number.isFinite(next)) styling(name, next); }} />;
   }
   // A block that still matches the campaign shows its wording in grey; typing makes it the block's own, clearing the box follows the campaign again.
@@ -151,7 +151,7 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
         {numberField("headingSize")}
       </>}
       {!isBadge && numberField("spacing")}
-      {numberField("radius")}
+      {numberField("radius", placement === "header" ? { label: "Button corner radius (px)", details: "Rounds the header button. The header itself is always square because it sits in the site header." } : {})}
     </ControlGroup>
     <ControlGroup title="Colours" description="These follow the campaign colours above until you change one here. Use the button under a colour to return to the campaign colour.">
       {placement === "header" && <>

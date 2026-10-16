@@ -12,7 +12,7 @@ import { SaveNotices } from "./SaveNotices";
 import { PromotionCodeList } from "./PromotionCodeList";
 import { validateCodeOptions, type CodeBatchSummary } from "../design/codeGeneration";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, useEffect, useRef, useState } from "react";
 import { useFetcher, useSearchParams, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import type { CreateDiscountDraft } from "../services/createPromotion.server";
@@ -1456,7 +1456,7 @@ setLimitOncePerCustomer(event.currentTarget.checked)
 <ModalOverlay open={isPreviewDrawerOpen} heading="Storefront preview" size="large" onClose={() => setIsPreviewDrawerOpen(false)}>
 <s-stack direction="block" gap="base">
 <s-text color="subdued">Updates live as you change the promotion.</s-text>
-{websitePreview}
+{cloneElement(websitePreview, { allowEnlarge: false })}
 </s-stack>
 <s-button slot="secondary-actions" onClick={() => setIsPreviewDrawerOpen(false)}>Close</s-button>
 </ModalOverlay>

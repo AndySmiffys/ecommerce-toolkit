@@ -1,16 +1,41 @@
 import { PromotionVisibilityNotice } from "./PromotionVisibilityNotice";
 import type { VisibilityNotice } from "../design/storefrontVisibility";
 import { PolarisSelect } from "./PolarisControls";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { ModalOverlay } from "./ModalOverlay";
 import { renderToStaticMarkup } from "react-dom/server";
 import promotionUiScript from "../design/promotion-ui.js?raw";
 import { countdownParts, countdown, placements, promotionBlock, safeLink, type Placement, type WebsiteDraft } from "../design/design";
 export type PreviewProduct = { id: string; title: string; image?: string | null; price?: string | null };
 export const promotionCss = `
-*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#202223;background:#f5f5f5}button,a{font:inherit}.pe-shell{padding:20px}.pe-context{background:#fff;border:1px solid #e1e1e1;border-radius:12px;padding:20px}.pe-promo{position:relative;overflow:hidden;border-radius:var(--pe-radius);background:var(--pe-bg);color:var(--pe-fg);text-align:var(--pe-align)}.pe-copy{position:relative;padding:var(--pe-space);display:flex;flex-direction:column;justify-content:center;align-items:var(--pe-items);gap:12px;overflow-wrap:anywhere}.pe-heading{margin:0;font-size:var(--pe-heading);line-height:1.15;font-weight:700}.pe-body{margin:0;font-size:var(--pe-body);line-height:1.5;white-space:pre-wrap}.pe-button{display:inline-block;text-decoration:none;padding:11px 18px;border-radius:var(--pe-radius);background:var(--pe-button-bg);color:var(--pe-button-fg);font-size:14px;font-weight:700}.pe-countdown{font-size:13px;font-weight:600}.pe-banner{min-height:var(--pe-height)}.pe-banner .pe-copy{min-height:var(--pe-height)}.pe-split{display:grid;grid-template-columns:1fr 1fr}.pe-picture{display:block;min-width:0;height:100%}.pe-split .pe-picture{position:relative;min-height:var(--pe-height)}.pe-split .pe-picture .pe-image{position:absolute;inset:0}.pe-image{width:100%;height:100%;object-fit:cover;object-position:var(--pe-focus);min-height:var(--pe-height)}.pe-full-image{position:absolute;inset:0}.pe-overlay{position:absolute;inset:0;background:rgba(0,0,0,var(--pe-overlay))}.pe-full .pe-copy{max-width:72%}.pe-header .pe-copy{flex-direction:row;flex-wrap:wrap;justify-content:var(--pe-items);align-items:center;padding:var(--pe-header-space);gap:16px}.pe-header .pe-heading{font-size:var(--pe-heading)}.pe-header .pe-body{font-size:var(--pe-body)}.pe-header .pe-button{padding:7px 12px;font-size:12px}.pe-product{display:grid;grid-template-columns:1fr 1fr;gap:24px}.pe-product-photo{width:100%;height:380px;object-fit:contain;background:#fafafa}.pe-product-title{font-size:24px;line-height:1.2}.pe-price{font-size:18px;font-weight:700}.pe-product .pe-promo{margin-top:20px}.pe-product .pe-heading{font-size:var(--pe-heading)}.pe-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.pe-card{position:relative;border:1px solid #eee;background:#fff;min-width:0}.pe-card img{width:100%;aspect-ratio:4/5;object-fit:contain;background:#fafafa}.pe-card-info{padding:12px;font-size:14px}.pe-badge{position:absolute;top:10px;left:10px;max-width:calc(100% - 20px);padding:6px 9px;border-radius:var(--pe-radius);background:var(--pe-badge-bg);color:var(--pe-badge-fg);font-size:var(--pe-heading);font-weight:700;overflow-wrap:anywhere}.pe-placeholder{display:grid;place-items:center;min-height:200px;background:#eee;color:#666}.pe-note{font-size:12px;color:#616161;margin-bottom:14px}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:#202223;background:#f5f5f5}button,a{font:inherit}.pe-promo{position:relative;overflow:hidden;border-radius:var(--pe-radius);background:var(--pe-bg);color:var(--pe-fg);text-align:var(--pe-align)}.pe-copy{position:relative;padding:var(--pe-space);display:flex;flex-direction:column;justify-content:center;align-items:var(--pe-items);gap:12px;overflow-wrap:anywhere}.pe-heading{margin:0;font-size:var(--pe-heading);line-height:1.15;font-weight:700}.pe-body{margin:0;font-size:var(--pe-body);line-height:1.5;white-space:pre-wrap}.pe-button{display:inline-block;text-decoration:none;padding:11px 18px;border-radius:var(--pe-radius);background:var(--pe-button-bg);color:var(--pe-button-fg);font-size:14px;font-weight:700}.pe-countdown{font-size:13px;font-weight:600}.pe-banner{min-height:var(--pe-height)}.pe-banner .pe-copy{min-height:var(--pe-height)}.pe-split{display:grid;grid-template-columns:1fr 1fr}.pe-picture{display:block;min-width:0;height:100%}.pe-split .pe-picture{position:relative;min-height:var(--pe-height)}.pe-split .pe-picture .pe-image{position:absolute;inset:0}.pe-image{width:100%;height:100%;object-fit:cover;object-position:var(--pe-focus);min-height:var(--pe-height)}.pe-full-image{position:absolute;inset:0}.pe-overlay{position:absolute;inset:0;background:rgba(0,0,0,var(--pe-overlay))}.pe-full .pe-copy{max-width:72%}.pe-promo.pe-header{border-radius:0}.pe-header .pe-copy{flex-direction:row;flex-wrap:wrap;justify-content:var(--pe-items);align-items:center;padding:var(--pe-header-space);gap:16px}.pe-header .pe-heading{font-size:var(--pe-heading)}.pe-header .pe-body{font-size:var(--pe-body)}.pe-header .pe-button{padding:7px 12px;font-size:12px}.pe-badge{position:absolute;top:10px;left:10px;max-width:calc(100% - 20px);padding:6px 9px;border-radius:var(--pe-radius);background:var(--pe-badge-bg);color:var(--pe-badge-fg);font-size:var(--pe-heading);font-weight:700;overflow-wrap:anywhere}
 
 .pe-product-offer{border:0}.pe-product-offer.pe-full,.pe-product-offer.pe-full .pe-copy{min-height:var(--pe-height)}.pe-product-offer .pe-heading{font-size:var(--pe-heading);font-weight:600;letter-spacing:-.025em}.pe-offer-single{background:transparent;border:var(--pe-border-width) solid var(--pe-border)}.pe-offer-double{background:transparent;border:var(--pe-border-width) double var(--pe-border)}.pe-code-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:100%}.pe-code{display:grid;gap:4px;min-width:0;text-align:left}.pe-code small,.pe-timer-label{font-size:12px;font-weight:500}.pe-code strong{font-size:16px;letter-spacing:.06em;user-select:all}.pe-copy-code{background:var(--pe-copy-bg);color:var(--pe-copy-fg);display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border:0;min-height:44px;font-weight:500}.pe-button:focus-visible{outline:2px solid currentColor;outline-offset:3px}.pe-modern-countdown{display:grid;gap:10px;max-width:100%}.pe-time-units{display:flex;gap:8px}.pe-time-unit{display:grid;gap:5px;min-width:48px;padding:10px 6px;text-align:center;border:1px solid currentColor;border-color:color-mix(in srgb,currentColor 18%,transparent);border-radius:min(var(--pe-radius),8px)}.pe-time-unit strong{font-size:22px;line-height:1;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.025em}.pe-time-unit small{font-size:10px;font-weight:400}.pe-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}[hidden]{display:none!important}
-@media(max-width:600px){.pe-shell{padding:12px}.pe-context{padding:12px}.pe-product{grid-template-columns:1fr;gap:12px}.pe-product-photo{height:230px}.pe-split{grid-template-columns:1fr}.pe-split .pe-picture{height:240px;min-height:180px}.pe-split .pe-image{max-height:240px;min-height:180px}.pe-full .pe-copy{max-width:100%}.pe-copy{padding:max(16px,calc(var(--pe-space)*.7))}.pe-heading{font-size:clamp(10px,6vw,var(--pe-heading))}.pe-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.pe-header .pe-copy{flex-direction:column;gap:8px;text-align:var(--pe-align);align-items:var(--pe-items)}.pe-banner,.pe-banner .pe-copy{min-height:min(var(--pe-height),360px)}}
+@media(max-width:600px){.pe-split{grid-template-columns:1fr}.pe-split .pe-picture{height:240px;min-height:180px}.pe-split .pe-image{max-height:240px;min-height:180px}.pe-full .pe-copy{max-width:100%}.pe-copy{padding:max(16px,calc(var(--pe-space)*.7))}.pe-heading{font-size:clamp(10px,6vw,var(--pe-heading))}.pe-header .pe-copy{flex-direction:column;gap:8px;text-align:var(--pe-align);align-items:var(--pe-items)}.pe-banner,.pe-banner .pe-copy{min-height:min(var(--pe-height),360px)}}
+`;
+// Preview-only styles. They show the surroundings of a block and never reach the storefront.
+const previewCss = `body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#fff;color:#1a1a1a}
+.pe-shell{padding:0}.pe-site{background:#fff;min-height:100%}
+.pe-site-nav{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 32px;border-bottom:1px solid #ececec}
+.pe-site-logo{width:104px;height:20px;border-radius:5px;background:#1a1a1a}
+.pe-site-links{display:flex;flex:1;justify-content:center;gap:24px}.pe-site-links span{width:56px;height:8px;border-radius:4px;background:#dcdcdc}
+.pe-site-icons{display:flex;gap:14px}.pe-site-icons i{width:20px;height:20px;border-radius:50%;background:#e2e2e2}
+.pe-page{display:grid;gap:20px;padding:20px 32px 40px}
+.pe-crumbs{display:flex;align-items:center;gap:8px}.pe-crumbs span{width:48px;height:8px;border-radius:4px;background:#e2e2e2}.pe-crumbs span+span{width:72px}
+.pe-bar{height:12px;border-radius:6px;background:#ececec}.pe-bar-title{width:220px;height:22px;background:#e0e0e0}.pe-bar-mid{width:80%}.pe-bar-short{width:55%}
+.pe-toolbar{display:flex;justify-content:space-between;gap:12px}.pe-toolbar span{width:96px;height:32px;border:1px solid #e2e2e2;border-radius:8px}
+.pe-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
+.pe-card{display:grid;gap:10px;min-width:0;align-content:start}
+.pe-card-media{position:relative;aspect-ratio:4/5;overflow:hidden;border-radius:12px;background:#f1f1f1}.pe-card-media img{display:block;width:100%;height:100%;object-fit:cover}
+.pe-card-title{font-size:14px;font-weight:600;line-height:1.3}.pe-card-price{font-size:14px;color:#555}
+.pe-pdp{display:grid;grid-template-columns:1.1fr 1fr;gap:40px;align-items:start}
+.pe-gallery{display:grid;gap:12px}.pe-gallery-main{aspect-ratio:1/1;overflow:hidden;border-radius:14px;background:#f1f1f1}.pe-gallery-main img{display:block;width:100%;height:100%;object-fit:cover}
+.pe-thumbs{display:flex;gap:10px}.pe-thumbs span{width:64px;height:64px;border-radius:10px;background:#ececec}
+.pe-pdp-info{display:grid;gap:16px;min-width:0}
+.pe-product-title{margin:0;font-size:28px;font-weight:700;line-height:1.15;letter-spacing:-.02em}.pe-price{margin:0;font-size:20px;font-weight:600}
+.pe-pills{display:flex;gap:8px}.pe-pills span{width:44px;height:36px;border:1px solid #d6d6d6;border-radius:8px}
+.pe-buy{display:flex;gap:12px}.pe-qty{width:96px;height:48px;border:1px solid #d6d6d6;border-radius:10px}.pe-atc{display:grid;flex:1;height:48px;place-items:center;border-radius:10px;background:#1a1a1a;color:#fff;font-size:15px;font-weight:600}
+@media(max-width:600px){.pe-site-nav{padding:12px 16px}.pe-site-links{display:none}.pe-page{padding:14px 16px 28px}.pe-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.pe-pdp{grid-template-columns:1fr;gap:20px}.pe-product-title{font-size:24px}}
 `;
 // Light DOM styles apply before the custom element upgrades. Scope every rule,
 // including rules inside media queries, so theme controls and page layout stay untouched.
@@ -54,52 +79,109 @@ export function PromotionOffer({ value, placement, endsAt, now, mobile = false, 
     {(placement === "collection" || placement === "product") && image && d.imageLayout === "half-right" ? photo : null}
   </div>;
 }
-export function PromotionMarkup({ value, placement, products, endsAt, now, mobile = false, offerNote, discountCode }: { value: WebsiteDraft; placement: Placement; products: PreviewProduct[]; endsAt?: string | null; now: number; mobile?: boolean; offerNote?: string; discountCode?: string | null }) {
-  const product = products[0];
-  const offer = <PromotionOffer value={value} placement={placement} endsAt={endsAt} now={now} mobile={mobile} offerNote={offerNote} discountCode={discountCode} />;
-  return <div className="pe-shell">
-    {placement === "header" && offer}
-    {placement === "collection" && <div className="pe-context"><p className="pe-note">Collection page</p>{offer}</div>}
-    {placement === "product" && <div className="pe-context pe-product"><div>{product?.image ? <img className="pe-product-photo" src={product.image} alt={product.title} /> : <div className="pe-placeholder">Choose a preview product</div>}</div><div><h1 className="pe-product-title">{product?.title || "Example product"}</h1><p className="pe-price">{product?.price || "Price unavailable"}</p>{offer}</div></div>}
-    {placement === "badge" && <div className="pe-context pe-cards">{products.length ? products.slice(0,3).map(p => <div key={p.id} className="pe-card">{p.image ? <img src={p.image} alt={p.title} /> : <div className="pe-placeholder">No image</div>}{offer}<div className="pe-card-info"><strong>{p.title}</strong><p>{p.price || "Price unavailable"}</p></div></div>) : <div className="pe-placeholder">Choose a preview product</div>}</div>}
+function SiteNav() {
+  return <div className="pe-site-nav"><span className="pe-site-logo" /><span className="pe-site-links"><span /><span /><span /><span /></span><span className="pe-site-icons"><i /><i /></span></div>;
+}
+function Crumbs() { return <div className="pe-crumbs"><span /><span /></div>; }
+function ProductCard({ product, badge }: { product?: PreviewProduct; badge?: ReactNode }) {
+  return <div className="pe-card">
+    <div className="pe-card-media">{product?.image && <img src={product.image} alt={product.title} />}{badge}</div>
+    {product ? <><div className="pe-card-title">{product.title}</div><div className="pe-card-price">{product.price}</div></> : <><div className="pe-bar pe-bar-mid" /><div className="pe-bar pe-bar-short" /></>}
   </div>;
 }
-export function PromotionPreview({ value, products, endsAt, productOptions = [], onProductChange, selectedProductId = "", loading = false, sample = false, offerNote, discountCode, visibilityNotices = [], placement: requestedPlacement, onPlacementChange }: { placement?: Placement; onPlacementChange?: (placement: Placement) => void; value: WebsiteDraft; products: PreviewProduct[]; endsAt?: string | null; productOptions?: PreviewProduct[]; onProductChange?: (id: string) => void; selectedProductId?: string; loading?: boolean; sample?: boolean; offerNote?: string; discountCode?: string | null; visibilityNotices?: VisibilityNotice[] }) {
+// The block is drawn where it sits on a storefront. The surroundings are placeholders and are preview-only.
+export function PromotionMarkup({ value, placement, products, endsAt, now, mobile = false, offerNote, discountCode }: { value: WebsiteDraft; placement: Placement; products: PreviewProduct[]; endsAt?: string | null; now: number; mobile?: boolean; offerNote?: string; discountCode?: string | null }) {
+  const product = products[0];
+  const cards = Array.from({ length: 4 }, (_, index) => products[index]);
+  const offer = <PromotionOffer value={value} placement={placement} endsAt={endsAt} now={now} mobile={mobile} offerNote={offerNote} discountCode={discountCode} />;
+  return <div className="pe-shell">
+    {placement === "header" && <div className="pe-site">{offer}<SiteNav /><div className="pe-page"><div className="pe-bar pe-bar-title" /><div className="pe-bar pe-bar-mid" /><div className="pe-bar pe-bar-short" /></div></div>}
+    {placement === "collection" && <div className="pe-site"><SiteNav /><div className="pe-page"><Crumbs /><div className="pe-bar pe-bar-title" />{offer}<div className="pe-toolbar"><span /><span /></div><div className="pe-grid">{cards.map((card, index) => <ProductCard key={card?.id ?? index} product={card} />)}</div></div></div>}
+    {placement === "product" && <div className="pe-site"><SiteNav /><div className="pe-page"><Crumbs />
+      <div className="pe-pdp">
+        <div className="pe-gallery"><div className="pe-gallery-main">{product?.image && <img src={product.image} alt={product.title} />}</div><div className="pe-thumbs"><span /><span /><span /></div></div>
+        <div className="pe-pdp-info"><h1 className="pe-product-title">{product?.title || "Example product"}</h1><p className="pe-price">{product?.price || "£0.00"}</p>{offer}<div className="pe-pills"><span /><span /><span /></div><div className="pe-buy"><span className="pe-qty" /><span className="pe-atc">Add to cart</span></div><div className="pe-bar" /><div className="pe-bar pe-bar-mid" /><div className="pe-bar pe-bar-short" /></div>
+      </div></div></div>}
+    {placement === "badge" && <div className="pe-site"><SiteNav /><div className="pe-page"><Crumbs /><div className="pe-bar pe-bar-title" /><div className="pe-toolbar"><span /><span /></div><div className="pe-grid">{cards.map((card, index) => <ProductCard key={card?.id ?? index} product={card} badge={offer} />)}</div></div></div>}
+  </div>;
+}
+const devices = [{ id: "desktop", label: "Desktop", width: 1024 }, { id: "tablet", label: "Tablet", width: 768 }, { id: "mobile", label: "Mobile", width: 390 }] as const;
+type Device = typeof devices[number]["id"];
+
+// The frame reports its own content height, so a one-line header is not given the room of a product page.
+const reportHeight = `<script>(function(){function post(){parent.postMessage({peHeight:Math.ceil(document.body.getBoundingClientRect().height)},"*")}addEventListener("load",post);if(window.ResizeObserver)new ResizeObserver(post).observe(document.body);post()})()</script>`;
+
+function PreviewStage({ document: html, width, title, fallbackHeight, maxHeight }: { document: string; width: number; title: string; fallbackHeight: number; maxHeight: number }) {
+  const holder = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [available, setAvailable] = useState(400);
+  const [measured, setMeasured] = useState<number | null>(null);
+  // Typing rebuilds the document; wait for a pause so the frame does not flicker or lose its scroll position.
+  const [settled, setSettled] = useState(html);
+  useEffect(() => { const timer = setTimeout(() => setSettled(html), 250); return () => clearTimeout(timer); }, [html]);
+  useEffect(() => {
+    const observer = new ResizeObserver(entries => setAvailable(entries[0].contentRect.width));
+    if (holder.current) observer.observe(holder.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    function heard(event: MessageEvent) {
+      const height = (event.data as { peHeight?: unknown } | null)?.peHeight;
+      if (event.source === frame.current?.contentWindow && typeof height === "number" && height > 0) setMeasured(height);
+    }
+    window.addEventListener("message", heard);
+    return () => window.removeEventListener("message", heard);
+  }, []);
+  const scale = Math.min(1, available / width);
+  const height = measured ?? fallbackHeight;
+  return <div ref={holder} style={{ overflow: "auto", minWidth: 0, maxHeight }}>
+    <div style={{ width: "100%", height: height * scale, position: "relative" }}>
+      <iframe ref={frame} title={title} sandbox="allow-scripts" allow="clipboard-write" srcDoc={settled} style={{ position: "absolute", top: 0, left: 0, border: 0, width, height, transform: `scale(${scale})`, transformOrigin: "top left", background: "#f5f5f5" }} />
+    </div>
+  </div>;
+}
+
+export function PromotionPreview({ value, products, endsAt, productOptions = [], onProductChange, selectedProductId = "", loading = false, sample = false, offerNote, discountCode, visibilityNotices = [], placement: requestedPlacement, onPlacementChange, allowEnlarge = true }: { placement?: Placement; onPlacementChange?: (placement: Placement) => void; value: WebsiteDraft; products: PreviewProduct[]; endsAt?: string | null; productOptions?: PreviewProduct[]; onProductChange?: (id: string) => void; selectedProductId?: string; loading?: boolean; sample?: boolean; offerNote?: string; discountCode?: string | null; visibilityNotices?: VisibilityNotice[]; allowEnlarge?: boolean }) {
   const [localPlacement, setLocalPlacement] = useState<Placement>("collection");
   const placement = requestedPlacement ?? localPlacement;
   const setPlacement = (next: Placement) => { setLocalPlacement(next); onPlacementChange?.(next); };
-  const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [device, setDevice] = useState<Device>("desktop");
+  const [enlarged, setEnlarged] = useState(false);
   const [now, setNow] = useState(0);
-  const [available, setAvailable] = useState(400);
-  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { setNow(Date.now()); }, [endsAt]);
-  useEffect(() => {
-    const observer = new ResizeObserver(entries => setAvailable(entries[0].contentRect.width));
-    if (ref.current) observer.observe(ref.current); return () => observer.disconnect();
-  }, []);
   const enabled = placements.filter(p => value[p.flag]);
   const active = enabled.some(p => p.id === placement) ? placement : enabled[0]?.id;
-  const width = device === "desktop" ? 1024 : device === "tablet" ? 768 : 390;
+  const width = devices.find(item => item.id === device)!.width;
   const block = active ? promotionBlock(value, active) : null;
-  const height = active === "product" ? device === "mobile" ? 1100 : 850 : active === "collection" ? (block?.style.bannerHeight ?? 280) + (device === "mobile" && block?.visibility.image && block.style.imageLayout !== "full" && (block.style.desktopImage || block.style.mobileImage) ? 280 : 180) : active === "badge" ? device === "mobile" ? 950 : 660 : 400;
-  const scale = Math.min(1, available / width);
+  // Only used until the frame reports its real height.
+  const fallbackHeight = active === "product" ? device === "mobile" ? 1100 : 850 : active === "collection" ? (block?.style.bannerHeight ?? 280) + 180 : active === "badge" ? device === "mobile" ? 950 : 660 : 200;
   const markup = active ? renderToStaticMarkup(<PromotionMarkup value={value} placement={active} products={products} endsAt={endsAt} now={now} mobile={device === "mobile"} offerNote={offerNote} discountCode={discountCode} />) : "";
-  const document = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${promotionCss}</style></head><body>${markup}<script>${promotionUiScript}</script></body></html>`;
-  return <section aria-label="Website preview" style={{ border: "1px solid #dedede", borderRadius: 12, padding: 12, background: "#fff", display: "grid", gap: 12, minWidth: 0 }}>
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-      <strong>Website preview</strong>
-      <span role="status" aria-live="polite" aria-label={`Website promotion status: ${value.websiteEnabled ? "Enabled" : "Draft"}`}><s-badge tone={value.websiteEnabled ? "success" : "neutral"}>{value.websiteEnabled ? "Enabled" : "Draft"}</s-badge></span>
-    </div>
-    <PromotionVisibilityNotice notices={visibilityNotices} />
-    <small style={{ color: "#616161" }}>Design preview. Storefront visibility depends on the customer, schedule, qualifying products and promotion priority.</small>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{enabled.map(p => <s-button type="button" variant={active === p.id ? "primary" : "secondary"} key={p.id} aria-pressed={active === p.id} onClick={() => setPlacement(p.id)}>{p.title}</s-button>)}</div>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{(["desktop", "tablet", "mobile"] as const).map(item => <s-button type="button" variant={device === item ? "primary" : "secondary"} key={item} aria-pressed={device === item} onClick={() => setDevice(item)}>{item[0].toUpperCase() + item.slice(1)}</s-button>)}</div>
-    {onProductChange && <PolarisSelect label="Preview product" value={selectedProductId} onChange={event => onProductChange(event.currentTarget.value)}><s-option value="">Use eligible products</s-option>{productOptions.map(p => <s-option key={p.id} value={p.id}>{p.title}</s-option>)}</PolarisSelect>}
-    {loading && <small role="status">Loading eligible products…</small>}
-    {sample && <small>Example product — select qualifying products or collections to preview eligibility.</small>}
-    <div ref={ref} style={{ overflow: "auto", minWidth: 0, maxHeight: 650 }}>
-      {active ? <div style={{ width: "100%", height: height * scale, position: "relative" }}><iframe title={`${device} ${active} promotion preview`} sandbox="allow-scripts" allow="clipboard-write" srcDoc={document} style={{ position: "absolute", top: 0, left: 0, border: 0, width, height, transform: `scale(${scale})`, transformOrigin: "top left", background: "#f5f5f5" }} /></div> : <p>Select a website placement to preview the promotion.</p>}
-    </div>
-    <small style={{ color: "#616161" }}>{width}px storefront viewport. Theme fonts and surrounding page content may differ.</small>
-  </section>;
+  const document = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${promotionCss}${previewCss}</style></head><body>${markup}<script>${promotionUiScript}</script>${reportHeight}</body></html>`;
+  const visible = value.websiteEnabled && !visibilityNotices.some(notice => notice.tone === "warning");
+  const frameTitle = `${device} ${active} promotion preview`;
+  return <s-section heading="Website preview" accessibilityLabel="Website preview">
+    <s-stack direction="block" gap="base">
+      <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
+        <span role="status" aria-live="polite" aria-label={`Website promotion status: ${visible ? "visible on the website" : "not visible yet"}`}><s-badge tone={visible ? "success" : "warning"}>{visible ? "Visible on website" : "Not visible yet"}</s-badge></span>
+        {allowEnlarge && active && <s-button type="button" variant="tertiary" onClick={() => setEnlarged(true)}>View larger</s-button>}
+      </s-stack>
+      <PromotionVisibilityNotice notices={visibilityNotices} />
+      {enabled.length > 0 && <s-stack direction="inline" gap="small-200">{enabled.map(p => <s-button type="button" variant={active === p.id ? "primary" : "secondary"} key={p.id} aria-pressed={active === p.id} onClick={() => setPlacement(p.id)}>{p.title}</s-button>)}</s-stack>}
+      {enabled.length > 0 && <s-stack direction="inline" gap="small-200">{devices.map(item => <s-button type="button" variant={device === item.id ? "primary" : "secondary"} key={item.id} aria-pressed={device === item.id} onClick={() => setDevice(item.id)}>{item.label}</s-button>)}</s-stack>}
+      {onProductChange && <PolarisSelect label="Preview product" value={selectedProductId} onChange={event => onProductChange(event.currentTarget.value)}><s-option value="">Use eligible products</s-option>{productOptions.map(p => <s-option key={p.id} value={p.id}>{p.title}</s-option>)}</PolarisSelect>}
+      {loading && <s-text color="subdued">Loading eligible products…</s-text>}
+      {sample && <s-text color="subdued">Example product. Select qualifying products or collections to preview eligibility.</s-text>}
+      {active
+        ? <PreviewStage document={document} width={width} title={frameTitle} fallbackHeight={fallbackHeight} maxHeight={650} />
+        : <s-banner tone="info">Select a website block to preview it.</s-banner>}
+      <s-text color="subdued">Design preview at {width}px. Whether visitors see it depends on the customer, schedule, qualifying products and priority. Theme fonts and surrounding page content may differ.</s-text>
+    </s-stack>
+    {allowEnlarge && <ModalOverlay open={enlarged} heading="Website preview" size="large" onClose={() => setEnlarged(false)}>
+      <s-stack direction="block" gap="base">
+        <s-stack direction="inline" gap="small-200">{devices.map(item => <s-button type="button" variant={device === item.id ? "primary" : "secondary"} key={item.id} aria-pressed={device === item.id} onClick={() => setDevice(item.id)}>{item.label}</s-button>)}</s-stack>
+        <PreviewStage document={document} width={width} title={`Large ${frameTitle}`} fallbackHeight={fallbackHeight} maxHeight={720} />
+      </s-stack>
+      <s-button slot="secondary-actions" onClick={() => setEnlarged(false)}>Close</s-button>
+    </ModalOverlay>}
+  </s-section>;
 }
