@@ -2,7 +2,8 @@ import { getStatusTone } from "../design/statusTone";
 import { ShippingCountryPicker } from "./ShippingCountryPicker";
 import type { ShippingCountries } from "../services/shippingCountries.server";
 import { FormStep } from "./FormStep";
-import { buildDiscountMutation } from "../design/discountMutation";
+import { stepForIssue } from "../design/saveIssueStep";
+import { firstIssue, stepIssues } from "../design/stepValidation";
 import { summarisePromotion } from "../design/promotionSummary";
 import { PolarisSelect, PolarisCheckbox, PolarisRadioList, PolarisCheckboxList } from "./PolarisControls";
 import { ModalOverlay } from "./ModalOverlay";
@@ -19,7 +20,7 @@ import type { CreateDiscountDraft } from "../services/createPromotion.server";
 import type { EditorDiscountDraft } from "../design/editorDraft";
 import { toLocalDateTime } from "../design/editorDraft";
 import type { LinkResource, ResourceSearchItem, EligibilityResource, PromotionActionData } from "../design/editorTypes";
-import { defaultDesign, validateWebsite, type Placement, type WebsiteDraft } from "../design/design";
+import { defaultDesign, type Placement, type WebsiteDraft } from "../design/design";
 import { customerVisibilityMessage, storefrontVisibilityNotices } from "../design/storefrontVisibility";
 import { PromotionWebsiteEditor } from "./PromotionWebsiteEditor";
 import { PromotionPreview, type PreviewProduct } from "./PromotionPreview";
@@ -88,6 +89,7 @@ children: React.ReactNode;
 return <section aria-label={title} style={{ display: "grid", gap: 12, minWidth: 0 }}>{heading && <s-heading>{title}</s-heading>}{children}</section>;
 }
 
+const stepOrder: string[] = ["type", "value", "who", "schedule", "advanced", "website"];
 export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null }) {
 const d = initialDiscount;
 const w = initialDiscount?.method === "code" && initialDiscount.codeMode === "bulk" && initialWebsite ? { ...initialWebsite, websiteEnabled: false } : initialWebsite;
@@ -406,11 +408,13 @@ const summary = summarisePromotion({ discountType, method, discountCode, codeMod
 const selectedBlocks = [showHeaderBanner, showCollectionPage, showProductPage, showProductBadge].filter(Boolean).length;
 const websiteSummary = selectedBlocks ? `${websiteEnabled ? "Enabled" : "Draft"}, ${selectedBlocks} ${selectedBlocks === 1 ? "block" : "blocks"} selected` : "Not set up yet";
 const [openStep, setOpenStep] = useState<string | null>("type");
-const stepOrder = ["type", "value", "who", "schedule", "advanced", "website"];
+// A step only shows Complete or Needs attention once it has been opened. A saved promotion already has every step filled in.
+const [visitedSteps, setVisitedSteps] = useState<string[]>(() => promotionId ? stepOrder : ["type"]);
+useEffect(() => { if (openStep) setVisitedSteps(current => current.includes(openStep) ? current : [...current, openStep]); }, [openStep]);
 const stepTitles: Record<string, string> = { type: "Type and method", value: discountType === "shipping" ? "Countries" : "Discount value", who: "Who can use it", schedule: "Schedule", advanced: "Advanced options", website: "Website promotion" };
 const stepProps = (id: string) => {
   const index = stepOrder.indexOf(id); const following = stepOrder[index + 1];
-  return { id, number: index + 1, title: stepTitles[id], open: openStep === id, onToggle: (open: boolean) => setOpenStep(current => open ? id : current === id ? null : current), next: following ? { label: `Continue to ${stepTitles[following].toLowerCase()}`, onClick: () => setOpenStep(following) } : undefined };
+  return { id, number: index + 1, title: stepTitles[id], status: !visitedSteps.includes(id) ? undefined : issuesByStep[id as keyof typeof issuesByStep] ? (openStep === id ? undefined : "attention" as const) : ["type", "value", "who", "schedule"].includes(id) ? "complete" as const : undefined, locked: firstBlockedStep !== -1 && index > firstBlockedStep, open: openStep === id, onToggle: (open: boolean) => setOpenStep(current => open ? id : current === id ? null : current), next: following ? { label: `Continue to ${stepTitles[following].toLowerCase()}`, onClick: () => setOpenStep(following), disabled: Boolean(issuesByStep[id as keyof typeof issuesByStep]), hint: issuesByStep[id as keyof typeof issuesByStep] ? `Complete this step to continue: ${issuesByStep[id as keyof typeof issuesByStep]}` : undefined } : undefined };
 };
 
 const [visibilityNow, setVisibilityNow] = useState(() => Date.now());
@@ -531,17 +535,22 @@ void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(destination
 });
 
 // Everything Shopify would reject is caught here first, so Save only appears for a complete discount.
-const saveIssue = (() => {
-if (isCodeList && websiteEnabled) return "Keep code lists in website Draft status. Distribute the individual codes using the CSV download.";
-if (hasEndDate && !endDateTime) return "Choose an end date and time, or turn off the end date.";
-if (!promotionId || discountSnapshot !== savedDiscountSnapshot) {
-try {
-if (isCodeList && !promotionId) validateCodeOptions(discountDraft);
-buildDiscountMutation({ ...discountDraft, discountCode: isCodeList ? "CODE" : discountDraft.discountCode, startsAt: startDateTime ? new Date(startDateTime).toISOString() : null, endsAt: hasEndDate && endDateTime ? new Date(endDateTime).toISOString() : null });
-} catch (error) { return error instanceof Error ? error.message : "Check the discount settings."; }
-}
-return validateWebsite(websiteDraft, hasEndDate ? endDateTime : null)[0] ?? null;
-})();
+const toIso = (local: string) => { const date = new Date(local); return local && Number.isFinite(date.getTime()) ? date.toISOString() : null; };
+const issuesByStep = stepIssues({ draft: discountDraft, startsAt: toIso(startDateTime), endsAt: hasEndDate ? toIso(endDateTime) : null, hasEndDate, endDateTime, website: websiteDraft, isCodeList, checkRules: !promotionId || discountSnapshot !== savedDiscountSnapshot, creating: !promotionId });
+const saveIssueInfo = firstIssue(issuesByStep);
+const firstBlockedStep = stepOrder.findIndex(step => issuesByStep[step as keyof typeof issuesByStep]);
+// If an earlier step becomes incomplete while a later one is open, go back to it.
+useEffect(() => {
+const openIndex = openStep ? stepOrder.indexOf(openStep) : -1;
+if (firstBlockedStep !== -1 && openIndex > firstBlockedStep) setOpenStep(stepOrder[firstBlockedStep]);
+}, [openStep, firstBlockedStep]);
+const saveIssue = saveIssueInfo?.message ?? null;
+// A problem Shopify reports after saving opens the step it belongs to.
+useEffect(() => {
+const message = createFetcher.data?.error;
+const step = message ? stepForIssue(message) : null;
+if (step) setOpenStep(step);
+}, [createFetcher.data]);
 
 function savePromotion() {
 if (saveInFlight.current || createFetcher.state !== "idle" || assetsBusy) return;
@@ -614,7 +623,7 @@ fontWeight: 650,
 <div role="status" aria-label="Promotion summary" style={{ position: "sticky", top: 0, zIndex: 5, padding: "12px 16px", border: "1px solid #dedede", borderRadius: 12, background: "#f7f7f7", display: "grid", gap: 2 }}>
 <span style={{ fontSize: 12, color: "#616161" }}>Summary</span>
 <span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{summary.overview}</span>
-{saveIssue && <span style={{ fontSize: 12, color: "#8a5a00", overflowWrap: "anywhere" }}>To save: {saveIssue}</span>}
+{saveIssueInfo && <span style={{ fontSize: 12, color: "#8a5a00", overflowWrap: "anywhere" }}>To save: {saveIssueInfo.message} <s-button type="button" variant="tertiary" onClick={() => setOpenStep(saveIssueInfo.step)}>Go to {stepTitles[saveIssueInfo.step].toLowerCase()}</s-button></span>}
 </div>
 <FormStep {...stepProps("type")} summary={summary.type}>
 <FormSection title="Method">
