@@ -23,6 +23,8 @@ All promotion code lives in `app/modules/promotions/`:
 - `mappers/promotionMapper.ts` merges Shopify data + `PromotionSettings` into a `PromotionRecord`.
 - `design/` — placements (`header`, `collection`, `product`, `badge`), editor draft/validation shared by create and edit, priority logic.
 - `components/` — Polaris-based editor tabs; `PromotionPreview.tsx` exports `PromotionOffer` and CSS used by **both** the admin preview and server-rendered storefront markup, so they stay identical.
+- **The create/edit editor** is `components/PromotionEditor.tsx` (saving, discarding, step gating, layout) plus `components/editor/`: `useDiscountForm.ts` holds every discount and website field and the section handlers; `TypeStep`, `ValueStep` (with `ProductValue`, `OrderValue`, `BxgyValue`, `ShippingValue`), `WhoStep`, `ScheduleStep` and `AdvancedStep` render one step each from the form (`form: DiscountForm`); `EligibilityPickerModal`, `editorStyles.ts` and `shared.tsx` hold the rest. Which step a field belongs to is also encoded in `design/stepValidation.ts` (per-step checks that reuse the server's `buildDiscountMutation`) and `design/saveIssueStep.ts` (maps a message to a step), so keep them in step when adding a field.
+- `tests/editor-render.test.cjs` mounts the real editor in jsdom and compares its text and markup with `tests/editor-render.golden.json`. After an intended change to the editor's markup or text, re-record with `UPDATE_GOLDEN=1 node --test tests/editor-render.test.cjs`.
 - `services/storefront*.server.ts` — storefront selection (highest `priority`, then newest saved wins when placements overlap), eligibility, and snapshotting.
 
 **Storefront delivery has two paths** (both in `app/routes/` + `extensions/promotion-engine/`):
