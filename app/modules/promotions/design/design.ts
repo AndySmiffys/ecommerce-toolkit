@@ -41,7 +41,7 @@ export type PromotionDesign = PromotionStyle & {
   palette?: { onColour?: string; onWhite?: string; button?: string };
 };
 export type WebsiteDraft = {
-  included: boolean; websiteEnabled: boolean;
+  websiteEnabled: boolean;
   showProductPage: boolean; showCollectionPage: boolean; showProductBadge: boolean;
   showCountdown: boolean; showHeaderBanner: boolean;
   headline: string; body: string; badgeText: string; countdownText: string;
@@ -229,7 +229,7 @@ export function readWebsite(value: unknown): WebsiteDraft {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid website settings.");
   const source = value as Record<string, unknown>;
   const result = { design: readDesign(source.design ?? {}) } as WebsiteDraft;
-  for (const name of ["included", "websiteEnabled", "showProductPage", "showCollectionPage", "showProductBadge", "showCountdown", "showHeaderBanner"] as const) {
+  for (const name of ["websiteEnabled", "showProductPage", "showCollectionPage", "showProductBadge", "showCountdown", "showHeaderBanner"] as const) {
     if (typeof source[name] !== "boolean") throw new Error("Invalid website setting: " + name);
     result[name] = source[name] as boolean;
   }

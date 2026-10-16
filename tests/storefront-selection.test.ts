@@ -37,10 +37,10 @@ test("header check explains each eligibility skip without bypassing customer res
   const rows = Array.from({ length: 7 }, (_, i) => row(i + 1, 100 - i));
   rows[0].websiteEnabled = false;
   rows[1].showHeaderBanner = false;
-  rows[3].included = false;
+  nodes[3].discount.status = "EXPIRED";
   const result = await selectStorefrontPromotion(api(nodes), rows, context, true);
   assert.equal(result.selected?.id, rows[6].shopifyDiscountId);
-  assert.deepEqual(result.checks.map(check => check.reason), ["Website status is Draft.", "Header is not selected.", "Shopify discount status is SCHEDULED.", "Excluded from promotion sync.", "Requires an eligible logged-in customer.", "The promotion has ended.", "Selected for the header."]);
+  assert.deepEqual(result.checks.map(check => check.reason), ["Website status is Draft.", "Header is not selected.", "Shopify discount status is SCHEDULED.", "Shopify discount status is EXPIRED.", "Requires an eligible logged-in customer.", "The promotion has ended.", "Selected for the header."]);
 });
 test("proxy identity detects outdated responses and different saved data, with clear password-page results", async () => {
   const rows = [row(1, 100)];
@@ -53,4 +53,10 @@ test("proxy identity detects outdated responses and different saved data, with c
   assert.match(await check(Response.json({ html: "Old header" })), /older or different renderer/);
   assert.match(await check(new Response('<html>Password</html>', { headers: { 'Content-Type': 'text/html' } })), /password page/);
   assert.match(await check(Response.json({ version: storefrontVersion, revision, promotionId: "different" })), /selected promotion differs/);
+});
+test("an enabled promotion is shown even if its record once said it was excluded from the sync", async () => {
+  const rows = [{ ...row(1, 100), included: false }];
+  const result = await selectStorefrontPromotion(api([node(1)]), rows, context, true);
+  assert.equal(result.selected?.id, rows[0].shopifyDiscountId);
+  assert.equal(result.checks[0].reason, "Selected for the header.");
 });

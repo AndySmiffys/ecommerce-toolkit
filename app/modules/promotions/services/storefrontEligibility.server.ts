@@ -3,7 +3,6 @@ import type { Placement } from "../design/design";
 export type StorefrontContext = { placement: Placement; productId: string | null; variantId: string | null; collectionId: string | null; productCollectionIds: string[]; customerId: string | null; memberSegmentIds: string[]; now: number };
 export function storefrontIneligibility(promotion: PromotionRecord, context: StorefrontContext): string | null {
   if (promotion.method === "Code" && !promotion.code) return "No discount code is available.";
-  if (!promotion.settings.included) return "Excluded from promotion sync.";
   if (!promotion.settings.websiteEnabled) return "Website status is Draft.";
   if (promotion.status !== "ACTIVE") return `Shopify discount status is ${promotion.status}.`;
   if (promotion.startsAt && Date.parse(promotion.startsAt) > context.now) return "The promotion has not started.";

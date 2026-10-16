@@ -66,7 +66,7 @@ export default function App() {
         </Link>
 
         <Link to={appUrl("/app/storefront-priorities")}>
-          Storefront priorities
+          Storefront priority
         </Link>
       </NavMenu>
 

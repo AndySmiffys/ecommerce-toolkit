@@ -20,7 +20,6 @@ export function storefrontVisibilityNotices(value: WebsiteDraft, context: Storef
   const caution = (id: string, message: string) => notices.push({ id, tone: "warning", message });
   if (context.codeList) caution("codes", "Individual code lists are not displayed on the website. Keep this promotion in Draft and distribute the codes using the CSV download.");
   else if (!value.websiteEnabled) caution("draft", "Website status is Draft. This promotion will not appear on the website until it is Enabled and saved.");
-  if (!value.included) caution("sync", "Include in promotion sync is off. This promotion will not appear on the website until it is included and saved.");
   if (!placements.some(placement => value[placement.flag])) caution("blocks", "No website blocks are selected. Select at least one block to display this promotion.");
   const audience = customerVisibilityMessage(context.eligibility);
   if (audience) {

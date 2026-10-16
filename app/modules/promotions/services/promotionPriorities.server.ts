@@ -1,11 +1,13 @@
 import type { PrismaClient } from "@prisma/client";
 import db from "../../../db.server";
 import { promotionDiscountAliases, promotionDiscountId } from "../design/discountIdentity";
-import { getLatestPromotionSettings } from "./promotionSettings.server";
+import { attachPromotionSettings, getLatestPromotionSettings } from "./promotionSettings.server";
 import { getDiscount, type ShopifyAdminClient } from "./discount.server";
-import { mapDiscountToPromotion } from "../mappers/promotionMapper";
+import { getDiscounts } from "./discounts.server";
+import { mapDiscountToPromotion, mapDiscountsToPromotions } from "../mappers/promotionMapper";
 import type { PromotionRecord } from "../models/promotion";
-import { buildPriorityOverview } from "../design/priorityOverview";
+import { buildPriorityList } from "../design/priorityOverview";
+import { isRanked } from "../design/ranking";
 export async function loadPromotionPriorities(api: ShopifyAdminClient, shop: string, database: PrismaClient = db) {
   const settings = await getLatestPromotionSettings(shop, database);
   const promotions: PromotionRecord[] = [];
@@ -21,7 +23,18 @@ export async function loadPromotionPriorities(api: ShopifyAdminClient, shop: str
       promotions.push(promotion);
     } catch (error) { errors.push(`Could not load discount ${stored.shopifyDiscountId.split("/").pop()}: ${error instanceof Error ? error.message : "Please refresh."}`); }
   }
-  return { sections: buildPriorityOverview(promotions, Date.now()), errors };
+  return { ...buildPriorityList(promotions), errors };
+}
+
+/** Where one promotion sits in the priority order, from a single list of the shop's discounts. Null when it is not ranked. */
+export async function getPriorityPosition(api: ShopifyAdminClient, shop: string, promotionId: string, database: PrismaClient = db) {
+  const [settings, discounts] = await Promise.all([getLatestPromotionSettings(shop, database), getDiscounts(api)]);
+  const promotions = await attachPromotionSettings(shop, mapDiscountsToPromotions(discounts), database);
+  const byId = new Map(promotions.map(promotion => [promotionDiscountId(promotion.id), promotion]));
+  // Settings come newest first within a priority, which is how the storefront breaks ties.
+  const ranked = settings.map(row => byId.get(row.shopifyDiscountId)).filter((promotion): promotion is PromotionRecord => Boolean(promotion) && isRanked(promotion!));
+  const index = ranked.findIndex(promotion => promotionDiscountId(promotion.id) === promotionDiscountId(promotionId));
+  return index === -1 ? null : { position: index + 1, total: ranked.length };
 }
 type PriorityChange = { id: string; priority: number; expectedPriority: number };
 export async function savePromotionPriorities(shop: string, input: unknown, database: PrismaClient = db) {

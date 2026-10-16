@@ -80,14 +80,29 @@ save to apply changes. They do not block saving a restricted promotion.
 The preview shows the design even when the promotion is hidden. Priority only
 chooses between promotions eligible for the current visitor and placement.
 
-## A saved priority does not change the storefront
+## Storefront priority
 
-Open **Storefront priorities** from the app navigation. This page lists saved
-promotions for Header, Collection, Product and Product badge in priority order,
-with their audience and visibility. Edit a priority directly in a list and use
-the top Save/Discard bar. A promotion shares one priority across its selected
-blocks, and the lists reorder after saving. Saving here changes only priorities;
-it does not change discount rules, messages, designs or visibility.
+Open **Storefront priority** from the app navigation. It is one drag-and-drop
+order for the whole storefront. When more than one promotion qualifies for the
+same place (the header, a collection page, a product page or a product card),
+the one nearest the top is shown. Customer eligibility and dates are checked
+first; the order never bypasses them.
+
+- **Reordering:** drag a promotion by its handle, or use Move up and Move down,
+  then use the top Save/Discard bar. Saving gives the list the priorities N down
+  to 1 and changes nothing else: not discount rules, messages, designs or
+  visibility.
+- **Who is listed:** only Active and Scheduled promotions that can appear on the
+  website: website status Enabled and at least one block
+  selected. Each row names its blocks, audience and schedule. Other promotions
+  are listed underneath with the reason they are not ranked, and join the order
+  when they can.
+- **New promotions:** a promotion that joins the order, whether it is newly
+  created or edited so that it now qualifies, starts at the top. Saving it takes
+  you to this page with it pointed out so you can place it. Promotions that
+  already rank keep their place when they are edited.
+- **From a promotion:** the overview at the top shows "Position 2 of 5" with a
+  Change priority link to this page, next to the Website promotion status.
 
 Saved records whose discounts Shopify no longer returns are omitted from these
 lists without deleting their saved designs. Genuine API failures remain visible.
@@ -106,7 +121,7 @@ is retained, check the connection before changing the ranking code:
    the `/apps/promotion-engine?placement=header...` request in Network. Check its
    response and whether it reaches the current app server. Seeing old content
    does not prove it is coming from the same server/database as the editor.
-4. Confirm the higher-priority promotion is included, website Enabled, has Header
+4. Confirm the higher-priority promotion is website Enabled, has Header
    selected, is active within its schedule, and is eligible for the current
    customer. Priority orders eligible promotions; it does not bypass eligibility.
 

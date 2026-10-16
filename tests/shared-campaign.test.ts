@@ -5,7 +5,7 @@ import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign,
 
 function draft(flags: Partial<WebsiteDraft> = {}): WebsiteDraft {
   return {
-    included: true, websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showCountdown: false, showHeaderBanner: true,
+    websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showCountdown: false, showHeaderBanner: true,
     headline: "", body: "", badgeText: "20% OFF", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#000000", badgeColour: "#ff0000",
     priority: 0, design: defaultDesign(), ...flags,
   };

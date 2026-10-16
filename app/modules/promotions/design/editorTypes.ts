@@ -47,6 +47,8 @@ success: boolean;
 savedId?: string;
 codeListLocked?: boolean;
 redirectId?: string;
+/** The saved promotion has just entered the priority order, so the merchant should place it. */
+rankEntry?: boolean;
 image?: {
 id: string;
 url: string;

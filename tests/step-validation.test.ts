@@ -5,7 +5,7 @@ import type { CreateDiscountDraft } from "../app/modules/promotions/design/disco
 import { firstIssue, placeholderDraft, stepIssues, type StepValidationInput } from "../app/modules/promotions/design/stepValidation";
 
 const website: WebsiteDraft = {
-  included: true, websiteEnabled: false, showProductPage: false, showCollectionPage: false, showProductBadge: false, showCountdown: false, showHeaderBanner: false,
+  websiteEnabled: false, showProductPage: false, showCollectionPage: false, showProductBadge: false, showCountdown: false, showHeaderBanner: false,
   headline: "", body: "", badgeText: "", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#000000", badgeColour: "#d72c0d", priority: 0, design: defaultDesign(),
 };
 function input(draft: CreateDiscountDraft, change: Partial<StepValidationInput> = {}): StepValidationInput {

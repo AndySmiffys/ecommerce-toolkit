@@ -1,4 +1,4 @@
-import { loadPromotionPriorities, savePromotionPriorities } from "../app/modules/promotions/services/promotionPriorities.server";
+import { getPriorityPosition, loadPromotionPriorities, savePromotionPriorities } from "../app/modules/promotions/services/promotionPriorities.server";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -11,14 +11,14 @@ import { createShopifyPromotion, type CreateDiscountDraft } from "../app/modules
 import { getDiscount } from "../app/modules/promotions/services/discount.server";
 import { getDiscounts } from "../app/modules/promotions/services/discounts.server";
 import { buildUpdateDiscountMutation } from "../app/modules/promotions/services/updatePromotion.server";
-import { attachPromotionSettings, updatePromotionWebsiteSettings, getStorefrontPromotionSettings } from "../app/modules/promotions/services/promotionSettings.server";
+import { attachPromotionSettings, priorityForSave, updatePromotionWebsiteSettings, getStorefrontPromotionSettings } from "../app/modules/promotions/services/promotionSettings.server";
 import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promotionMapper";
 import type { ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
 
 const shop = "design-test.myshopify.com";
 function website(): WebsiteDraft {
   return {
-    included: true, websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showCountdown: true, showHeaderBanner: true,
+    websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showCountdown: true, showHeaderBanner: true,
     headline: "Halloween campaign", body: "Costumes for the whole family", badgeText: "20% OFF", countdownText: "Hurry, ends in", buttonText: "Shop costumes", buttonUrl: "/collections/halloween",
     backgroundColour: "#123456", textColour: "#fedcba", badgeColour: "#abcd12", priority: 17,
     design: {
@@ -168,6 +168,45 @@ test("priority lists skip missing Shopify discounts without deleting their desig
   } }, shop, database);
   assert.equal(response.errors.length, 1);
   assert.match(response.errors[0], /temporarily unavailable/);
-  for (const section of response.sections) assert.deepEqual(section.rows.map(row => row.routeId), ["601"]);
+  assert.deepEqual(response.rows.map(row => row.routeId), ["601"]);
+  assert.deepEqual(response.hidden, []);
   assert.equal(await database.promotionSettings.count({ where: { shop } }), 3);
+}));
+
+test("a save keeps a promotion's place, and a promotion entering the order starts above every other", async () => withDatabase(async database => {
+  const settings = (priority: number) => ({ ...websiteStorage(website()), priority });
+  await updatePromotionWebsiteSettings(shop, "gid://shopify/DiscountNode/801", settings(17), database);
+  await updatePromotionWebsiteSettings(shop, "gid://shopify/DiscountNode/802", settings(5), database);
+  await updatePromotionWebsiteSettings("other.myshopify.com", "gid://shopify/DiscountNode/803", settings(900), database);
+  assert.equal(await priorityForSave(shop, "gid://shopify/DiscountNode/802", false, database), 5, "an edit does not move a promotion");
+  assert.equal(await priorityForSave(shop, "gid://shopify/DiscountCodeNode/802", false, database), 5, "typed ids find the same promotion");
+  assert.equal(await priorityForSave(shop, "gid://shopify/DiscountNode/899", false, database), 0, "a new promotion that is not ranked has no priority");
+  assert.equal(await priorityForSave(shop, "gid://shopify/DiscountNode/899", true, database), 18, "entering the order means the top of this shop's order");
+  assert.equal(await priorityForSave(shop, "gid://shopify/DiscountNode/801", true, database), 18, "a promotion that rejoins the order goes to the top too");
+  await updatePromotionWebsiteSettings(shop, "gid://shopify/DiscountNode/804", settings(9999), database);
+  assert.equal(await priorityForSave(shop, "gid://shopify/DiscountNode/899", true, database), 9999, "the top is capped at the largest priority");
+}));
+
+test("a promotion's position comes from the shop's ranked promotions only", async () => withDatabase(async database => {
+  const ranked = (id: number, priority: number) => updatePromotionWebsiteSettings(shop, `gid://shopify/DiscountNode/${id}`, { ...websiteStorage(website()), priority }, database);
+  await ranked(701, 10); await ranked(702, 30); await ranked(703, 20); await ranked(704, 40); await ranked(705, 50);
+  await updatePromotionWebsiteSettings(shop, "gid://shopify/DiscountNode/706", { ...websiteStorage({ ...website(), websiteEnabled: false }), priority: 60 }, database);
+  const status = (id: number, value: string) => { const base = node(`gid://shopify/DiscountNode/${id}`); return { ...base, discount: { ...base.discount, status: value } }; };
+  const api = { graphql: async () => Response.json({ data: { discountNodes: { nodes: [status(701, "ACTIVE"), status(702, "SCHEDULED"), status(703, "ACTIVE"), status(704, "EXPIRED"), status(705, "ACTIVE"), status(706, "ACTIVE")] } } }) };
+  assert.deepEqual(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/705", database), { position: 1, total: 4 });
+  assert.deepEqual(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/702", database), { position: 2, total: 4 });
+  assert.deepEqual(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/701", database), { position: 4, total: 4 });
+  assert.equal(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/704", database), null, "an ended promotion has no position");
+  assert.equal(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/706", database), null, "a Draft promotion has no position");
+}));
+
+test("an enabled promotion syncs: an old excluded flag no longer hides it or keeps it out of the order", async () => withDatabase(async database => {
+  const id = "gid://shopify/DiscountNode/901";
+  await updatePromotionWebsiteSettings(shop, id, websiteStorage(website()), database);
+  await database.promotionSettings.updateMany({ where: { shop }, data: { included: false } });
+  assert.equal((await getStorefrontPromotionSettings(shop, "showHeaderBanner", database)).length, 1, "the storefront still gets it");
+  const response = await loadPromotionPriorities({ graphql: async () => Response.json({ data: { discountNode: node(id) } }) }, shop, database);
+  assert.deepEqual(response.rows.map(row => row.routeId), ["901"], "and it is in the priority order");
+  await updatePromotionWebsiteSettings(shop, id, websiteStorage(website()), database);
+  assert.equal((await database.promotionSettings.findFirstOrThrow({ where: { shop } })).included, true, "saving it again clears the old flag");
 }));

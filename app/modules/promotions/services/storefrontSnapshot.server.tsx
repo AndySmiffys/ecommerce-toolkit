@@ -14,7 +14,7 @@ const shortId = (id: string) => id.split("/").pop()!;
 // This is public storefront data. Never publish customer IDs, segment IDs or
 // restricted offer content. Liquid checks dates and product/collection scope.
 export function publicSnapshotEntry(promotion: PromotionRecord, now = Date.now()) {
-  if (!promotion.settings.included || !promotion.settings.websiteEnabled ||
+  if (!promotion.settings.websiteEnabled ||
       !promotion.shopify.customers.appliesToAllCustomers ||
       !["ACTIVE", "SCHEDULED"].includes(promotion.status) ||
       (promotion.endsAt && Date.parse(promotion.endsAt) <= now) ||
@@ -49,7 +49,7 @@ export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: st
     if (!installation) throw new Error("Shopify app installation could not be read.");
     const rows = await readSettings(shop);
     const entries = [];
-    for (const row of rows.filter(row => row.included && row.websiteEnabled)) {
+    for (const row of rows.filter(row => row.websiteEnabled)) {
       const node = await getDiscount(admin, row.shopifyDiscountId, 250);
       if (!node || (node.discount.codesCount?.count ?? node.discount.codes?.nodes.length ?? 0) > 1) continue;
       const promotion = mapDiscountToPromotion(node);

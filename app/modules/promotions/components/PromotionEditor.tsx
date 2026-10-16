@@ -7,9 +7,11 @@ import { AdvancedStep } from "./editor/AdvancedStep";
 import { EligibilityPickerModal } from "./editor/EligibilityPickerModal";
 import { editorCss } from "./editor/editorStyles";
 import { formatPreviewPrice, stepOrder } from "./editor/shared";
-import { getStatusTone } from "../design/statusTone";
 import type { ShippingCountries } from "../services/shippingCountries.server";
 import { FormStep } from "./FormStep";
+import { PriorityNote, type PriorityInfo } from "./PriorityNote";
+import { PromotionOverview } from "./PromotionOverview";
+import { canRank, rankBlocker } from "../design/ranking";
 import { stepForIssue } from "../design/saveIssueStep";
 import { firstIssue, stepIssues } from "../design/stepValidation";
 import { summarisePromotion } from "../design/promotionSummary";
@@ -31,10 +33,13 @@ import type { action as previewAction } from "../../../routes/app.promotion-prev
 
 
 
-export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null }) {
+export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries, priorityInfo }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null; priorityInfo?: PriorityInfo }) {
 const form = useDiscountForm({ initialDiscount, initialWebsite });
 const { shopify, discountType, config, method, setMethod, discountCode, setDiscountCode, codeMode, setCodeMode, codeCount, setCodeCount, codePrefix, setCodePrefix, codeSuffix, setCodeSuffix, codeListTitle, setCodeListTitle, isCodeList, automaticTitle, setAutomaticTitle, valueType, setValueType, discountValue, setDiscountValue, appliesTo, setAppliesTo, setResourceSearch, selectedProducts, setSelectedProducts, selectedCollections, setSelectedCollections, buySelection, setBuySelection, getSelection, setGetSelection, usesPerOrder, setUsesPerOrder, countryMode, setCountryMode, countryCodes, setCountryCodes, excludeShippingPrice, setExcludeShippingPrice, maximumShippingPrice, setMaximumShippingPrice, buyRequirement, setBuyRequirement, buyQuantity, setBuyQuantity, buyAmount, setBuyAmount, buyAppliesTo, setBuyAppliesTo, getQuantity, setGetQuantity, getAppliesTo, setGetAppliesTo, rewardType, setRewardType, rewardValue, setRewardValue, maxUsesPerOrder, setMaxUsesPerOrder, minimumRequirement, setMinimumRequirement, minimumPurchaseAmount, setMinimumPurchaseAmount, minimumQuantity, setMinimumQuantity, limitTotalUses, setLimitTotalUses, totalUsageLimit, setTotalUsageLimit, limitOncePerCustomer, setLimitOncePerCustomer, combineProductDiscounts, setCombineProductDiscounts, combineOrderDiscounts, setCombineOrderDiscounts, combineShippingDiscounts, setCombineShippingDiscounts, productCombinationMode, setProductCombinationMode, selectedCombinationTags, setSelectedCombinationTags, startDateTime, setStartDateTime, hasEndDate, setHasEndDate, endDateTime, setEndDateTime, eligibility, setEligibility, setEligibilitySearch, selectedEligibility, setSelectedEligibility, setShowEligibilityPicker, websiteEnabled, showProductPage, showCollectionPage, showProductBadge, showHeaderBanner, websiteDraft, updateWebsite, discountDraft } = form;
 const creationRequestKey = useRef<string>();
+// Whether the saved promotion is in the priority order, so a save that puts it there can take the merchant to place it.
+const wasRanked = useRef(Boolean(promotionId && initialWebsite && canRank({ endsAt: initialDiscount?.endsAt ?? null, website: initialWebsite })));
+const submittedRankable = useRef(false);
 const [previewProductId, setPreviewProductId] = useState("");
 const [isPreviewDrawerOpen, setIsPreviewDrawerOpen] = useState(false);
   const appUrl = useEmbeddedAppUrl();
@@ -161,9 +166,9 @@ if (createFetcher.state !== "idle" || !createFetcher.data || handledResponse.cur
 saveInFlight.current = false;
 handledResponse.current = createFetcher.data;
 if (createFetcher.data?.savedId) setCreatedDiscountId(createFetcher.data.savedId);
-if (createFetcher.data?.success) { if (promotionId) { setSavedSnapshot(submittedSnapshot.current); setSavedDiscountSnapshot(submittedDiscountSnapshot.current); shopify.toast.show("Promotion saved"); } else if (createFetcher.data.redirectId) {
+if (createFetcher.data?.success) { wasRanked.current = submittedRankable.current; if (promotionId) { setSavedSnapshot(submittedSnapshot.current); setSavedDiscountSnapshot(submittedDiscountSnapshot.current); shopify.toast.show("Promotion saved"); if (createFetcher.data.rankEntry) void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(appUrl(`/app/storefront-priorities?highlight=${promotionId.split("/").pop()}`))); } else if (createFetcher.data.redirectId) {
 setSavedSnapshot(submittedSnapshot.current);
-const destination = appUrl(`/app/promotions/${createFetcher.data.redirectId}`);
+const destination = createFetcher.data.rankEntry ? appUrl(`/app/storefront-priorities?highlight=${createFetcher.data.redirectId}`) : appUrl(`/app/promotions/${createFetcher.data.redirectId}`);
 shopify.toast.show("Promotion created");
 void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(destination));
 } }
@@ -180,6 +185,8 @@ const openIndex = openStep ? stepOrder.indexOf(openStep) : -1;
 if (firstBlockedStep !== -1 && openIndex > firstBlockedStep) setOpenStep(stepOrder[firstBlockedStep]);
 }, [openStep, firstBlockedStep]);
 const saveIssue = saveIssueInfo?.message ?? null;
+const rankInput = { endsAt: hasEndDate ? toIso(endDateTime) : null, website: websiteDraft };
+const rankable = canRank(rankInput);
 // A problem Shopify reports after saving opens the step it belongs to.
 useEffect(() => {
 const message = createFetcher.data?.error;
@@ -199,7 +206,8 @@ const discount = { ...discountDraft, startsAt: startDateTime ? new Date(startDat
 creationRequestKey.current ??= window.crypto.randomUUID();
 submittedSnapshot.current = snapshot;
 submittedDiscountSnapshot.current = discountSnapshot;
-createFetcher.submit({ intent: promotionId ? "updatePromotion" : "createPromotion", payload:JSON.stringify({ requestKey: creationRequestKey.current, discount, website:websiteDraft, savedId:createdDiscountId, updateRules: discountSnapshot !== savedDiscountSnapshot }) }, { method:"post" });
+submittedRankable.current = rankable;
+createFetcher.submit({ intent: promotionId ? "updatePromotion" : "createPromotion", payload:JSON.stringify({ requestKey: creationRequestKey.current, discount, website:websiteDraft, savedId:createdDiscountId, updateRules: discountSnapshot !== savedDiscountSnapshot, rankEntry: rankable && !wasRanked.current }) }, { method:"post" });
 }
 
 return (
@@ -217,7 +225,19 @@ margin: 0,
 }}
 >
 <s-stack direction="block" gap="large">
-{promotionId && <div><s-badge tone={getStatusTone(shopifyStatus)}>{shopifyStatus || "Promotion"}</s-badge></div>}
+
+<PromotionOverview
+title={method === "code" ? (isCodeList ? codeListTitle || "New code list" : discountCode || "New discount code") : automaticTitle || "New automatic discount"}
+typeLabel={config.title}
+discountStatus={promotionId ? shopifyStatus : undefined}
+websiteVisible={websiteEnabled && !visibilityNotices.some(notice => notice.tone === "warning")}
+websiteEnabled={websiteEnabled}
+onWebsiteEnabledChange={enabled => updateWebsite({ ...websiteDraft, websiteEnabled: enabled && !isCodeList })}
+websiteLocked={isCodeList}
+summary={summary.overview}
+priority={<PriorityNote rankable={rankable} blocker={rankBlocker(rankInput)} wasRanked={wasRanked.current} info={priorityInfo} routeId={promotionId?.split("/").pop()} />}
+issue={saveIssueInfo ? { message: saveIssueInfo.message, stepTitle: stepTitles[saveIssueInfo.step].toLowerCase(), onGo: () => setOpenStep(saveIssueInfo.step) } : null}
+/>
 
 <div
 className="create-discount-layout"
@@ -243,23 +263,8 @@ alignSelf: "start",
 </aside>
 
 <div>
-<div
-style={{
-marginBottom: "10px",
-color: "#202223",
-fontSize: "14px",
-fontWeight: 650,
-}}
->
-{config.title}
-</div>
 
 <s-stack direction="block" gap="large">
-<div role="status" aria-label="Promotion summary" style={{ position: "sticky", top: 0, zIndex: 5, padding: "12px 16px", border: "1px solid #dedede", borderRadius: 12, background: "#f7f7f7", display: "grid", gap: 2 }}>
-<span style={{ fontSize: 12, color: "#616161" }}>Summary</span>
-<span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{summary.overview}</span>
-{saveIssueInfo && <span style={{ fontSize: 12, color: "#8a5a00", overflowWrap: "anywhere" }}>To save: {saveIssueInfo.message} <s-button type="button" variant="tertiary" onClick={() => setOpenStep(saveIssueInfo.step)}>Go to {stepTitles[saveIssueInfo.step].toLowerCase()}</s-button></span>}
-</div>
 <FormStep {...stepProps("type")} summary={summary.type}>
 <TypeStep form={form} promotionId={promotionId} codeListLocked={codeListLocked} codeBatch={codeBatch} />
 </FormStep>
@@ -283,7 +288,7 @@ fontWeight: 650,
 
 
 <FormStep {...stepProps("website")} optional summary={websiteSummary}>
-<PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} publicationDisabled={isCodeList} value={websiteDraft} onChange={value => updateWebsite(isCodeList ? { ...value, websiteEnabled: false } : value)} endsAt={hasEndDate ? endDateTime : null} onBusyChange={setAssetsBusy} />
+<PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} value={websiteDraft} onChange={value => updateWebsite(isCodeList ? { ...value, websiteEnabled: false } : value)} endsAt={hasEndDate ? endDateTime : null} onBusyChange={setAssetsBusy} />
 </FormStep>
 {previewFetcher.data?.error && <s-banner tone="warning">{previewFetcher.data.error}</s-banner>}
 {!promotionId && createdDiscountId && <s-button href={appUrl(`/app/promotions/${createdDiscountId.split("/").pop()}`)} variant="secondary">Open saved promotion</s-button>}

@@ -1,6 +1,6 @@
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useRevalidator } from "react-router";
+import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { authenticate } from "../shopify.server";
 import { loadPromotionPriorities, savePromotionPriorities } from "../modules/promotions/services/promotionPriorities.server";
 import { PromotionPriorityManager } from "../modules/promotions/components/PromotionPriorityManager";
@@ -20,7 +20,8 @@ export async function action({ request }: ActionFunctionArgs) {
   } catch (error) { return { success: false, error: (prioritiesSaved ? "Priorities were saved, but storefront sync failed. Open Promotions to retry the sync. " : "") + (error instanceof Error ? error.message : "The priorities could not be saved.") }; }
 }
 export default function StorefrontPriorities() {
-  const { sections, errors } = useLoaderData<typeof loader>();
+  const { rows, hidden, errors } = useLoaderData<typeof loader>();
   const refresh = useRevalidator();
-  return <PromotionPriorityManager sections={sections} errors={errors} refreshing={refresh.state !== "idle"} onRefresh={() => refresh.revalidate()} />;
+  const [params] = useSearchParams();
+  return <PromotionPriorityManager rows={rows} hidden={hidden} errors={errors} highlight={params.get("highlight")} refreshing={refresh.state !== "idle"} onRefresh={() => refresh.revalidate()} />;
 }

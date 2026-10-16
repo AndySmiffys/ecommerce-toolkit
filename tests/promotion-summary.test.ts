@@ -42,6 +42,7 @@ test("method, audience, limits and schedule are all reflected, and gaps are call
   const limited = summary({ minimumRequirement: "amount", minimumPurchaseAmount: "30", limitTotalUses: true, totalUsageLimit: "100", limitOncePerCustomer: true, combines: true });
   assert.equal(limited.advanced, "minimum spend £30, 100 uses in total, once per customer, combines with other discounts");
   assert.match(limited.overview, /minimum spend £30 · 100 uses in total · starts/);
+  assert.equal(summary({ limitTotalUses: true, totalUsageLimit: "1" }).advanced, "1 use in total", "a single use is not plural");
   assert.equal(summary({ startDateTime: "", hasEndDate: false }).schedule, "Starts when saved, no end date");
   assert.equal(summary({ hasEndDate: true, endDateTime: "" }).schedule, "Starts 20 Oct 2026, end date not set");
 });

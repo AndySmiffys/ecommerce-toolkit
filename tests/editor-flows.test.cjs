@@ -19,6 +19,7 @@ function savedDraft(placeholderDraft, change = {}) {
   };
 }
 const savedProps = draft => ({ ...base, promotionId: 'gid://shopify/DiscountNode/1', shopifyStatus: 'ACTIVE', initialDiscount: draft });
+const overview = view => find(view.container, '[aria-label="Promotion overview"]');
 const field = (view, label) => find(view.container, `s-text-field[label="${label}"]`);
 const value = view => find(step(view.container, 'value'), 's-number-field[label="Value"]');
 
@@ -204,5 +205,160 @@ test('a generated code list asks for its settings and keeps the website in draft
   assert.match(view.container.textContent, /Keep this promotion in website Draft status/);
   await type(find(view.container, 's-text-field[label="Code list name"]'), 'Halloween');
   assert.ok(!byText(view.container, 's-button', 'Continue to discount value').hasAttribute('disabled'), 'a named list can continue');
+  await view.unmount();
+});
+
+const site = (defaultDesign, change = {}) => ({
+  websiteEnabled: true, showProductPage: false, showCollectionPage: false, showProductBadge: false, showCountdown: false, showHeaderBanner: true,
+  headline: 'Halloween', body: '', badgeText: '', countdownText: '', buttonText: '', buttonUrl: '', backgroundColour: '#ffffff', textColour: '#000000', badgeColour: '#d72c0d', priority: 3, design: defaultDesign(), ...change,
+});
+
+test('a new promotion that can appear on the website sends the merchant to place it in the priority order', async () => {
+  const { PromotionEditor } = await loaded();
+  toasts.length = 0;
+  window.shopify.resourcePicker = async () => [halloween];
+  const view = await mount(PromotionEditor, base, '/app/promotions/new?type=product', { respond: intent => intent === 'createPromotion' ? { success: true, savedId: 'gid://shopify/DiscountNode/9', redirectId: '9', rankEntry: true } : {} });
+  await type(field(view, 'Discount code'), 'spooky20');
+  await click(byText(view.container, 's-button', 'Continue to discount value'));
+  await type(value(view), '20');
+  await click(byText(step(view.container, 'value'), 's-button', 'Browse'));
+  assert.match(overview(view).textContent, /Priority: Not in the order\. Its website status is Draft\./, 'a draft website is outside the order');
+
+  await change(find(view.container, 's-select[label="Website promotion status"]'), 'enabled');
+  await check(find(view.container, 's-checkbox[label="Header"]'));
+  await type(find(view.container, 's-text-field[label="Headline"]'), 'Frightfully good fun');
+  assert.match(overview(view).textContent, /Priority: You will place it after saving\. It starts at the top of the order\./);
+
+  await click(saveButton(view));
+  await settle(100);
+  const [request] = view.requests.filter(item => item.intent === 'createPromotion');
+  assert.equal(request.payload.rankEntry, true, 'the save says the promotion is entering the order');
+  assert.deepEqual(toasts, ['Promotion created']);
+  assert.equal(view.router.state.location.pathname, '/app/storefront-priorities', 'the merchant is taken to the priority page');
+  assert.equal(view.router.state.location.search, '?highlight=9', 'with the new promotion pointed out');
+  await view.unmount();
+});
+
+test('a new promotion that cannot appear on the website goes straight to the promotion', async () => {
+  const { PromotionEditor } = await loaded();
+  window.shopify.resourcePicker = async () => [halloween];
+  const view = await mount(PromotionEditor, base, '/app/promotions/new?type=product', { respond: intent => intent === 'createPromotion' ? { success: true, savedId: 'gid://shopify/DiscountNode/9', redirectId: '9', rankEntry: false } : {} });
+  await type(field(view, 'Discount code'), 'spooky20');
+  await click(byText(view.container, 's-button', 'Continue to discount value'));
+  await type(value(view), '20');
+  await click(byText(step(view.container, 'value'), 's-button', 'Browse'));
+  await click(saveButton(view));
+  await settle(100);
+  const [request] = view.requests.filter(item => item.intent === 'createPromotion');
+  assert.equal(request.payload.rankEntry, false);
+  assert.equal(view.router.state.location.pathname, '/app/promotions/9');
+  await view.unmount();
+});
+
+test('editing a promotion so that it joins the order takes the merchant to place it', async () => {
+  const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
+  toasts.length = 0;
+  const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(defaultDesign, { websiteEnabled: false }) }, '/app/promotions/new', { respond: intent => intent === 'updatePromotion' ? { success: true, rankEntry: true } : {} });
+  assert.match(overview(view).textContent, /Its website status is Draft\./);
+  await change(find(view.container, 's-select[label="Website promotion status"]'), 'enabled');
+  assert.match(overview(view).textContent, /You will place it after saving/);
+  await click(saveButton(view));
+  await settle(100);
+  const [request] = view.requests.filter(item => item.intent === 'updatePromotion');
+  assert.equal(request.payload.rankEntry, true);
+  assert.equal(request.payload.website.websiteEnabled, true);
+  assert.equal(request.payload.website.priority, 3, 'the editor sends no new priority; the server decides it');
+  assert.deepEqual(toasts, ['Promotion saved']);
+  assert.equal(view.router.state.location.pathname, '/app/storefront-priorities');
+  assert.equal(view.router.state.location.search, '?highlight=1');
+  await view.unmount();
+});
+
+test('a promotion already in the order shows its position, links to change it, and stays put when saved', async () => {
+  const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
+  const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(defaultDesign), priorityInfo: { position: 2, total: 5 } }, '/app/promotions/new');
+  const note = overview(view);
+  assert.match(note.textContent, /Priority: position 2 of 5/);
+  const link = byText(note, 's-button', 'Change priority');
+  assert.ok(link.getAttribute('href').endsWith('/app/storefront-priorities?highlight=1'), 'the link goes to the priority page with this promotion pointed out');
+  assert.doesNotMatch(note.textContent, /You will place it after saving/);
+
+  await type(value(view), '25');
+  await click(saveButton(view));
+  await settle(100);
+  const [request] = view.requests.filter(item => item.intent === 'updatePromotion');
+  assert.equal(request.payload.rankEntry, false, 'staying in the order is not entering it');
+  assert.equal(view.router.state.location.pathname, '/app/promotions/new', 'the merchant stays on the promotion');
+  await view.unmount();
+});
+
+test('the priority number is no longer an editor field', async () => {
+  const { PromotionEditor } = await loaded();
+  const view = await mount(PromotionEditor, base, '/app/promotions/new?type=product');
+  assert.equal(find(view.container, 's-number-field[label="Promotion priority"]'), null);
+  assert.doesNotMatch(view.container.textContent, /Higher numbers take precedence/);
+  await view.unmount();
+});
+
+test('the overview gathers the name, statuses, summary, priority and what is left to do at the top', async () => {
+  const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
+  const created = await mount(PromotionEditor, base, '/app/promotions/new?type=product');
+  const fresh = overview(created).textContent;
+  assert.match(fresh, /New discount code/);
+  assert.match(fresh, /Amount off products/);
+  assert.match(fresh, /Not saved yet/);
+  assert.match(fresh, /Not visible on website/);
+  assert.match(fresh, /Priority: Not in the order/);
+  assert.match(fresh, /To save: Enter a discount code/);
+  await click(byText(overview(created), 's-button', 'Go to type and method'));
+  assert.ok(step(created.container, 'type').hasAttribute('open'), 'the shortcut opens the step that needs attention');
+  await type(field(created, 'Discount code'), 'spooky20');
+  assert.match(overview(created).textContent, /SPOOKY20|spooky20/);
+  assert.equal(findAll(created.container, '[aria-label="Promotion summary"]').length, 1, 'there is a single summary');
+  await created.unmount();
+
+  const saved = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(defaultDesign), priorityInfo: { position: 1, total: 3 } }, '/app/promotions/new');
+  const live = overview(saved).textContent;
+  assert.match(live, /SAVE20/);
+  assert.match(live, /Active/);
+  assert.match(live, /Visible on website/);
+  assert.match(live, /Priority: position 1 of 3/);
+  assert.doesNotMatch(live, /To save:/);
+  assert.equal(find(saved.container, 's-checkbox[label="Include in promotion sync"]'), null, 'there is no sync checkbox: an enabled promotion syncs');
+  await saved.unmount();
+});
+
+test('the website status is changed in the overview, which the website step and the preview no longer carry', async () => {
+  const { PromotionEditor } = await loaded();
+  const view = await mount(PromotionEditor, base, '/app/promotions/new?type=product');
+  const select = () => find(overview(view), 's-select[label="Website promotion status"]');
+  assert.ok(select(), 'the control is in the overview');
+  assert.equal(select().value, 'draft');
+  assert.equal(find(step(view.container, 'website'), 's-select[label="Website promotion status"]'), null, 'the website step no longer has it');
+  const preview = find(view.container, 's-section[heading="Website preview"]');
+  assert.doesNotMatch(preview.textContent, /Visible on website|Not visible yet|Not visible on website/, 'the preview carries no status badge');
+  assert.match(overview(view).textContent, /Not visible on website/);
+
+  await change(select(), 'enabled');
+  assert.equal(select().value, 'enabled', 'the choice is kept');
+  assert.match(overview(view).textContent, /Not visible on website/, 'enabled with no block chosen is still not visible');
+  await check(find(view.container, 's-checkbox[label="Header"]'));
+  await type(find(view.container, 's-text-field[label="Headline"]'), 'Frightfully good fun');
+  assert.match(overview(view).textContent, /Visible on website/, 'with a block chosen the offer is visible');
+  assert.doesNotMatch(overview(view).textContent, /Not visible on website/);
+  await change(select(), 'draft');
+  assert.match(overview(view).textContent, /Not visible on website/);
+  await view.unmount();
+});
+
+test('a generated code list keeps the website status locked to Draft', async () => {
+  const { PromotionEditor } = await loaded();
+  const view = await mount(PromotionEditor, base, '/app/promotions/new?type=order');
+  const select = () => find(overview(view), 's-select[label="Website promotion status"]');
+  assert.equal(select().hasAttribute('disabled'), false);
+  await change(find(view.container, 's-select[label="Code format"]'), 'bulk');
+  assert.equal(select().hasAttribute('disabled'), true, 'a code list cannot be enabled');
+  assert.equal(select().value, 'draft');
+  assert.match(select().getAttribute('details'), /Code lists stay in Draft/);
   await view.unmount();
 });

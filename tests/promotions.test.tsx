@@ -1,4 +1,4 @@
-import { buildPriorityOverview } from "../app/modules/promotions/design/priorityOverview";
+import { buildPriorityList } from "../app/modules/promotions/design/priorityOverview";
 import { storefrontVisibilityNotices, type StorefrontVisibilityContext } from "../app/modules/promotions/design/storefrontVisibility";
 import { PromotionVisibilityNotice } from "../app/modules/promotions/components/PromotionVisibilityNotice";
 import { ShippingCountryPicker } from "../app/modules/promotions/components/ShippingCountryPicker";
@@ -19,7 +19,7 @@ import { PromotionOffer, promotionCss } from "../app/modules/promotions/componen
 import { matchesStorefront, type StorefrontContext } from "../app/modules/promotions/services/storefrontEligibility.server";
 import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promotionMapper";
 import type { ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
-const website = (): WebsiteDraft => ({ included: true, websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showHeaderBanner: true, showCountdown: false, headline: "Save today", body: "Selected costumes", badgeText: "20% OFF", countdownText: "Ends in", buttonText: "Shop now", buttonUrl: "/collections/sale", backgroundColour: "#ffffff", textColour: "#202223", badgeColour: "#d72c0d", priority: 3, design: defaultDesign() });
+const website = (): WebsiteDraft => ({ websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showHeaderBanner: true, showCountdown: false, headline: "Save today", body: "Selected costumes", badgeText: "20% OFF", countdownText: "Ends in", buttonText: "Shop now", buttonUrl: "/collections/sale", backgroundColour: "#ffffff", textColour: "#202223", badgeColour: "#d72c0d", priority: 3, design: defaultDesign() });
 const draft = (): CreateDiscountDraft => ({ discountType: "product", method: "code", discountCode: "SAVE20", automaticTitle: "Save 20%", valueType: "percentage", discountValue: "20", appliesTo: "collections", selectedProducts: [], selectedCollections: [{ id: "gid://shopify/Collection/1" }], buyRequirement: "quantity", buyQuantity: "2", buyAmount: "50", buyAppliesTo: "products", buySelection: [{ id: "gid://shopify/Product/1" }], getQuantity: "1", getAppliesTo: "products", getSelection: [{ id: "gid://shopify/Product/2" }], rewardType: "free", rewardValue: "20", maxUsesPerOrder: true, usesPerOrder: "2", minimumRequirement: "none", minimumPurchaseAmount: "", minimumQuantity: "", limitTotalUses: false, totalUsageLimit: "", limitOncePerCustomer: false, combineProductDiscounts: false, combineOrderDiscounts: false, combineShippingDiscounts: false, productCombinationMode: "best", selectedCombinationTags: [], startsAt: "2026-10-07T00:00:00Z", endsAt: "2026-10-31T23:59:00Z", eligibility: "all", selectedEligibility: [], countries: [], maximumShippingPrice: "" });
 
 test("all eight code/automatic discount types build the correct mutations", () => {
@@ -441,9 +441,9 @@ test("segment and customer restrictions warn about logged-out visibility and cle
 test("visibility guidance follows draft changes, schedule boundaries and placement targeting", () => {
   const now = Date.parse("2026-10-09T12:00:00Z");
   const context: StorefrontVisibilityContext = { eligibility: "all", eligibilityCount: 0, startsAt: "2026-10-10T00:00:00Z", endsAt: null, codeList: false, productTarget: "products" };
-  const value = { ...website(), websiteEnabled: false, included: false };
+  const value = { ...website(), websiteEnabled: false };
   const notices = storefrontVisibilityNotices(value, context, now);
-  assert.deepEqual(notices.map(notice => notice.id), ["draft", "sync", "scheduled", "collection", "products"]);
+  assert.deepEqual(notices.map(notice => notice.id), ["draft", "scheduled", "collection", "products"]);
   assert.match(notices.find(notice => notice.id === "collection")!.message, /will not appear/);
   const changed = storefrontVisibilityNotices(website(), { ...context, startsAt: null, productTarget: "collections" }, now);
   assert.deepEqual(changed.map(notice => notice.id), ["products"]);
@@ -461,7 +461,7 @@ test("code lists, missing blocks and empty restricted audiences explain why noth
 });
 
 
-test("priority overview groups selected blocks, ranks higher priorities and explains restricted or hidden promotions", () => {
+test("the priority list ranks only promotions that can appear, highest priority first, and explains the rest", () => {
   const create = (id: number, priority: number) => {
     const promotion = mapDiscountToPromotion({ id: `gid://shopify/DiscountCodeNode/${id}`, events: { nodes: [] }, discount: { __typename: "DiscountCodeBasic", title: `Promotion ${id}`, status: "ACTIVE", startsAt: null, endsAt: null, discountClasses: ["PRODUCT"], codes: { nodes: [{ code: `CODE${id}` }] }, context: { __typename: "DiscountBuyerSelectionAll", all: "ALL" }, customerGets: { value: { __typename: "DiscountPercentage", percentage: .1 }, items: { __typename: "AllDiscountItems", allItems: true } } } });
     promotion.settings = { ...promotion.settings, ...website(), priority };
@@ -473,21 +473,27 @@ test("priority overview groups selected blocks, ranks higher priorities and expl
   restricted.settings.showProductBadge = false;
   const draft = create(3, 200);
   draft.settings.websiteEnabled = false;
-  const board = buildPriorityOverview([normal, restricted, draft], Date.now());
-  assert.equal(board.length, 4);
-  const header = board.find(section => section.id === "header")!;
-  assert.deepEqual(header.rows.map(row => row.priority), [200, 100, 1]);
-  assert.equal(header.rows[0].status, "Not shown");
-  assert.match(header.rows[0].detail, /Draft/);
-  assert.equal(header.rows[1].status, "Customer restricted");
-  assert.match(header.rows[1].audience, /segments \(login required\)/);
-  assert.equal(header.rows[2].status, "Available");
-  assert.equal(board.find(section => section.id === "badge")!.rows.length, 2);
-  assert.equal(normal.settings.priority, 1);
-  const targeted = create(4, 1000);
+  const ended = create(4, 300);
+  ended.status = "EXPIRED";
+  const scheduled = create(5, 50);
+  scheduled.status = "SCHEDULED";
+  scheduled.startsAt = "2026-12-01T09:00:00.000Z";
+  const { rows, hidden } = buildPriorityList([normal, restricted, draft, ended, scheduled]);
+  assert.deepEqual(rows.map(row => row.priority), [100, 50, 1], "one list for every block, highest first");
+  assert.deepEqual(rows.map(row => row.routeId), ["2", "5", "1"]);
+  assert.equal(rows[0].restricted, true);
+  assert.match(rows[0].audience, /segments \(login required\)/);
+  assert.deepEqual(rows[0].blocks, ["Header", "Collection", "Product"], "each row names the blocks it takes part in");
+  assert.deepEqual(rows[2].blocks, ["Header", "Collection", "Product", "Product badge"]);
+  assert.equal(rows[1].status, "Scheduled");
+  assert.match(rows[1].schedule, /^Starts 1 Dec 2026/);
+  assert.equal(rows[2].status, "Active");
+  assert.equal(rows[2].schedule, "No end date");
+  assert.deepEqual(hidden.map(item => [item.routeId, item.reason]), [["3", "Its website status is Draft."], ["4", "It has ended."]]);
+  assert.equal(normal.settings.priority, 1, "building the list changes nothing");
+  const targeted = create(6, 1000);
   targeted.type = "Product";
   targeted.shopify.products = { ...targeted.shopify.products, allProducts: false, collections: [], products: [{ id: "gid://shopify/Product/1", title: "Test" }] };
-  const collection = buildPriorityOverview([targeted], Date.now()).find(section => section.id === "collection")!;
-  assert.equal(collection.rows[0].status, "Not shown");
-  assert.match(collection.rows[0].detail, /targeting qualifying collections/);
+  const [row] = buildPriorityList([targeted]).rows;
+  assert.match(row.warning!, /targets collections/);
 });

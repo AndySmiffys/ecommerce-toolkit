@@ -5,7 +5,7 @@ import { applyPalette, autoText, colourElements, customisedPaletteBlocks, matchP
 
 function draft(flags: Partial<WebsiteDraft> = {}): WebsiteDraft {
   return {
-    included: true, websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showCountdown: false, showHeaderBanner: true,
+    websiteEnabled: true, showProductPage: true, showCollectionPage: true, showProductBadge: true, showCountdown: false, showHeaderBanner: true,
     headline: "", body: "", badgeText: "20% OFF", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#000000", badgeColour: "#d72c0d",
     priority: 0, design: defaultDesign(), ...flags,
   };

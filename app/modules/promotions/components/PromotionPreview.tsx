@@ -172,14 +172,10 @@ export function PromotionPreview({ value, products, endsAt, productOptions = [],
   const fallbackHeight = active === "product" ? device === "mobile" ? 1100 : 850 : active === "collection" ? (block?.style.bannerHeight ?? 280) + 180 : active === "badge" ? device === "mobile" ? 950 : 660 : 200;
   const markup = active ? renderToStaticMarkup(<PromotionMarkup value={value} placement={active} products={products} endsAt={endsAt} now={now} mobile={device === "mobile"} offerNote={offerNote} discountCode={discountCode} />) : "";
   const document = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${promotionCss}${previewCss}</style></head><body>${markup}<script>${promotionUiScript}</script>${reportHeight}</body></html>`;
-  const visible = value.websiteEnabled && !visibilityNotices.some(notice => notice.tone === "warning");
   const frameTitle = `${device} ${active} promotion preview`;
   return <s-section heading="Website preview" accessibilityLabel="Website preview">
     <s-stack direction="block" gap="base">
-      <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
-        <span role="status" aria-live="polite" aria-label={`Website promotion status: ${visible ? "visible on the website" : "not visible yet"}`}><s-badge tone={visible ? "success" : "warning"}>{visible ? "Visible on website" : "Not visible yet"}</s-badge></span>
-        {allowEnlarge && active && <s-button type="button" variant="tertiary" onClick={() => setEnlarged(true)}>View larger</s-button>}
-      </s-stack>
+      {allowEnlarge && active && <div style={{ display: "flex", justifyContent: "flex-end" }}><s-button type="button" variant="tertiary" onClick={() => setEnlarged(true)}>View larger</s-button></div>}
       <PromotionVisibilityNotice notices={visibilityNotices} />
       {enabled.length > 0 && <s-stack direction="inline" gap="small-200">{enabled.map(p => <s-button type="button" variant={active === p.id ? "primary" : "secondary"} key={p.id} aria-pressed={active === p.id} onClick={() => setPlacement(p.id)}>{p.title}</s-button>)}</s-stack>}
       {enabled.length > 0 && <s-stack direction="inline" gap="small-200">{devices.map(item => <s-button type="button" variant={device === item.id ? "primary" : "secondary"} key={item.id} aria-pressed={device === item.id} onClick={() => setDevice(item.id)}>{item.label}</s-button>)}</s-stack>}

@@ -5,7 +5,7 @@ import { createPromotionCodeBatch } from "./promotionCodeBatches.server";
 import { authenticate } from "../../../shopify.server";
 import { createShopifyPromotion, type CreateDiscountDraft } from "./createPromotion.server";
 import { getDiscount } from "./discount.server";
-import { updatePromotionWebsiteSettings } from "./promotionSettings.server";
+import { priorityForSave, updatePromotionWebsiteSettings } from "./promotionSettings.server";
 import { readWebsite, websiteStorage, validateWebsite } from "../design/design";
 import type { PromotionActionData } from "../design/editorTypes";
 export async function promotionEditorAction({ request }: { request: Request }): Promise<PromotionActionData> {
@@ -26,7 +26,7 @@ if (payload.discount?.codeMode === "bulk") {
 requestKey = payload.requestKey;
 const batch = await createPromotionCodeBatch(admin, session.shop, requestKey!, payload.discount as CreateDiscountDraft, website);
 savedId = batch.shopifyDiscountId!;
-await updatePromotionWebsiteSettings(session.shop, savedId, websiteStorage({ ...website, websiteEnabled: false }));
+await updatePromotionWebsiteSettings(session.shop, savedId, { ...websiteStorage({ ...website, websiteEnabled: false }), priority: await priorityForSave(session.shop, savedId, false) });
 return { success: true, savedId, redirectId: savedId.split("/").pop() };
 }
 if (payload.savedId) {
@@ -35,9 +35,10 @@ savedId = payload.savedId;
 } else {
 savedId = await createShopifyPromotion(admin, payload.discount as CreateDiscountDraft);
 }
-await updatePromotionWebsiteSettings(session.shop, savedId!, websiteStorage(website));
+const rankEntry = payload.rankEntry === true;
+await updatePromotionWebsiteSettings(session.shop, savedId!, { ...websiteStorage(website), priority: await priorityForSave(session.shop, savedId!, rankEntry) });
 await syncStorefrontSnapshot(admin, session.shop);
-return { success: true, savedId, redirectId: savedId!.split("/").pop() };
+return { success: true, savedId, redirectId: savedId!.split("/").pop(), rankEntry };
 } catch (error) {
 if (requestKey) { const batch = await db.promotionCodeBatch.findUnique({ where: { shop_requestKey: { shop: session.shop, requestKey } } }); savedId = batch?.shopifyDiscountId ?? undefined; codeListLocked = Boolean(batch); }
 return { success: false, savedId, codeListLocked, error: (savedId ? "The Shopify discount was created, but website saving or storefront sync did not finish. Retry saving to finish. " : "") + (error instanceof Error ? error.message : "The promotion could not be saved.") };

@@ -1,4 +1,3 @@
-import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { getShippingCountries, validateShippingCountries } from "../modules/promotions/services/shippingCountries.server";
 import { PromotionSaveBar } from "../modules/promotions/components/PromotionSaveBar";
@@ -30,6 +29,7 @@ import {
   Form,
   useActionData,
   useLoaderData,
+  useNavigate,
   useNavigation,
 } from "react-router";
 
@@ -38,6 +38,10 @@ import { readWebsite, websiteFromSettings, websiteStorage, validateWebsite, type
 import { PromotionWebsiteEditor } from "../modules/promotions/components/PromotionWebsiteEditor";
 import { PromotionPreview } from "../modules/promotions/components/PromotionPreview";
 import { FormStep } from "../modules/promotions/components/FormStep";
+import { PriorityNote } from "../modules/promotions/components/PriorityNote";
+import { PromotionOverview } from "../modules/promotions/components/PromotionOverview";
+import { getPriorityPosition } from "../modules/promotions/services/promotionPriorities.server";
+import { canRank, isRanked, rankBlocker } from "../modules/promotions/design/ranking";
 import { ModalOverlay } from "../modules/promotions/components/ModalOverlay";
 import { editorCss } from "../modules/promotions/components/editor/editorStyles";
 import { summaryDate } from "../modules/promotions/design/promotionSummary";
@@ -60,6 +64,7 @@ import { PromotionScheduleTab } from "../modules/promotions/components/Promotion
 
 import {
   attachPromotionSettings,
+  priorityForSave,
   updatePromotionWebsiteSettings,
 } from "../modules/promotions/services/promotionSettings.server";
 
@@ -121,7 +126,8 @@ export async function loader({
   if (editorDiscount && codeBatch) Object.assign(editorDiscount, { codeMode: "bulk", codeCount: String(codeBatch.total), codePrefix: codeBatch.prefix, codeSuffix: codeBatch.suffix, codeListTitle: codeBatch.title });
   const resources = editorDiscount ? await getPromotionEditorResources(admin) : { products: [], collections: [] };
   const shippingCountries = editorDiscount?.discountType === "shipping" ? await getShippingCountries(admin) : null;
-  return { promotion, previewProducts, editorDiscount, editRulesMessage, products: resources.products, codeBatch, shippingCountries };
+  const priorityInfo = isRanked(promotion) ? await getPriorityPosition(admin, session.shop, promotion.id) : null;
+  return { promotion, priorityInfo, previewProducts, editorDiscount, editRulesMessage, products: resources.products, codeBatch, shippingCountries };
 }
 export async function action({
   request,
@@ -158,9 +164,10 @@ export async function action({
         await updateShopifyPromotion(admin, node, payload.discount as CreateDiscountDraft);
         discountUpdated = true;
       }
-      await updatePromotionWebsiteSettings(session.shop, node.id, websiteStorage(website));
+      const rankEntry = payload.rankEntry === true;
+      await updatePromotionWebsiteSettings(session.shop, node.id, { ...websiteStorage(website), priority: await priorityForSave(session.shop, node.id, rankEntry) });
       await syncStorefrontSnapshot(admin, session.shop);
-      return { success: true, savedId: node.id };
+      return { success: true, savedId: node.id, rankEntry };
     } catch (error) {
       return { success: false, error: (discountUpdated ? "The Shopify discount was updated, but website saving or storefront sync did not finish. Retry saving to finish. " : "") + (error instanceof Error ? error.message : "The promotion could not be saved.") };
     }
@@ -187,12 +194,14 @@ export async function action({
     if (website.websiteEnabled && ((discount.discount.codesCount?.count ?? discount.discount.codes?.nodes.length ?? 0) > 1 || await getPromotionCodeBatch(session.shop, shopifyDiscountId))) throw new Error("Individual code lists must stay in website Draft status.");
     const errors = validateWebsite(website, discount.discount.endsAt);
     if (errors.length) throw new Error(errors.join(" "));
-    await updatePromotionWebsiteSettings(session.shop, shopifyDiscountId, websiteStorage(website));
+    const rankEntry = formData.get("rankEntry") === "true";
+    await updatePromotionWebsiteSettings(session.shop, shopifyDiscountId, { ...websiteStorage(website), priority: await priorityForSave(session.shop, shopifyDiscountId, rankEntry) });
     await syncStorefrontSnapshot(admin, session.shop);
 
     return {
       success: true,
       error: null,
+      rankEntry,
     };
   } catch (error) {
     console.error(
@@ -210,7 +219,7 @@ export async function action({
 
 export default function PromotionDetailsPage() {
   const appUrl = useEmbeddedAppUrl();
-  const { promotion, previewProducts, editorDiscount, editRulesMessage, products, codeBatch, shippingCountries } =
+  const { promotion, priorityInfo, previewProducts, editorDiscount, editRulesMessage, products, codeBatch, shippingCountries } =
     useLoaderData<typeof loader>();
 
   const general = promotion.shopify.general;
@@ -247,13 +256,20 @@ export default function PromotionDetailsPage() {
   const shopify = useAppBridge();
   useEffect(() => { if (actionData?.success) shopify.toast.show("Promotion saved"); }, [actionData, shopify]);
   const saveIssue = validateWebsite(website, promotion.endsAt)[0] ?? null;
+  const navigate = useNavigate();
+  const rankInput = { endsAt: promotion.endsAt, website };
+  const rankable = canRank(rankInput);
+  const wasRanked = canRank({ endsAt: promotion.endsAt, website: savedWebsite });
+  useEffect(() => {
+    if (actionData && "rankEntry" in actionData && actionData.rankEntry) navigate(appUrl(`/app/storefront-priorities?highlight=${promotion.routeId}`));
+  }, [actionData, appUrl, navigate, promotion.routeId]);
 
-  if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} />;
+  if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} priorityInfo={priorityInfo} />;
 
   const startsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.startsAt));
   const endsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.endsAt));
   const sections = [
-    { id: "general", title: "Overview", summary: `${general.type}, ${general.method}${general.value ? `, ${general.value}` : ""}` },
+    { id: "general", title: "Discount details", summary: `${general.type}, ${general.method}${general.value ? `, ${general.value}` : ""}` },
     { id: "customers", title: "Customers", summary: promotion.shopify.customers.appliesToAllCustomers ? "All customers" : "Selected customers or segments" },
     { id: "conditions", title: "Conditions", summary: "Minimum requirements and usage limits" },
     { id: "schedule", title: "Schedule", summary: `${startsOn ? `Starts ${startsOn}` : "Starts when saved"}, ${endsOn ? `ends ${endsOn}` : "no end date"}` },
@@ -273,13 +289,21 @@ export default function PromotionDetailsPage() {
       <SaveNotices error={actionData !== dismissedAction ? actionData?.error : undefined} issue={hasUnsavedChanges ? saveIssue : null} onDismissError={() => setDismissedAction(actionData)} />
       <div style={{ width: "100%" }}>
         <s-stack direction="block" gap="large">
-          <div>
-            <s-badge tone={getStatusTone(general.status)}>{general.status}</s-badge>
-          </div>
+          <PromotionOverview
+            title={general.title}
+            typeLabel={general.type}
+            discountStatus={general.status}
+            websiteVisible={rankable}
+            websiteEnabled={website.websiteEnabled}
+            onWebsiteEnabledChange={enabled => setWebsite(current => ({ ...current, websiteEnabled: enabled }))}
+            summary={sections[0].summary}
+            priority={<PriorityNote rankable={rankable} blocker={rankBlocker(rankInput)} wasRanked={wasRanked} info={priorityInfo} routeId={promotion.routeId} />}
+          />
           {editRulesMessage && <s-banner tone="info">{editRulesMessage}</s-banner>}
           <Form ref={formRef} method="post" onSubmit={() => { submittedWebsite.current = website; setDismissedAction(actionData); }}>
             <input type="hidden" name="shopifyDiscountId" value={promotion.id} />
             <input type="hidden" name="website" value={JSON.stringify(website)} />
+            <input type="hidden" name="rankEntry" value={String(rankable && !wasRanked)} />
             <div className="create-discount-layout" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "24px", alignItems: "start" }}>
               <aside className="desktop-preview-panel" style={{ position: "sticky", top: "20px", maxHeight: "calc(100vh - 40px)", overflowY: "auto", scrollbarGutter: "stable", alignSelf: "start" }}>
                 <PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} />

@@ -18,7 +18,7 @@ function record(name, container) {
   const html = normalise(container.innerHTML);
   const text = normalise(container.textContent).replace(/\s+/g, ' ').trim();
   recorded[name] = { hash: crypto.createHash('sha256').update(html).digest('hex'), text };
-  if (golden[name]) {
+  if (golden[name] && !process.env.UPDATE_GOLDEN) {
     assert.equal(recorded[name].text, golden[name].text, `${name}: the editor's text changed`);
     assert.equal(recorded[name].hash, golden[name].hash, `${name}: the editor's markup changed`);
   }

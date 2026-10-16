@@ -20,7 +20,7 @@ export async function selectStorefrontPromotion(api: ShopifyAdminClient, rows: S
   let selected: PromotionRecord | null = null;
   const flag = placements.find(placement => placement.id === context.placement)!.flag;
   for (const stored of rows) {
-    let reason = !stored.included ? "Excluded from promotion sync." : !stored.websiteEnabled ? "Website status is Draft." : !stored[flag] ? `${context.placement === "header" ? "Header" : "This placement"} is not selected.` : null;
+    let reason = !stored.websiteEnabled ? "Website status is Draft." : !stored[flag] ? `${context.placement === "header" ? "Header" : "This placement"} is not selected.` : null;
     let promotion: PromotionRecord | null = null;
     let title = `Discount ${stored.shopifyDiscountId.split("/").pop()}`;
     if (!reason || inspectAll) {

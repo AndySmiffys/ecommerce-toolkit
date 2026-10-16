@@ -96,7 +96,7 @@ function advancedParts(input: SummaryInput): string[] {
   const parts: string[] = [];
   if (input.minimumRequirement === "amount" && input.minimumPurchaseAmount.trim()) parts.push(`minimum spend ${money(input.minimumPurchaseAmount)}`);
   if (input.minimumRequirement === "quantity" && input.minimumQuantity.trim()) parts.push(`minimum ${input.minimumQuantity.trim()} items`);
-  if (input.limitTotalUses && input.totalUsageLimit.trim()) parts.push(`${input.totalUsageLimit.trim()} uses in total`);
+  if (input.limitTotalUses && input.totalUsageLimit.trim()) parts.push(`${input.totalUsageLimit.trim()} ${input.totalUsageLimit.trim() === "1" ? "use" : "uses"} in total`);
   if (input.limitOncePerCustomer) parts.push("once per customer");
   if (input.combines) parts.push("combines with other discounts");
   return parts;

@@ -39,7 +39,7 @@ for (const tag of ['s-text-field', 's-number-field', 's-text-area', 's-search-fi
 // Shopify's modal is opened and closed with these methods, and says when it has finished closing.
 dom.window.customElements.define('s-modal', class extends HTMLElement {
   showOverlay() { this.isOpen = true; this.dispatchEvent(new window.Event('show')); }
-  hideOverlay() { if (!this.isOpen) return; this.isOpen = false; this.dispatchEvent(new window.Event('hide')); setTimeout(() => this.dispatchEvent(new window.Event('afterhide')), 0); }
+  hideOverlay() { if (!this.isOpen) return; this.isOpen = false; this.dispatchEvent(new window.Event('hide')); setTimeout(() => this.dispatchEvent(new window.Event('afterhide')), 20); }
 });
 
 const toasts = [];
@@ -59,7 +59,7 @@ const wait = (ms = 30) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function loadEditor() {
   const result = await build({
-    stdin: { contents: "export { PromotionEditor } from './app/modules/promotions/components/PromotionEditor'; export { placeholderDraft } from './app/modules/promotions/design/stepValidation';", resolveDir: process.cwd(), loader: 'ts', sourcefile: 'entry.ts' },
+    stdin: { contents: "export { PromotionEditor } from './app/modules/promotions/components/PromotionEditor'; export { placeholderDraft } from './app/modules/promotions/design/stepValidation'; export { defaultDesign } from './app/modules/promotions/design/design';", resolveDir: process.cwd(), loader: 'ts', sourcefile: 'entry.ts' },
     bundle: true, platform: 'node', format: 'cjs', packages: 'external', jsx: 'automatic', write: false, plugins: [rawPlugin],
   });
   const compiled = new Module(__filename); compiled.paths = module.paths;
@@ -86,6 +86,7 @@ async function mount(Editor, props, url, { respond = () => ({}) } = {}) {
   const router = createMemoryRouter([
     { path: '/app/promotions/new', Component: () => React.createElement(Editor, props), action: answer },
     { path: '/app/promotions/:id', Component: Landed },
+    { path: '/app/storefront-priorities', Component: () => React.createElement('div', { id: 'priorities' }) },
     { path: '/app/promotion-preview', action: stub },
     { path: '/app/promotion-assets', action: stub },
     { path: '/app/link-destinations', loader: stub },

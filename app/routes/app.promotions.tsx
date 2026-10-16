@@ -270,7 +270,7 @@ export default function PromotionsPage() {
                         <s-table-cell>{general.method}</s-table-cell>
                         <s-table-cell>{getEligibility(promotion)}</s-table-cell>
                         <s-table-cell>{general.type}</s-table-cell>
-                        <s-table-cell><s-badge tone={promotion.settings.included ? "success" : "neutral"}>{promotion.settings.included ? "Included" : "Excluded"}</s-badge></s-table-cell>
+                        <s-table-cell><s-badge tone={promotion.settings.websiteEnabled ? "success" : "neutral"}>{promotion.settings.websiteEnabled ? "Enabled" : "Draft"}</s-badge></s-table-cell>
                         <s-table-cell>{getPromotionValue(promotion)}</s-table-cell>
                         <s-table-cell>{formatDate(promotion.shopify.schedule.startsAt)}</s-table-cell>
                         <s-table-cell>{formatDate(promotion.shopify.schedule.endsAt)}</s-table-cell>

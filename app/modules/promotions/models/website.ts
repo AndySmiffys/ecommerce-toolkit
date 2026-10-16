@@ -1,5 +1,4 @@
 export type PromotionWebsiteSettings = {
-  included: boolean;
   websiteEnabled: boolean;
 
   showProductPage: boolean;

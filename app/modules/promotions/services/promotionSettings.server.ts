@@ -9,7 +9,6 @@ import type {
 } from "../models/website";
 
 type StoredPromotionSettings = {
-  included: boolean;
   websiteEnabled: boolean;
 
   showProductPage: boolean;
@@ -41,7 +40,6 @@ function mapStoredSettings(
   settings: StoredPromotionSettings,
 ): PromotionWebsiteSettings {
   return {
-    included: settings.included,
     websiteEnabled: settings.websiteEnabled,
 
     showProductPage: settings.showProductPage,
@@ -115,7 +113,6 @@ export async function attachPromotionSettings(
 }
 
 export type UpdatePromotionWebsiteSettingsInput = {
-  included: boolean;
   websiteEnabled: boolean;
 
   showProductPage: boolean;
@@ -159,7 +156,7 @@ export async function updatePromotionWebsiteSettings(
       shop,
       shopifyDiscountId,
 
-      included: input.included,
+      included: true,
       websiteEnabled: input.websiteEnabled,
 
       showProductPage: input.showProductPage,
@@ -188,7 +185,7 @@ export async function updatePromotionWebsiteSettings(
     },
 
     update: {
-      included: input.included,
+      included: true,
       websiteEnabled: input.websiteEnabled,
 
       showProductPage: input.showProductPage,
@@ -226,7 +223,7 @@ export async function getStorefrontPromotionSettings(
   database: PrismaClient = db,
 ) {
   return (await getLatestPromotionSettings(shop, database))
-    .filter(row => row.included && row.websiteEnabled && row[flag]);
+    .filter(row => row.websiteEnabled && row[flag]);
 }
 
 export async function getLatestPromotionSettings(shop: string, database: PrismaClient = db) {
@@ -241,4 +238,15 @@ export async function getLatestPromotionSettings(shop: string, database: PrismaC
     return true;
   }).map(row => ({ ...row, shopifyDiscountId: promotionDiscountId(row.shopifyDiscountId) }))
     .sort((a, b) => b.priority - a.priority || b.id - a.id);
+}
+
+const highestPriority = 9999;
+/**
+ * The priority a save stores. The editor never sets it: a promotion keeps its place in the order, and one
+ * that is entering the order starts at the top, above every saved priority.
+ */
+export async function priorityForSave(shop: string, shopifyDiscountId: string, rankEntry: boolean, database: PrismaClient = db): Promise<number> {
+  const rows = await getLatestPromotionSettings(shop, database);
+  if (rankEntry) return Math.min(highestPriority, Math.max(0, ...rows.map(row => row.priority)) + 1);
+  return rows.find(row => row.shopifyDiscountId === promotionDiscountId(shopifyDiscountId))?.priority ?? 0;
 }

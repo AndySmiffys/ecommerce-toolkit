@@ -7,8 +7,8 @@ const tools = [
     path: "/app/promotions",
   },
   {
-    title: "Storefront priorities",
-    description: "Review promotion order and visibility for each storefront block.",
+    title: "Storefront priority",
+    description: "Drag promotions into the order they are shown in on the storefront.",
     path: "/app/storefront-priorities",
   },
 ];

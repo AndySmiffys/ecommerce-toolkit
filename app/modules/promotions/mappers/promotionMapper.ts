@@ -4,11 +4,8 @@ import type { PromotionRecord } from "../models/promotion";
 import type { PromotionWebsiteSettings } from "../models/website";
 import type { ShopifyDiscountNode } from "../types/discount";
 
-function mapDefaultWebsiteSettings(
-  included: boolean,
-): PromotionWebsiteSettings {
+function mapDefaultWebsiteSettings(): PromotionWebsiteSettings {
   return {
-    included,
     websiteEnabled: false,
 
     showProductPage: false,
@@ -80,7 +77,7 @@ export function mapDiscountToPromotion(
 
     shopify,
     settings:
-      mapDefaultWebsiteSettings(includedInSync),
+      mapDefaultWebsiteSettings(),
   };
 }
 
