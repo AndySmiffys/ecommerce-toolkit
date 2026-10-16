@@ -21,7 +21,7 @@ export function describeLink(url: string): string {
 }
 
 /** One control for choosing where a promotion button leads. */
-export function LinkDestinationField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+export function LinkDestinationField({ value, onChange, inherited }: { value: string; onChange: (value: string) => void; inherited?: string }) {
   const appUrl = useEmbeddedAppUrl();
   const fetcher = useFetcher<LinkDestinationResult>();
   const modalId = "link-destination-" + useId().replace(/:/g, "");
@@ -49,15 +49,17 @@ export function LinkDestinationField({ value, onChange }: { value: string; onCha
   const loading = fetcher.state !== "idle";
   const result = fetcher.data;
   const addressValid = Boolean(address.trim()) && safeLink(address.trim());
+  const following = Boolean(inherited) && value === inherited;
 
   return <div style={{ display: "grid", gap: 8 }}>
     <div style={{ display: "grid", gap: 4 }}>
       <span style={{ fontSize: 12, fontWeight: 500 }}>Link destination</span>
-      <span style={{ fontSize: 13, color: value ? "#202223" : "#616161", overflowWrap: "anywhere" }}>{value ? describeLink(value) : "No link selected"}</span>
+      <span style={{ fontSize: 13, color: following ? "#8a8a8a" : value ? "#202223" : "#616161", overflowWrap: "anywhere" }}>{value ? describeLink(value) : "No link selected"}{following && " (campaign link)"}</span>
     </div>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <s-button type="button" variant="secondary" onClick={show}>{value ? "Change destination" : "Choose destination"}</s-button>
       {value && <s-button type="button" variant="tertiary" onClick={() => onChange("")}>Remove</s-button>}
+      {inherited && value !== inherited && <s-button type="button" variant="tertiary" onClick={() => onChange(inherited)}>Use campaign link</s-button>}
     </div>
     <s-modal ref={modalRef} id={modalId} heading="Choose link destination">
       <s-stack direction="block" gap="base">

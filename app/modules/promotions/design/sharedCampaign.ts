@@ -4,12 +4,13 @@ import { placements, promotionBlock, setPromotionBlock, type Placement, type Pro
 // offers one set of shared fields for them. Each block still stores its own
 // copy. A shared field shows the value most selected blocks hold (the first
 // block wins a tie), and an edit reaches only the blocks holding that value, so
-// a block that has been customised is never overwritten.
+// block that has been customised is never overwritten. Colours are handled
+// separately, by the campaign palette.
 export const campaignPlacements: Placement[] = ["header", "collection", "product"];
 const imagePlacements: Placement[] = ["collection", "product"];
-export const campaignBlockKeys = ["headline", "body", "buttonText", "buttonUrl", "countdownText", "backgroundColour", "textColour"] as const;
-export const campaignStyleKeys = ["buttonBackground", "buttonColour", "desktopImage", "desktopImageId", "mobileImage", "mobileImageId", "imageAlt"] as const;
-const imageKeys: ReadonlyArray<string> = ["desktopImage", "desktopImageId", "mobileImage", "mobileImageId", "imageAlt"];
+export const campaignBlockKeys = ["headline", "body", "buttonText", "buttonUrl", "countdownText"] as const;
+export const campaignStyleKeys = ["desktopImage", "desktopImageId", "mobileImage", "mobileImageId", "imageAlt"] as const;
+const imageKeys: ReadonlyArray<string> = campaignStyleKeys;
 
 type BlockKey = typeof campaignBlockKeys[number];
 type StyleKey = typeof campaignStyleKeys[number];

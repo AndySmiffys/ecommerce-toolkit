@@ -28,10 +28,8 @@ export function PromotionPriorityManager({ sections, errors, refreshing, onRefre
     fetcher.submit({ changes: JSON.stringify(changes.map(([id, priority]) => ({ id, priority: Number(priority), expectedPriority: Number(baseline[id]) }))) }, { method: "post", action: appUrl("/app/storefront-priorities") });
   }
   return <s-page heading="Storefront priorities" inlineSize="large">
-    <PromotionSaveBar dirty={dirty} saving={saving} busy={refreshing} invalid={invalid} onSave={save} onDiscard={() => { setEdits({}); setSaveError(null); }} />
+    <PromotionSaveBar dirty={dirty} saving={saving} busy={refreshing} issue={invalid ? "Enter whole-number priorities between 0 and 9999." : null} error={saveError} savedToken={fetcher.data?.success ? fetcher.data : null} showWhileIncomplete onSave={save} onDiscard={() => { setEdits({}); setSaveError(null); }} />
     <div style={{ display: "grid", gap: 20, padding: "20px 0" }}>
-      {saveError && <s-banner tone="critical">{saveError}</s-banner>}
-      {invalid && <s-banner tone="warning">Enter whole-number priorities between 0 and 9999.</s-banner>}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "start", flexWrap: "wrap" }}>
         <p style={{ margin: 0, maxWidth: 760 }}>Review saved promotions for each storefront block, ordered by highest priority first. The first promotion eligible for the visitor and page appears. Equal priorities favour the most recently added promotion.</p>
         <s-button type="button" variant="secondary" disabled={refreshing || saving || dirty || undefined} onClick={onRefresh}>{refreshing ? "Refreshing…" : "Refresh lists"}</s-button>

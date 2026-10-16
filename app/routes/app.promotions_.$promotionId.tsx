@@ -1,7 +1,6 @@
 import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { getShippingCountries, validateShippingCountries } from "../modules/promotions/services/shippingCountries.server";
-import { PromotionSaveError } from "../modules/promotions/components/PromotionSaveError";
 import { PromotionSaveBar } from "../modules/promotions/components/PromotionSaveBar";
 import { getPromotionCodeBatch } from "../modules/promotions/services/promotionCodeBatches.server";
 import { getEditableDiscount } from "../modules/promotions/services/editableDiscount.server";
@@ -261,8 +260,7 @@ export default function PromotionDetailsPage() {
     <s-page heading={general.title} inlineSize="large">
       <s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
       <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotion.routeId}`} target="_blank">Edit in Shopify</s-button>
-      <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} invalid={validateWebsite(website, promotion.endsAt).length > 0} onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
-      <PromotionSaveError error={actionData !== dismissedAction ? actionData?.error : undefined} />
+      <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} issue={validateWebsite(website, promotion.endsAt)[0] ?? null} error={actionData !== dismissedAction ? actionData?.error : undefined} savedToken={actionData?.success ? actionData : null} showWhileIncomplete onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
       <div
         style={{
           width: "100%",

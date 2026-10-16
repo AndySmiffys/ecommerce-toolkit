@@ -12,13 +12,11 @@ function draft(flags: Partial<WebsiteDraft> = {}): WebsiteDraft {
 }
 
 test("one shared edit reaches the header, collection and product blocks but never the badge", () => {
-  const next = applyCampaignPatch(draft(), { headline: "Frightfully good fun", buttonUrl: "/collections/halloween", backgroundColour: "#faf3e0", style: { buttonBackground: "#642080", desktopImage: "https://cdn.shopify.com/a.jpg", desktopImageId: "gid://shopify/MediaImage/1" } });
+  const next = applyCampaignPatch(draft(), { headline: "Frightfully good fun", buttonUrl: "/collections/halloween", style: { desktopImage: "https://cdn.shopify.com/a.jpg", desktopImageId: "gid://shopify/MediaImage/1" } });
   for (const id of ["header", "collection", "product"] as const) {
     const block = promotionBlock(next, id);
     assert.equal(block.headline, "Frightfully good fun");
     assert.equal(block.buttonUrl, "/collections/halloween");
-    assert.equal(block.backgroundColour, "#faf3e0");
-    assert.equal(block.style.buttonBackground, "#642080");
   }
   assert.equal(promotionBlock(next, "header").style.desktopImage, "", "the header has no image");
   assert.equal(promotionBlock(next, "collection").style.desktopImage, "https://cdn.shopify.com/a.jpg");

@@ -1,13 +1,15 @@
 import { getStatusTone } from "../design/statusTone";
 import { ShippingCountryPicker } from "./ShippingCountryPicker";
 import type { ShippingCountries } from "../services/shippingCountries.server";
-import { PromotionSaveError } from "./PromotionSaveError";
+import { FormStep } from "./FormStep";
+import { buildDiscountMutation } from "../design/discountMutation";
+import { summarisePromotion } from "../design/promotionSummary";
 import { PolarisSelect, PolarisCheckbox } from "./PolarisControls";
 import { PromotionSaveBar } from "./PromotionSaveBar";
 import { PromotionCodeList } from "./PromotionCodeList";
 import { validateCodeOptions, type CodeBatchSummary } from "../design/codeGeneration";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useFetcher, useSearchParams, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import type { CreateDiscountDraft } from "../services/createPromotion.server";
@@ -209,12 +211,14 @@ currency: money.currencyCode || "GBP",
 
 function FormSection({
 title,
+heading = false,
 children,
 }: {
 title: string;
+heading?: boolean;
 children: React.ReactNode;
 }) {
-return <s-section heading={title}>{children}</s-section>;
+return <section aria-label={title} style={{ display: "grid", gap: 12, minWidth: 0 }}>{heading && <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{title}</h3>}{children}</section>;
 }
 
 export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null }) {
@@ -560,10 +564,16 @@ current.filter((item) => item.id !== id),
 );
 }
 
-const details = useMemo(() => {
-const combinations = [combineProductDiscounts && "product", combineOrderDiscounts && "order", combineShippingDiscounts && "shipping"].filter(Boolean);
-return [eligibility === "all" ? "All customers" : `${selectedEligibility.length} selected ${eligibility === "segments" ? "customer segments" : "customers"}`, discountType === "product" ? `${(appliesTo === "products" ? selectedProducts : selectedCollections).length} selected ${appliesTo}` : config.typeLabel, discountType === "bxgy" ? `Buy ${buyRequirement === "amount" ? "£" + buyAmount : buyQuantity}, get ${getQuantity}` : minimumRequirement === "none" ? "No minimum purchase" : minimumRequirement === "amount" ? `Minimum spend £${minimumPurchaseAmount}` : `Minimum ${minimumQuantity} items`, method === "code" && limitTotalUses ? `${totalUsageLimit || "Not set"} ${isCodeList ? "uses per code" : "total uses"}` : "No total usage limit", combinations.length ? `Combines with ${combinations.join(", ")} discounts` : "Cannot combine with other discounts", startDateTime ? `Starts ${new Date(startDateTime).toLocaleString("en-GB")}` : "Starts when saved", hasEndDate && endDateTime ? `Ends ${new Date(endDateTime).toLocaleString("en-GB")}` : "No end date"];
-}, [eligibility, selectedEligibility.length, discountType, appliesTo, selectedProducts, selectedCollections, config.typeLabel, buyRequirement, buyAmount, buyQuantity, getQuantity, minimumRequirement, minimumPurchaseAmount, minimumQuantity, method, limitTotalUses, totalUsageLimit, combineProductDiscounts, combineOrderDiscounts, combineShippingDiscounts, startDateTime, hasEndDate, endDateTime, isCodeList]);
+const summary = summarisePromotion({ discountType, method, discountCode, codeMode, codeCount, automaticTitle, valueType, discountValue, appliesTo, productCount: selectedProducts.length, collectionCount: selectedCollections.length, buyRequirement, buyQuantity, buyAmount, getQuantity, rewardType, rewardValue, countryMode, countryCount: countryCodes.split(",").map(code => code.trim()).filter(Boolean).length, minimumRequirement, minimumPurchaseAmount, minimumQuantity, limitTotalUses, totalUsageLimit, limitOncePerCustomer, combines: combineProductDiscounts || combineOrderDiscounts || combineShippingDiscounts, eligibility, eligibilityCount: selectedEligibility.length, startDateTime, hasEndDate, endDateTime });
+const selectedBlocks = [showHeaderBanner, showCollectionPage, showProductPage, showProductBadge].filter(Boolean).length;
+const websiteSummary = selectedBlocks ? `${websiteEnabled ? "Enabled" : "Draft"}, ${selectedBlocks} ${selectedBlocks === 1 ? "block" : "blocks"} selected` : "Not set up yet";
+const [openStep, setOpenStep] = useState<string | null>("type");
+const stepOrder = ["type", "value", "who", "schedule", "advanced", "website"];
+const stepTitles: Record<string, string> = { type: "Type and method", value: discountType === "shipping" ? "Countries" : "Discount value", who: "Who can use it", schedule: "Schedule", advanced: "Advanced options", website: "Website promotion" };
+const stepProps = (id: string) => {
+  const index = stepOrder.indexOf(id); const following = stepOrder[index + 1];
+  return { id, number: index + 1, title: stepTitles[id], open: openStep === id, onToggle: (open: boolean) => setOpenStep(current => open ? id : current === id ? null : current), next: following ? { label: `Continue to ${stepTitles[following].toLowerCase()}`, onClick: () => setOpenStep(following) } : undefined };
+};
 
 const [visibilityNow, setVisibilityNow] = useState(() => Date.now());
 useEffect(() => { const timer = setInterval(() => setVisibilityNow(Date.now()), 60000); return () => clearInterval(timer); }, []);
@@ -604,11 +614,9 @@ const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
 const submittedSnapshot = useRef(snapshot);
 const handledResponse = useRef<PromotionActionData | undefined>();
 const hasUnsavedChanges = snapshot !== savedSnapshot;
-const saveBarRef = useRef<UISaveBarElement>(null);
 
 async function discardChanges() {
 if (assetsBusy || createFetcher.state !== "idle" || (!promotionId && codeListLocked && !createdDiscountId)) return;
-await saveBarRef.current?.hide();
 // A partially created discount already exists in Shopify. Discard only its unsaved design.
 if (!promotionId && createdDiscountId) { navigate(appUrl(`/app/promotions/${createdDiscountId.split("/").pop()}`)); return; }
 const saved = JSON.parse(savedSnapshot) as { fields: typeof editorFields; website: WebsiteDraft };
@@ -678,9 +686,23 @@ if (createFetcher.data?.savedId) setCreatedDiscountId(createFetcher.data.savedId
 if (createFetcher.data?.success) { if (promotionId) { setSavedSnapshot(submittedSnapshot.current); setSavedDiscountSnapshot(submittedDiscountSnapshot.current); } else if (createFetcher.data.redirectId) {
 setSavedSnapshot(submittedSnapshot.current);
 const destination = appUrl(`/app/promotions/${createFetcher.data.redirectId}`);
-void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(destination));
+shopify.toast.show("Promotion created");
+navigate(destination);
 } }
 });
+
+// Everything Shopify would reject is caught here first, so Save only appears for a complete discount.
+const saveIssue = (() => {
+if (isCodeList && websiteEnabled) return "Keep code lists in website Draft status. Distribute the individual codes using the CSV download.";
+if (hasEndDate && !endDateTime) return "Choose an end date and time, or turn off the end date.";
+if (!promotionId || discountSnapshot !== savedDiscountSnapshot) {
+try {
+if (isCodeList && !promotionId) validateCodeOptions(discountDraft);
+buildDiscountMutation({ ...discountDraft, discountCode: isCodeList ? "CODE" : discountDraft.discountCode, startsAt: startDateTime ? new Date(startDateTime).toISOString() : null, endsAt: hasEndDate && endDateTime ? new Date(endDateTime).toISOString() : null });
+} catch (error) { return error instanceof Error ? error.message : "Check the discount settings."; }
+}
+return validateWebsite(websiteDraft, hasEndDate ? endDateTime : null)[0] ?? null;
+})();
 
 function savePromotion() {
 if (saveInFlight.current || createFetcher.state !== "idle" || assetsBusy) return;
@@ -701,8 +723,7 @@ return (
 <s-page heading={promotionId ? "Edit promotion" : "Create discount"} inlineSize="large">
 <s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
 {promotionId && <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotionId.split("/").pop()}`} target="_blank">Edit in Shopify</s-button>}
-<PromotionSaveBar ref={saveBarRef} dirty={hasUnsavedChanges} saving={createFetcher.state !== "idle"} busy={assetsBusy} discardDisabled={!promotionId && codeListLocked && !createdDiscountId} invalid={validateWebsite(websiteDraft, hasEndDate ? endDateTime : null).length > 0} onSave={savePromotion} onDiscard={discardChanges} />
-<PromotionSaveError error={submissionError || (createFetcher.data !== dismissedResponse ? createFetcher.data?.error : undefined)} />
+<PromotionSaveBar dirty={hasUnsavedChanges} saving={createFetcher.state !== "idle"} busy={assetsBusy} discardDisabled={!promotionId && codeListLocked && !createdDiscountId} issue={saveIssue} error={submissionError || (createFetcher.data !== dismissedResponse ? createFetcher.data?.error : undefined)} savedToken={promotionId && createFetcher.data?.success ? createFetcher.data : null} showWhileIncomplete={Boolean(promotionId)} onSave={savePromotion} onDiscard={discardChanges} />
 <div
 style={{
 width: "100%",
@@ -717,7 +738,7 @@ margin: 0,
 className="create-discount-layout"
 style={{
 display: "grid",
-gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 260px",
+gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
 gap: "24px",
 alignItems: "start",
 }}
@@ -748,6 +769,12 @@ fontWeight: 650,
 </div>
 
 <s-stack direction="block" gap="large">
+<div role="status" aria-label="Promotion summary" style={{ position: "sticky", top: 0, zIndex: 5, padding: "12px 16px", border: "1px solid #dedede", borderRadius: 12, background: "#f7f7f7", display: "grid", gap: 2 }}>
+<span style={{ fontSize: 12, color: "#616161" }}>Summary</span>
+<span style={{ fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{summary.overview}</span>
+{saveIssue && <span style={{ fontSize: 12, color: "#8a5a00", overflowWrap: "anywhere" }}>To save: {saveIssue}</span>}
+</div>
+<FormStep {...stepProps("type")} summary={summary.type}>
 <FormSection title="Method">
 {promotionId && <p style={{ margin: "0 0 12px", color: "#616161", fontSize: 12 }}>The existing discount type and method are retained. Manage changes to discount codes in Shopify.</p>}
 <s-stack direction="block" gap="base">
@@ -897,7 +924,9 @@ details="Customers will see this title in their cart and at checkout."
 )}
 </s-stack>
 </FormSection>
+</FormStep>
 
+<FormStep {...stepProps("value")} summary={summary.value}>
 {discountType === "product" && (
 <FormSection title="Discount value">
 <s-stack direction="block" gap="base">
@@ -1445,7 +1474,9 @@ setMaxUsesPerOrder(event.currentTarget.checked)
 </s-stack>
 </FormSection>
 )}
+</FormStep>
 
+<FormStep {...stepProps("who")} summary={summary.who}>
 <FormSection title="Eligibility">
 <s-stack direction="block" gap="base">
 <PolarisSelect
@@ -1671,9 +1702,34 @@ lineHeight: 1.45,
 )}
 </s-stack>
 </FormSection>
+</FormStep>
 
+<FormStep {...stepProps("schedule")} summary={summary.schedule}>
+<FormSection title="Schedule">
+<div style={{display:"grid",gap:"12px"}}>
+<ScheduleDateTimeField label="Start date and time" value={startDateTime} onChange={setStartDateTime} />
+
+<PolarisCheckbox
+label="Set end date"
+checked={hasEndDate}
+onChange={(event)=>{
+setHasEndDate(event.currentTarget.checked);
+if(!event.currentTarget.checked){
+setEndDateTime("");
+}
+}}
+/>
+
+{hasEndDate&&(
+<ScheduleDateTimeField label="End date and time" value={endDateTime} min={startDateTime||undefined} onChange={setEndDateTime} />
+)}
+</div>
+</FormSection>
+</FormStep>
+
+<FormStep {...stepProps("advanced")} optional summary={summary.advanced}>
 {discountType !== "bxgy" && (
-<FormSection title="Minimum purchase requirements">
+<FormSection title="Minimum purchase requirements" heading>
 <div
 style={{
 display: "grid",
@@ -1790,7 +1846,7 @@ details="Customers must add at least this many eligible items to use the discoun
 )}
 
 {method === "code" && (
-<FormSection title="Maximum discount uses">
+<FormSection title="Maximum discount uses" heading>
 <div
 style={{
 display: "grid",
@@ -1845,7 +1901,7 @@ setLimitOncePerCustomer(event.currentTarget.checked)
 </FormSection>
 )}
 
-<section style={{padding:"16px",border:"1px solid #dedede",borderRadius:"12px",background:"#fff"}}>
+<section style={{borderTop:"1px solid #ebebeb",paddingTop:"16px"}}>
 <div id="combinations-label" style={{color:"#202223",fontSize:"14px",fontWeight:650,marginBottom:"8px"}}>Combinations</div>
 <div ref={combinationFieldRef} style={{position:"relative"}}>
 {showCombinationPicker&&(
@@ -1906,91 +1962,20 @@ setLimitOncePerCustomer(event.currentTarget.checked)
 </button>
 </div>
 </section>
+</FormStep>
 
-<FormSection title="Schedule">
-<div style={{display:"grid",gap:"12px"}}>
-<ScheduleDateTimeField label="Start date and time" value={startDateTime} onChange={setStartDateTime} />
 
-<PolarisCheckbox
-label="Set end date"
-checked={hasEndDate}
-onChange={(event)=>{
-setHasEndDate(event.currentTarget.checked);
-if(!event.currentTarget.checked){
-setEndDateTime("");
-}
-}}
-/>
 
-{hasEndDate&&(
-<ScheduleDateTimeField label="End date and time" value={endDateTime} min={startDateTime||undefined} onChange={setEndDateTime} />
-)}
-</div>
-</FormSection>
-
+<FormStep {...stepProps("website")} optional summary={websiteSummary}>
 <PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} publicationDisabled={isCodeList} value={websiteDraft} onChange={value => updateWebsite(isCodeList ? { ...value, websiteEnabled: false } : value)} endsAt={hasEndDate ? endDateTime : null} onBusyChange={setAssetsBusy} />
+</FormStep>
 {previewFetcher.data?.error && <s-banner tone="warning">{previewFetcher.data.error}</s-banner>}
 {!promotionId && createdDiscountId && <s-button href={appUrl(`/app/promotions/${createdDiscountId.split("/").pop()}`)} variant="secondary">Open saved promotion</s-button>}
-{promotionId && createFetcher.data?.success && !hasUnsavedChanges && <s-banner tone="success">Promotion saved.</s-banner>}
 
 
 </s-stack>
 </div>
 
-<aside
-style={{
-position: "sticky",
-top: "20px",
-}}
->
-<div
-style={{
-paddingBottom: "14px",
-borderBottom: "1px solid #eeeeee",
-}}
->
-<div style={{ fontSize: "12px", fontWeight: 650 }}>
-{method === "code"
-? isCodeList ? codeListTitle || "New code list" : discountCode || "No discount code yet"
-: automaticTitle || "No title yet"}
-</div>
-<div style={{ marginTop: "2px", color: "#616161", fontSize: "12px" }}>
-{method === "code" ? isCodeList ? `${codeCount} individual codes` : "Shared code" : "Automatic"}
-</div>
-</div>
-
-<div
-style={{
-padding: "16px 0",
-borderBottom: "1px solid #eeeeee",
-}}
->
-<div style={{ color: "#616161", fontSize: "12px" }}>Type</div>
-<div style={{ marginTop: "8px", fontSize: "13px", fontWeight: 650 }}>
-{config.title}
-</div>
-<div style={{ marginTop: "4px", fontSize: "12px" }}>
-{config.typeLabel}
-</div>
-</div>
-
-<div style={{ padding: "16px 0" }}>
-<div style={{ color: "#616161", fontSize: "12px" }}>Details</div>
-<ul
-style={{
-margin: "8px 0 0",
-paddingLeft: "18px",
-color: "#202223",
-fontSize: "12px",
-lineHeight: 1.65,
-}}
->
-{details.map((detail) => (
-<li key={detail} suppressHydrationWarning>{detail}</li>
-))}
-</ul>
-</div>
-</aside>
 </div>
 
 
@@ -2292,7 +2277,7 @@ padding: 14px;
 
 @media (max-width: 1380px) {
 .create-discount-layout {
-grid-template-columns: minmax(0, 1fr) 260px !important;
+grid-template-columns: minmax(0, 1fr) !important;
 }
 
 .desktop-preview-panel {
@@ -2307,15 +2292,6 @@ display: block;
 @media (max-width: 800px) {
 .create-discount-layout {
 grid-template-columns: 1fr !important;
-}
-
-.create-discount-layout > aside:last-of-type {
-position: static !important;
-order: -1;
-padding: 16px;
-border: 1px solid #dedede;
-border-radius: 12px;
-background: #ffffff;
 }
 
 .discount-value-row,

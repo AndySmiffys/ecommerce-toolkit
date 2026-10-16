@@ -2,6 +2,7 @@ import { PolarisSelect, PolarisCheckbox, PolarisNumberField } from "./PolarisCon
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PromotionImageField } from "./PromotionImageField";
 import { LinkDestinationField } from "./LinkDestinationField";
+import { applyPalette, colourElements, customisedPaletteBlocks, hasImage, isAutomaticText, matchPalette, neutralColour, paletteValues, readColour, settleSurfaces, switchProductAppearance, textColourFor, white, writeColour, type ColourKey, type PaletteRole, type PaletteValues } from "../design/campaignPalette";
 import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign, selectedCampaignPlacements, type CampaignPatch } from "../design/sharedCampaign";
 import { contrastRatio, copyLimits, placements, presetDesign, promotionBlock, setPromotionBlock, validateWebsite, type BlockVisibility, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "../design/design";
 
@@ -14,7 +15,7 @@ function ControlGroup({ title, description, children }: { title: string; descrip
     {children}
   </section>;
 }
-function ColourField({ label, value, onChange, details }: { label: string; value: string; onChange: (value: string) => void; details: string }) {
+function ColourField({ label, value, onChange, details, reset }: { label: string; value: string; onChange: (value: string) => void; details: string; reset?: { label: string; value: string } }) {
   const id = useId();
   return <div style={{ display: "grid", gap: 5 }}>
     <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid #8a8a8a", borderRadius: 8, padding: "8px 12px", background: "#fff", cursor: "pointer", minWidth: 0 }}>
@@ -22,10 +23,11 @@ function ColourField({ label, value, onChange, details }: { label: string; value
       <input type="color" aria-label={label} aria-describedby={id} value={value} onChange={event => onChange(event.currentTarget.value)} style={{ width: 28, height: 28, flexShrink: 0, padding: 0, border: 0, background: "transparent", cursor: "pointer" }} />
     </label>
     <small id={id} style={helpStyle}>{details}</small>
+    {reset && value.toLowerCase() !== reset.value.toLowerCase() && <div><s-button type="button" variant="tertiary" onClick={() => onChange(reset.value)}>{reset.label}</s-button></div>}
   </div>;
 }
-function TextField({ label, value, onChange, maxLength, multiline = false, details }: { label: string; value: string; onChange: (value: string) => void; maxLength?: number; multiline?: boolean; details?: string }) {
-  return <div style={{ display: "grid", gap: 5 }}>{multiline ? <s-text-area label={label} rows={3} value={value} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} /> : <s-text-field label={label} value={value} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} />}{maxLength && <small style={{ ...helpStyle, textAlign: "right" }}>{value.length}/{maxLength}</small>}</div>;
+function TextField({ label, value, onChange, maxLength, multiline = false, details, placeholder }: { label: string; value: string; onChange: (value: string) => void; maxLength?: number; multiline?: boolean; details?: string; placeholder?: string }) {
+  return <div style={{ display: "grid", gap: 5 }}>{multiline ? <s-text-area label={label} rows={3} value={value} placeholder={placeholder} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} /> : <s-text-field label={label} value={value} placeholder={placeholder} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} />}{maxLength && <small style={{ ...helpStyle, textAlign: "right" }}>{value.length}/{maxLength}</small>}</div>;
 }
 const numberSettings = {
   headingSize: { label: "Headline size (px)", min: 10, max: 48, details: "Size of this block's headline. Use a smaller size for a header or badge." },
@@ -36,7 +38,8 @@ const numberSettings = {
 };
 
 type ChangeBlock = (change: (current: PromotionBlock) => PromotionBlock) => void;
-function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placement: Placement; block: PromotionBlock; onChange: ChangeBlock; onBusy: (busy: boolean) => void }) {
+type CampaignWording = Partial<Record<"headline" | "body" | "buttonText" | "countdownText" | "buttonUrl" | "imageAlt", string>>;
+function PromotionBlockEditor({ placement, block, palette, campaign, onChange, onBusy }: { placement: Placement; block: PromotionBlock; palette: PaletteValues; campaign: CampaignWording; onChange: ChangeBlock; onBusy: (busy: boolean) => void }) {
   const [busySlots, setBusySlots] = useState({ desktop: false, mobile: false });
   const busyRef = useRef(onBusy); busyRef.current = onBusy;
   useEffect(() => { busyRef.current(busySlots.desktop || busySlots.mobile); }, [busySlots]);
@@ -54,6 +57,30 @@ function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placemen
     const setting = numberSettings[name];
     return <s-number-field label={setting.label} details={setting.details} min={setting.min} max={setting.max} value={String(style[name])} onInput={event => { const next = Number(event.currentTarget.value); if (event.currentTarget.value && Number.isFinite(next)) styling(name, next); }} />;
   }
+  // A block that still matches the campaign shows its wording in grey; typing makes it the block's own, clearing the box follows the campaign again.
+  function wording(key: "headline" | "body" | "buttonText" | "countdownText", label: string, maxLength: number, extra: { multiline?: boolean; details?: string } = {}) {
+    const shared = isBadge ? undefined : campaign[key];
+    return <TextField label={label} value={shared !== undefined && block[key] === shared ? "" : block[key]} placeholder={shared || undefined} maxLength={maxLength} {...extra} onChange={next => set(key, next === "" && shared !== undefined ? shared : next)} />;
+  }
+  const roleNames: Record<PaletteRole, string> = { primary: "main campaign colour", secondary: "secondary colour" };
+  function setColour(fill: ColourKey, text: ColourKey | undefined, next: string) {
+    onChange(current => {
+      let updated = writeColour(current, fill, next);
+      if (text && isAutomaticText(readColour(updated, text), palette)) updated = writeColour(updated, text, textColourFor(next, palette));
+      return updated;
+    });
+  }
+  function fillField(label: string, fill: ColourKey, text: ColourKey | undefined, role: PaletteRole | undefined, what: string) {
+    const shared = role ? palette[role] : undefined;
+    return <ColourField label={label} value={readColour(block, fill)} onChange={next => setColour(fill, text, next)}
+      details={role ? `${what}. Follows the ${roleNames[role]} until you change it here.` : `${what}. Not part of the campaign colours.`}
+      reset={role && shared ? { label: `Use ${roleNames[role]}`, value: shared } : undefined} />;
+  }
+  function textField(label: string, text: ColourKey, surface: string) {
+    return <ColourField label={label} value={readColour(block, text)} onChange={next => setColour(text, undefined, next)}
+      details="Uses the campaign text colour: Text on colour over a colour, Text on white over white. Choose a colour to override it."
+      reset={{ label: "Use campaign text colour", value: textColourFor(surface, palette) }} />;
+  }
   const contrastIssues = [
     ["Promotion text", block.textColour, block.backgroundColour],
     ...(block.visibility.button && block.buttonText ? [["Button text", style.buttonColour, style.buttonBackground]] : []),
@@ -61,12 +88,12 @@ function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placemen
     ...(placement === "product" && block.visibility.discountCode && style.copyCodeEnabled ? [["Copy code button text", style.copyCodeColour, style.copyCodeBackground]] : []),
   ].filter(([,a,b]) => contrastRatio(a,b) < 4.5);
   return <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 16, padding: "0 16px 16px" }}>
-    <ControlGroup title="Content & visibility" description="Choose which elements appear, then set their wording. Hidden elements keep their saved values.">
+    <ControlGroup title="Content & visibility" description={isBadge ? "Choose whether the badge text appears, then set its wording. Hidden elements keep their saved values." : "Choose which elements appear. Grey text is the campaign wording: type to change it for this block only, or clear a box to follow the campaign again. Hidden elements keep their saved values."}>
       {visibility("headline", isBadge ? "Show badge text" : "Show headline")}
-      {block.visibility.headline && <TextField label={isBadge ? "Badge text" : "Headline"} value={block.headline} maxLength={isBadge ? copyLimits.badgeText : copyLimits.headline} onChange={next => set("headline", next)} />}
+      {block.visibility.headline && wording("headline", isBadge ? "Badge text" : "Headline", isBadge ? copyLimits.badgeText : copyLimits.headline)}
       {!isBadge && <>
         {visibility("body", "Show body")}
-        {block.visibility.body && <TextField label="Body" value={block.body} maxLength={copyLimits.body} multiline onChange={next => set("body", next)} />}
+        {block.visibility.body && wording("body", "Body", copyLimits.body, { multiline: true })}
         {visibility("offerNote", "Show discount message", "The code instruction or automatic-discount message supplied by the promotion.")}
         {hasImages && <>
           {visibility("image", "Show image")}
@@ -74,15 +101,15 @@ function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placemen
             <PromotionImageField label="Desktop image" url={style.desktopImage} fileId={style.desktopImageId} onBusy={busy => setBusySlots(current => ({ ...current, desktop: busy }))} onChange={image => onChange(current => ({ ...current, style: { ...current.style, desktopImage: image?.url ?? "", desktopImageId: image?.id ?? "" } }))} />
             <PromotionImageField label="Mobile image" url={style.mobileImage} fileId={style.mobileImageId} onBusy={busy => setBusySlots(current => ({ ...current, mobile: busy }))} onChange={image => onChange(current => ({ ...current, style: { ...current.style, mobileImage: image?.url ?? "", mobileImageId: image?.id ?? "" } }))} />
             <small style={helpStyle}>Mobile uses the desktop image if left blank. Choose a Shopify file or drag a JPG, PNG or WebP up to 20 MB into the image area.</small>
-            <TextField label="Image description (alt text)" value={style.imageAlt} maxLength={250} details="Describe the image for shoppers using screen readers." onChange={next => styling("imageAlt", next)} />
+            <TextField label="Image description (alt text)" value={campaign.imageAlt !== undefined && style.imageAlt === campaign.imageAlt ? "" : style.imageAlt} placeholder={campaign.imageAlt || undefined} maxLength={250} details="Describe the image for shoppers using screen readers." onChange={next => styling("imageAlt", next === "" && campaign.imageAlt !== undefined ? campaign.imageAlt : next)} />
           </>}
         </>}
         {visibility("countdown", "Show countdown", "Requires an end date in Schedule. Each block can show or hide its own timer.")}
-        {block.visibility.countdown && <TextField label="Countdown label" value={block.countdownText} maxLength={copyLimits.countdownText} onChange={next => set("countdownText", next)} />}
+        {block.visibility.countdown && wording("countdownText", "Countdown label", copyLimits.countdownText)}
         {visibility("button", "Show button")}
         {block.visibility.button && <>
-          <TextField label="Button text" value={block.buttonText} maxLength={copyLimits.buttonText} details="Leave blank to omit the button." onChange={next => set("buttonText", next)} />
-          <LinkDestinationField value={block.buttonUrl} onChange={next => set("buttonUrl", next)} />
+          {wording("buttonText", "Button text", copyLimits.buttonText, { details: "Leave blank to use the campaign button text. Turn off Show button to remove the button." })}
+          <LinkDestinationField value={block.buttonUrl} inherited={campaign.buttonUrl} onChange={next => set("buttonUrl", next)} />
         </>}
         {placement === "product" && <>
           {visibility("discountCode", "Show discount code", "Applies to code discounts. Automatic discounts use the discount message instead.")}
@@ -97,15 +124,9 @@ function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placemen
           void overrides; void blocks;
           return { ...current, style: nextStyle };
         })}><s-option value="simple">Simple offer</s-option><s-option value="campaign">Image campaign</s-option><s-option value="compact">Compact offer</s-option></PolarisSelect>
-        <ColourField label="Background colour" value={block.backgroundColour} onChange={next => set("backgroundColour", next)} details="Fill behind this block. A full background image covers this colour; outlined product offers use the page background." />
-        <ColourField label="Text colour" value={block.textColour} onChange={next => set("textColour", next)} details="Colour of this block's headline, description, discount message and countdown." />
         <PolarisSelect label="Text alignment" value={style.alignment} onChange={event => styling("alignment", event.currentTarget.value as PromotionStyle["alignment"])}><s-option value="left">Left</s-option><s-option value="center">Centre</s-option><s-option value="right">Right</s-option></PolarisSelect>
         {numberField("headingSize")}
         {numberField("bodySize")}
-        {block.visibility.button && <>
-          <ColourField label="Button background colour" value={style.buttonBackground} onChange={next => styling("buttonBackground", next)} details="Fill behind this block's button label." />
-          <ColourField label="Button text colour" value={style.buttonColour} onChange={next => styling("buttonColour", next)} details="Choose a colour with good contrast against the button background." />
-        </>}
         {hasImages && block.visibility.image && <>
           <PolarisSelect label="Image layout" value={style.imageLayout} onChange={event => styling("imageLayout", event.currentTarget.value as PromotionStyle["imageLayout"])}><s-option value="full">Full background</s-option><s-option value="half-left">Image left</s-option><s-option value="half-right">Image right</s-option></PolarisSelect>
           {numberField("bannerHeight")}
@@ -115,26 +136,98 @@ function PromotionBlockEditor({ placement, block, onChange, onBusy }: { placemen
         </>}
       </>}
       {placement === "product" && <>
-        <PolarisSelect label="Offer appearance" value={style.productOfferStyle} onChange={event => onChange(current => { const next = event.currentTarget.value as PromotionStyle["productOfferStyle"]; return { ...current, style: { ...current.style, productOfferStyle: next, productBorderWidth: next === "double" ? Math.max(3, current.style.productBorderWidth) : current.style.productBorderWidth } }; })}><s-option value="solid">Solid background</s-option><s-option value="single">Single line border</s-option><s-option value="double">Double line border</s-option></PolarisSelect>
+        <PolarisSelect label="Offer appearance" value={style.productOfferStyle} onChange={event => onChange(current => { const next = event.currentTarget.value as PromotionStyle["productOfferStyle"]; return switchProductAppearance({ ...current, style: { ...current.style, productOfferStyle: next, productBorderWidth: next === "double" ? Math.max(3, current.style.productBorderWidth) : current.style.productBorderWidth } }, current.style.productOfferStyle, palette); })}><s-option value="solid">Solid background</s-option><s-option value="single">Single line border</s-option><s-option value="double">Double line border</s-option></PolarisSelect>
         {style.productOfferStyle !== "solid" && <>
           <s-number-field label="Offer border thickness (px)" details={style.productOfferStyle === "double" ? "Use 3–12px so both lines and the gap remain visible." : "Width of the outline, from 1–12px."} min={style.productOfferStyle === "double" ? 3 : 1} max={12} value={String(style.productBorderWidth)} onInput={event => { const next = Number(event.currentTarget.value); if (event.currentTarget.value && Number.isFinite(next)) styling("productBorderWidth", next); }} />
-          <ColourField label="Offer border colour" value={style.productBorderColour} onChange={next => styling("productBorderColour", next)} details="Colour of this product offer's outline." />
-        </>}
-        {block.visibility.discountCode && style.copyCodeEnabled && <>
-          <ColourField label="Copy code button background" value={style.copyCodeBackground} onChange={next => styling("copyCodeBackground", next)} details="Fill colour of the copy-code button." />
-          <ColourField label="Copy code button text colour" value={style.copyCodeColour} onChange={next => styling("copyCodeColour", next)} details="Colour of the copy label and icon." />
         </>}
       </>}
       {isBadge && <>
-        <ColourField label="Badge background colour" value={block.badgeColour} onChange={next => set("badgeColour", next)} details="Fill behind this product-card badge." />
-        <ColourField label="Badge text colour" value={style.badgeTextColour} onChange={next => styling("badgeTextColour", next)} details="Choose a colour with good contrast against the badge background." />
         {numberField("headingSize")}
       </>}
       {!isBadge && numberField("spacing")}
       {numberField("radius")}
     </ControlGroup>
+    <ControlGroup title="Colours" description="These follow the campaign colours above until you change one here. Use the button under a colour to return to the campaign colour.">
+      {placement === "header" && <>
+        {fillField("Header background", "backgroundColour", "textColour", "primary", "Fill behind the header announcement")}
+        {textField("Header text colour", "textColour", block.backgroundColour)}
+        {block.visibility.button && <>
+          {fillField("Header button background", "style.buttonBackground", "style.buttonColour", "secondary", "Fill behind the header button")}
+          {textField("Header button text colour", "style.buttonColour", style.buttonBackground)}
+        </>}
+      </>}
+      {placement === "collection" && <>
+        {fillField("Collection banner background", "backgroundColour", "textColour", undefined, "Fill behind the collection banner. Kept white while the banner shows an image")}
+        {textField("Collection banner text colour", "textColour", block.backgroundColour)}
+        {block.visibility.button && <>
+          {fillField("Collection button background", "style.buttonBackground", "style.buttonColour", "primary", "Fill behind the collection banner button")}
+          {textField("Collection button text colour", "style.buttonColour", style.buttonBackground)}
+        </>}
+      </>}
+      {placement === "product" && <>
+        {style.productOfferStyle === "solid"
+          ? <>
+            {fillField("Product offer background", "backgroundColour", "textColour", hasImage(block) ? undefined : "primary", hasImage(block) ? "Kept white while the offer shows an image" : "Fill behind the product offer")}
+            {textField("Product offer text colour", "textColour", block.backgroundColour)}
+          </>
+          : <>
+            {fillField("Product offer border colour", "style.productBorderColour", undefined, "primary", "Colour of the product offer outline")}
+            {textField("Product offer text colour (on the page background)", "textColour", white)}
+          </>}
+        {block.visibility.button && <>
+          {fillField("Product button background", "style.buttonBackground", "style.buttonColour", "primary", "Fill behind the product offer button")}
+          {textField("Product button text colour", "style.buttonColour", style.buttonBackground)}
+        </>}
+        {block.visibility.discountCode && style.copyCodeEnabled && <>
+          {fillField("Copy code button background", "style.copyCodeBackground", "style.copyCodeColour", "secondary", "Fill behind the copy code button")}
+          {textField("Copy code button text colour", "style.copyCodeColour", style.copyCodeBackground)}
+        </>}
+      </>}
+      {isBadge && <>
+        {fillField("Badge background", "badgeColour", "style.badgeTextColour", "primary", "Fill behind the product-card badge")}
+        {textField("Badge text colour", "style.badgeTextColour", block.badgeColour)}
+      </>}
+    </ControlGroup>
     {contrastIssues.length > 0 && <div role="status" style={{ ...helpStyle, padding: 10, background: "#fff8e6", borderRadius: 8 }}>Improve readability: {contrastIssues.map(([label]) => label).join(", ")} has low contrast. Check text over images in the preview too.</div>}
   </div>;
+}
+
+function CampaignColours({ value, onChange, onMatch, onOverride }: { value: WebsiteDraft; onChange: (change: PaletteValues) => void; onMatch: (placement: Placement) => void; onOverride: (placement: Placement) => void }) {
+  const values = paletteValues(value);
+  const chosen = placements.filter(p => value[p.flag]);
+  const elements = colourElements(value);
+  const own = customisedPaletteBlocks(value);
+  const unreadable = elements.filter(element => !element.readable);
+  const titleOf = (id: string) => placements.find(p => p.id === id)!.title;
+  return <section aria-label="Campaign colours" style={sectionStyle}>
+    <h2 style={{ fontSize: 16, margin: 0 }}>Campaign colours</h2>
+    <small style={helpStyle}>Choose the campaign colours once. Text uses Text on colour over the main or secondary colour and Text on white over white, picked for you by contrast. Each block below can still override a colour.</small>
+    <ColourField label="Main colour" value={values.primary ?? neutralColour} onChange={next => onChange({ primary: next })} details="Header background, collection button, product offer background or border and its button, and the product badge." />
+    {(value.showHeaderBanner || value.showProductPage) && <ColourField label="Secondary colour" value={values.secondary ?? neutralColour} onChange={next => onChange({ secondary: next })} details="Header button and copy code button." />}
+    <ColourField label="Text on colour" value={values.onColour ?? white} onChange={next => onChange({ onColour: next })} details="Text and button labels that sit on the main or secondary colour." />
+    <ColourField label="Text on white" value={values.onWhite ?? "#000000"} onChange={next => onChange({ onWhite: next })} details="Text on white: collection banners, and any block that shows an image." />
+    <ControlGroup title="What this controls" description="Where each colour is used on the blocks you selected. Open a block to override a single element.">
+      {chosen.map(p => <div key={p.id} style={{ display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <strong style={{ fontSize: 13 }}>{p.title}</strong>
+          <s-button type="button" variant="tertiary" onClick={() => onOverride(p.id)}>Override colours</s-button>
+        </div>
+        {elements.filter(element => element.placement === p.id).map(element => <div key={element.label} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <span aria-hidden="true" style={{ flex: "0 0 auto", width: 32, height: 24, borderRadius: 6, border: "1px solid #c9c9c9", background: element.fill, color: element.text ?? "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>Aa</span>
+          <span style={{ fontSize: 13, minWidth: 0 }}>{element.label}</span>
+          <span style={{ ...helpStyle, marginLeft: "auto", whiteSpace: "nowrap" }}>{element.source}{element.readable ? "" : " · low contrast"}</span>
+        </div>)}
+      </div>)}
+    </ControlGroup>
+    {unreadable.length > 0 && <div role="status" style={{ ...helpStyle, padding: 10, background: "#fff8e6", borderRadius: 8 }}>Improve readability: {unreadable.map(element => element.label).join(", ")}. Choose a different text colour or main colour.</div>}
+    {own.length > 0 && <div role="status" style={{ ...helpStyle, padding: 10, background: "#f1f1f1", borderRadius: 8, display: "grid", gap: 8 }}>
+      <span>Using their own colours, so not following the campaign colours: {own.map(titleOf).join(", ")}.</span>
+      <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {own.map(id => <s-button key={id} type="button" variant="secondary" onClick={() => onMatch(id)}>Use campaign colours for {titleOf(id).toLowerCase()}</s-button>)}
+        {own.length > 1 && <s-button type="button" variant="secondary" onClick={() => own.forEach(id => onMatch(id))}>Use campaign colours for all</s-button>}
+      </span>
+    </div>}
+  </section>;
 }
 
 function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDraft; onChange: (patch: CampaignPatch) => void; onMatch: (placement: Placement) => void; onBusy: (busy: boolean) => void }) {
@@ -146,12 +239,11 @@ function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDr
   const titles = (ids: string[]) => ids.map(id => placements.find(p => p.id === id)!.title).join(", ");
   const showImages = selected.some(id => id === "collection" || id === "product");
   const text = (key: "headline" | "body" | "buttonText" | "countdownText") => campaignValue(value, key) ?? "";
-  const colour = (key: "backgroundColour" | "textColour") => campaignValue(value, key) ?? "#ffffff";
-  const style = (key: "buttonBackground" | "buttonColour" | "desktopImage" | "desktopImageId" | "mobileImage" | "mobileImageId" | "imageAlt") => campaignValue(value, "style", key) ?? "";
+  const style = (key: "desktopImage" | "desktopImageId" | "mobileImage" | "mobileImageId" | "imageAlt") => campaignValue(value, "style", key) ?? "";
   const customised = customisedPlacements(value);
   return <section aria-label="Campaign content and style" style={sectionStyle}>
     <h2 style={{ fontSize: 16, margin: 0 }}>Campaign content & style</h2>
-    <small style={helpStyle}>Set the wording, image and colours once for {titles(selected)}. Each block below can still be fine-tuned. A block you change on its own keeps its own value.</small>
+    <small style={helpStyle}>Set the wording and images once for {titles(selected)}. Each block below can still be fine-tuned. A block you change on its own keeps its own value.</small>
     <ControlGroup title="Content" description="Shown on each selected block that has this element turned on.">
       <TextField label="Headline" value={text("headline")} maxLength={copyLimits.headline} onChange={next => onChange({ headline: next })} />
       <TextField label="Body" value={text("body")} maxLength={copyLimits.body} multiline onChange={next => onChange({ body: next })} />
@@ -164,12 +256,6 @@ function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDr
       <PromotionImageField label="Mobile image" url={style("mobileImage")} fileId={style("mobileImageId")} onBusy={next => setBusy(current => ({ ...current, mobile: next }))} onChange={image => onChange({ style: { mobileImage: image?.url ?? "", mobileImageId: image?.id ?? "" } })} />
       <TextField label="Image description (alt text)" value={style("imageAlt")} maxLength={250} details="Describe the image for shoppers using screen readers." onChange={next => onChange({ style: { imageAlt: next } })} />
     </ControlGroup>}
-    <ControlGroup title="Colours" description="Applied to each selected block.">
-      <ColourField label="Background colour" value={colour("backgroundColour")} onChange={next => onChange({ backgroundColour: next })} details="Fill behind the block. A full background image covers this colour." />
-      <ColourField label="Text colour" value={colour("textColour")} onChange={next => onChange({ textColour: next })} details="Colour of the headline, description, discount message and countdown." />
-      <ColourField label="Button background colour" value={style("buttonBackground") || "#202223"} onChange={next => onChange({ style: { buttonBackground: next } })} details="Fill behind the button label." />
-      <ColourField label="Button text colour" value={style("buttonColour") || "#ffffff"} onChange={next => onChange({ style: { buttonColour: next } })} details="Choose a colour with good contrast against the button background." />
-    </ControlGroup>
     {customised.length > 0 && <div role="status" style={{ ...helpStyle, padding: 10, background: "#f1f1f1", borderRadius: 8, display: "grid", gap: 8 }}>
       <span>Customised, so not following the settings above: {titles(customised)}.</span>
       <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{customised.map(id => <s-button key={id} type="button" variant="secondary" onClick={() => onMatch(id)}>Use campaign settings for {placements.find(p => p.id === id)!.title}</s-button>)}</span>
@@ -183,13 +269,18 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
   const busy = Object.values(busyBlocks).some(Boolean);
   const busyRef = useRef(onBusyChange); busyRef.current = onBusyChange;
   useEffect(() => { busyRef.current(busy); }, [busy]);
-  function set<K extends keyof WebsiteDraft>(name: K, next: WebsiteDraft[K]) { latestValue.current = { ...latestValue.current, [name]: next }; onChange(latestValue.current); }
+  // Every change settles block backgrounds: a block that shows an image is white.
+  function commit(next: WebsiteDraft) { latestValue.current = settleSurfaces(next); onChange(latestValue.current); }
+  function set<K extends keyof WebsiteDraft>(name: K, next: WebsiteDraft[K]) { commit({ ...latestValue.current, [name]: next }); }
   function changeBlock(placement: Placement, change: (current: PromotionBlock) => PromotionBlock) {
-    latestValue.current = setPromotionBlock(latestValue.current, placement, change(promotionBlock(latestValue.current, placement)));
-    onChange(latestValue.current);
+    commit(setPromotionBlock(latestValue.current, placement, change(promotionBlock(latestValue.current, placement))));
   }
-  function changeCampaign(patch: CampaignPatch) { latestValue.current = applyCampaignPatch(latestValue.current, patch); onChange(latestValue.current); }
-  function matchBlock(placement: Placement) { latestValue.current = matchCampaign(latestValue.current, placement); onChange(latestValue.current); }
+  function changeCampaign(patch: CampaignPatch) { commit(applyCampaignPatch(latestValue.current, patch)); }
+  function matchBlock(placement: Placement) { commit(matchCampaign(latestValue.current, placement)); }
+  function changePalette(change: PaletteValues) { commit(applyPalette(latestValue.current, change)); }
+  function matchColours(placement: Placement) { commit(matchPalette(latestValue.current, placement)); }
+  const palette = paletteValues(value);
+  const campaign: CampaignWording = { headline: campaignValue(value, "headline"), body: campaignValue(value, "body"), buttonText: campaignValue(value, "buttonText"), countdownText: campaignValue(value, "countdownText"), buttonUrl: campaignValue(value, "buttonUrl"), imageAlt: campaignValue(value, "style", "imageAlt") };
   const errors = validateWebsite(value, endsAt);
   const hasCampaign = selectedCampaignPlacements(value).length > 0;
   const selected = placements.filter(p => value[p.flag]);
@@ -214,9 +305,10 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
       </div>
     </section>
     {hasCampaign && <CampaignEditor value={value} onChange={changeCampaign} onMatch={matchBlock} onBusy={next => setBusyBlocks(current => current.campaign === next ? current : { ...current, campaign: next })} />}
+    {selected.length > 0 && <CampaignColours value={value} onChange={changePalette} onMatch={matchColours} onOverride={placement => toggleBlock(placement, true)} />}
     {selected.map(p => <details key={p.id} data-promotion-block={p.id} open={openId === p.id} onToggle={event => toggleBlock(p.id, event.currentTarget.open)} style={{ border: "1px solid #dedede", borderRadius: 12, background: "#fff", minWidth: 0 }}>
       <summary style={{ cursor: "pointer", fontWeight: 600, padding: 16 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>{hasCampaign && p.id !== "badge" ? `Fine-tune ${p.title.toLowerCase()}` : p.title}<s-badge tone="success">Selected</s-badge></span></summary>
-      <PromotionBlockEditor placement={p.id} block={promotionBlock(value, p.id)} onChange={change => changeBlock(p.id, change)} onBusy={next => setBusyBlocks(current => current[p.id] === next ? current : { ...current, [p.id]: next })} />
+      <PromotionBlockEditor placement={p.id} block={promotionBlock(value, p.id)} palette={palette} campaign={campaign} onChange={change => changeBlock(p.id, change)} onBusy={next => setBusyBlocks(current => current[p.id] === next ? current : { ...current, [p.id]: next })} />
     </details>)}
     {!selected.length && <p style={helpStyle}>Select a block above to customise its content and styling.</p>}
     {errors.length > 0 && <ul style={{ margin: 0, paddingLeft: 18, color: "#b42318", fontSize: 12 }}>{errors.map(error => <li key={error}>{error}</li>)}</ul>}
