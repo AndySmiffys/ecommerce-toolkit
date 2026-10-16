@@ -14,7 +14,7 @@ export const promotionCss = `
 @media(max-width:600px){.pe-split{grid-template-columns:1fr}.pe-split .pe-picture{height:240px;min-height:180px}.pe-split .pe-image{max-height:240px;min-height:180px}.pe-full .pe-copy{max-width:100%}.pe-copy{padding:max(16px,calc(var(--pe-space)*.7))}.pe-heading{font-size:clamp(10px,6vw,var(--pe-heading))}.pe-header .pe-copy{flex-direction:column;gap:8px;text-align:var(--pe-align);align-items:var(--pe-items)}.pe-banner,.pe-banner .pe-copy{min-height:min(var(--pe-height),360px)}}
 `;
 // Preview-only styles. They show the surroundings of a block and never reach the storefront.
-const previewCss = `body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#fff;color:#1a1a1a}
+const previewCss = `html{overflow:hidden}body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#fff;color:#1a1a1a}
 .pe-shell{padding:0}.pe-site{background:#fff;min-height:100%}
 .pe-site-nav{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 32px;border-bottom:1px solid #ececec}
 .pe-site-logo{width:104px;height:20px;border-radius:5px;background:#1a1a1a}
@@ -111,11 +111,20 @@ type Device = typeof devices[number]["id"];
 // The frame reports its own content height, so a one-line header is not given the room of a product page.
 const reportHeight = `<script>(function(){function post(){parent.postMessage({peHeight:Math.ceil(document.body.getBoundingClientRect().height)},"*")}addEventListener("load",post);if(window.ResizeObserver)new ResizeObserver(post).observe(document.body);post()})()</script>`;
 
-function PreviewStage({ document: html, width, title, fallbackHeight, maxHeight }: { document: string; width: number; title: string; fallbackHeight: number; maxHeight: number }) {
+// The preview never scrolls inside itself. In the side panel (`fitHeight` set) the page is scaled down to fit the window
+// height; elsewhere it is shown in full and the surrounding page or modal scrolls.
+function PreviewStage({ document: html, width, title, fallbackHeight, fitHeight }: { document: string; width: number; title: string; fallbackHeight: number; fitHeight?: number }) {
   const holder = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const [available, setAvailable] = useState(400);
   const [measured, setMeasured] = useState<number | null>(null);
+  const recent = useRef<number[]>([]);
+  const [viewport, setViewport] = useState(typeof window === "undefined" ? 800 : window.innerHeight);
+  useEffect(() => {
+    const resized = () => setViewport(window.innerHeight);
+    window.addEventListener("resize", resized);
+    return () => window.removeEventListener("resize", resized);
+  }, []);
   // Typing rebuilds the document; wait for a pause so the frame does not flicker or lose its scroll position.
   const [settled, setSettled] = useState(html);
   useEffect(() => { const timer = setTimeout(() => setSettled(html), 250); return () => clearTimeout(timer); }, [html]);
@@ -127,15 +136,21 @@ function PreviewStage({ document: html, width, title, fallbackHeight, maxHeight 
   useEffect(() => {
     function heard(event: MessageEvent) {
       const height = (event.data as { peHeight?: unknown } | null)?.peHeight;
-      if (event.source === frame.current?.contentWindow && typeof height === "number" && height > 0) setMeasured(height);
+      if (event.source !== frame.current?.contentWindow || typeof height !== "number" || height <= 0) return;
+      const now = Date.now();
+      recent.current = [...recent.current.filter(time => now - time < 2000), now];
+      // A burst of updates means the size is oscillating; settle on the larger height instead of following it.
+      if (recent.current.length > 8) setMeasured(previous => Math.max(previous ?? 0, height));
+      else setMeasured(previous => previous !== null && Math.abs(previous - height) < 2 ? previous : height);
     }
     window.addEventListener("message", heard);
     return () => window.removeEventListener("message", heard);
   }, []);
-  const scale = Math.min(1, available / width);
   const height = measured ?? fallbackHeight;
-  return <div ref={holder} style={{ overflow: "auto", minWidth: 0, maxHeight }}>
-    <div style={{ width: "100%", height: height * scale, position: "relative" }}>
+  const heightLimit = fitHeight === undefined ? Infinity : Math.max(200, viewport - fitHeight);
+  const scale = Math.min(1, available / width, heightLimit / height);
+  return <div ref={holder} style={{ overflow: "hidden", minWidth: 0 }}>
+    <div style={{ width: width * scale, height: height * scale, position: "relative", margin: "0 auto" }}>
       <iframe ref={frame} title={title} sandbox="allow-scripts" allow="clipboard-write" srcDoc={settled} style={{ position: "absolute", top: 0, left: 0, border: 0, width, height, transform: `scale(${scale})`, transformOrigin: "top left", background: "#f5f5f5" }} />
     </div>
   </div>;
@@ -172,14 +187,14 @@ export function PromotionPreview({ value, products, endsAt, productOptions = [],
       {loading && <s-text color="subdued">Loading eligible products…</s-text>}
       {sample && <s-text color="subdued">Example product. Select qualifying products or collections to preview eligibility.</s-text>}
       {active
-        ? <PreviewStage document={document} width={width} title={frameTitle} fallbackHeight={fallbackHeight} maxHeight={650} />
+        ? <PreviewStage document={document} width={width} title={frameTitle} fallbackHeight={fallbackHeight} fitHeight={allowEnlarge ? 420 : undefined} />
         : <s-banner tone="info">Select a website block to preview it.</s-banner>}
       <s-text color="subdued">Design preview at {width}px. Whether visitors see it depends on the customer, schedule, qualifying products and priority. Theme fonts and surrounding page content may differ.</s-text>
     </s-stack>
     {allowEnlarge && <ModalOverlay open={enlarged} heading="Website preview" size="large" onClose={() => setEnlarged(false)}>
       <s-stack direction="block" gap="base">
         <s-stack direction="inline" gap="small-200">{devices.map(item => <s-button type="button" variant={device === item.id ? "primary" : "secondary"} key={item.id} aria-pressed={device === item.id} onClick={() => setDevice(item.id)}>{item.label}</s-button>)}</s-stack>
-        <PreviewStage document={document} width={width} title={`Large ${frameTitle}`} fallbackHeight={fallbackHeight} maxHeight={720} />
+        <PreviewStage document={document} width={width} title={`Large ${frameTitle}`} fallbackHeight={fallbackHeight} />
       </s-stack>
       <s-button slot="secondary-actions" onClick={() => setEnlarged(false)}>Close</s-button>
     </ModalOverlay>}
