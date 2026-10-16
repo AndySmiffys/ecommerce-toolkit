@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultDesign, promotionBlock, setPromotionBlock, type PromotionStyle, type WebsiteDraft } from "../app/modules/promotions/design/design";
+import { defaultDesign, promotionBlock, readDesign, setPromotionBlock, type PromotionStyle, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { applyPalette, autoText, colourElements, customisedPaletteBlocks, matchPalette, paletteColour, settleSurfaces, switchProductAppearance } from "../app/modules/promotions/design/campaignPalette";
 
 function draft(flags: Partial<WebsiteDraft> = {}): WebsiteDraft {
@@ -42,9 +42,9 @@ test("the main colour fills the header, collection button, product offer, produc
 test("the secondary colour fills only the header button and the copy code button", () => {
   const next = applyPalette(draft(), { secondary: "#f5a623" });
   assert.equal(block(next, "header").style.buttonBackground, "#f5a623");
-  assert.equal(block(next, "header").style.buttonColour, "#000000");
+  assert.equal(block(next, "header").style.buttonColour, "#ffffff", "button labels keep the button text colour");
   assert.equal(block(next, "product").style.copyCodeBackground, "#f5a623");
-  assert.equal(block(next, "product").style.copyCodeColour, "#000000");
+  assert.equal(block(next, "product").style.copyCodeColour, "#ffffff");
   assert.equal(block(next, "collection").style.buttonBackground, "#202223", "the collection button uses the main colour");
   assert.equal(block(next, "product").style.buttonBackground, "#202223");
   assert.equal(block(next, "header").backgroundColour, "#ffffff");
@@ -106,7 +106,8 @@ test("switching a product offer between solid and outline moves the chosen colou
 test("text on a colour and text on white are two campaign colours, chosen per surface by contrast", () => {
   let value = applyPalette(draft(), { primary: "#642080" });
   value = applyPalette(value, { onColour: "#fff2cc" });
-  for (const text of [block(value, "header").textColour, block(value, "header").style.buttonColour, block(value, "collection").style.buttonColour, block(value, "product").textColour, block(value, "product").style.buttonColour, block(value, "badge").style.badgeTextColour]) assert.equal(text, "#fff2cc");
+  for (const text of [block(value, "header").textColour, block(value, "product").textColour, block(value, "badge").style.badgeTextColour]) assert.equal(text, "#fff2cc");
+  for (const label of [block(value, "header").style.buttonColour, block(value, "collection").style.buttonColour, block(value, "product").style.buttonColour, block(value, "product").style.copyCodeColour]) assert.equal(label, "#ffffff", "button labels do not use the text colours");
   assert.equal(block(value, "collection").textColour, "#000000", "the collection banner is white, so it uses the text on white colour");
   value = applyPalette(value, { onWhite: "#242124" });
   assert.equal(block(value, "collection").textColour, "#242124");
@@ -154,4 +155,41 @@ test("the list of coloured elements says where each colour comes from and whethe
   value = setPromotionBlock(value, "header", { ...block(value, "header"), backgroundColour: "#00aa00", textColour: "#00bb00" });
   const changed = colourElements(value).find(element => element.label === "Header background")!;
   assert.deepEqual([changed.source, changed.readable], ["Own colour", false]);
+});
+
+test("button labels have their own campaign colour and never switch with the background", () => {
+  let value = applyPalette(draft(), { primary: "#ffe066", secondary: "#f5a623" });
+  assert.equal(block(value, "header").style.buttonColour, "#ffffff", "a light button colour keeps white labels until a button text colour is chosen");
+  assert.equal(block(value, "header").textColour, "#000000", "ordinary text still switches");
+  assert.equal(colourElements(value).find(item => item.label === "Collection button")!.readable, false, "white on pale yellow is flagged");
+  value = applyPalette(value, { button: "#242124" });
+  for (const label of [block(value, "header").style.buttonColour, block(value, "collection").style.buttonColour, block(value, "product").style.buttonColour, block(value, "product").style.copyCodeColour]) assert.equal(label, "#242124");
+  assert.equal(paletteColour(value, "button"), "#242124");
+  assert.equal(block(value, "badge").style.badgeTextColour, "#000000", "the badge is not a button");
+  assert.equal(colourElements(value).find(item => item.label === "Collection button")!.readable, true);
+  value = applyPalette(value, { primary: "#1e3a8a" });
+  assert.equal(block(value, "collection").style.buttonColour, "#242124", "changing the main colour leaves button labels alone");
+  assert.equal(block(value, "collection").style.buttonBackground, "#1e3a8a");
+  value = setPromotionBlock(value, "product", { ...block(value, "product"), style: { ...block(value, "product").style, buttonColour: "#ff00ff" } });
+  assert.equal(paletteColour(value, "button"), "#242124", "one custom label does not become the campaign colour");
+  value = applyPalette(value, { button: "#ffffff" });
+  assert.equal(block(value, "product").style.buttonColour, "#ff00ff", "a custom label survives");
+  assert.equal(block(value, "header").style.buttonColour, "#ffffff");
+  assert.equal(block(matchPalette(value, "product"), "product").style.buttonColour, "#ffffff");
+});
+
+test("chosen text colours are saved with the design and survive a main colour that hides them", () => {
+  let value = applyPalette(draft(), { primary: "#642080", onColour: "#fff2cc", onWhite: "#242124", button: "#ffffff" });
+  assert.deepEqual(value.design.palette, { onColour: "#fff2cc", onWhite: "#242124", button: "#ffffff" });
+  const light = applyPalette(value, { primary: "#ffe066" });
+  assert.equal(paletteColour(light, "onColour"), "#fff2cc", "no block uses it now, but it is remembered");
+  const stored = readDesign(JSON.stringify(light.design));
+  assert.deepEqual(stored.palette, { onColour: "#fff2cc", onWhite: "#242124", button: "#ffffff" });
+  assert.equal(readDesign(JSON.stringify({ ...defaultDesign(), palette: { button: "#ABCDEF" } })).palette?.button, "#abcdef");
+  assert.throws(() => readDesign(JSON.stringify({ ...defaultDesign(), palette: { button: "red" } })), /hex/);
+  assert.throws(() => readDesign(JSON.stringify({ ...defaultDesign(), palette: [] })), /Invalid campaign colours/);
+  assert.equal(readDesign(JSON.stringify(defaultDesign())).palette, undefined);
+  assert.equal("palette" in promotionBlock(light, "header").style, false, "the palette is not copied into a block's styling");
+  value = applyPalette(light, { primary: "#1e3a8a" });
+  assert.equal(block(value, "header").textColour, "#fff2cc");
 });

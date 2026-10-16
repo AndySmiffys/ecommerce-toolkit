@@ -35,6 +35,15 @@ All promotion code lives in `app/modules/promotions/`:
 
 Routing is file-based (`@react-router/fs-routes`, `app/routes.ts`); admin pages are `app.*` routes behind `authenticate.admin`. Prisma uses SQLite (`file:dev.sqlite`) in `prisma/`; add migrations with `npx prisma migrate dev`.
 
+## UI conventions
+
+Andy's rule: use Shopify's native functionality everywhere in the admin so the app keeps up to date as Shopify changes. Do not hand-build what a native component provides.
+- **Components:** Polaris web components (`s-page`, `s-section`, `s-banner`, `s-table`, `s-modal`, `s-choice-list`, `s-color-field`, `s-date-field`, `s-search-field`, `s-clickable`, `s-heading`, `s-text`, …). React 18 does not bind their `change` events, so use the adapters in `components/PolarisControls.tsx` (`PolarisSelect`, `PolarisCheckbox`, `PolarisRadioList`, `PolarisCheckboxList`) or add native listeners; `ModalOverlay` opens `s-modal` from state.
+- **Save/Discard:** the native App Bridge contextual save bar only (`PromotionSaveBar`). It cannot show messages: confirm saves with `shopify.toast.show`, and show failures and what is missing with `SaveNotices` (native banners). New promotions show the bar only once the form is valid (`saveIssue` in the editor); existing ones keep it visible with Save disabled.
+- **Pickers:** `shopify.resourcePicker` for products and collections, `intents.invoke("pick:shopify/File")` for Shopify Files. There is no native customer or page picker, so those use a native `s-modal` (`LinkDestinationField`, the customer picker).
+- **Known exceptions (no native equivalent):** `<details>` accordions (`FormStep`, fine-tune sections), the `<input type="range">` image sliders, the tab buttons on the unsupported-discount fallback page (`PromotionTabs`), and the markup inside the storefront preview/snapshot (`PromotionPreview`), which renders on the merchant's theme.
+- Pages should use `s-page` with `inlineSize="large"`, a breadcrumb link in `breadcrumb-actions`, and actions in the `primary-action` / `secondary-actions` slots.
+
 ## Handoff notes (from previous assistant)
 
 Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`; verify against the code before relying on it. Repo: https://github.com/AndySmiffys/smiffys-promotion-engine. The user (Andy, Head of eCommerce at Smiffys) wants a professional, Shopify-consistent editor that supports multiple themes and lets merchants control each placement's content, styling and visibility independently.

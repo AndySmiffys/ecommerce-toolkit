@@ -36,10 +36,14 @@ export function PromotionImageField({ label, url, fileId, onChange, onBusy }: { 
     finally { setPickerOpen(false); }
   }
   return <div style={{ display: "grid", alignContent: "start", gap: 8, minWidth: 0 }}>
-    <strong style={{ fontSize: 12 }}>{label}</strong>
-    <button type="button" aria-label={"Choose " + label.toLowerCase() + " from Shopify Files"} disabled={busy} onClick={browse} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!busy) upload(event.dataTransfer.files[0]); }} style={{ padding: 12, border: "1px dashed #a0a0a0", borderRadius: 10, background: "#fafafa", cursor: busy ? "wait" : "pointer", height: 144, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", font: "inherit", color: "#303030", width: "100%" }}>
-      {url ? <img src={url} alt={label} style={{ display: "block", width: "100%", height: "100%", objectFit: "contain" }} /> : <span>Drop an image or choose a file</span>}
-    </button>
+    <s-text type="strong">{label}</s-text>
+    <div onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); if (!busy) upload(event.dataTransfer.files[0]); }}>
+    <s-clickable accessibilityLabel={"Choose " + label.toLowerCase() + " from Shopify Files"} disabled={busy || undefined} onClick={browse} border="base base dashed" borderRadius="base" padding="base" background="subdued" inlineSize="100%">
+      <div style={{ height: 112, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        {url ? <img src={url} alt={label} style={{ display: "block", width: "100%", height: "100%", objectFit: "contain" }} /> : <s-text color="subdued">Drop an image or choose a file</s-text>}
+      </div>
+    </s-clickable>
+    </div>
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, minHeight: 32 }}>
       {url && <s-button type="button" variant="tertiary" disabled={busy} onClick={() => { onChange(null); setError(""); }}>Remove image</s-button>}
       {busy && <span role="status" style={{ fontSize: 12, color: "#616161" }}>{pickerOpen ? "Choosing image…" : "Preparing image…"}</span>}

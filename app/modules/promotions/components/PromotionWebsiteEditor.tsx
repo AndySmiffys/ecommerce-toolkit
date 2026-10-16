@@ -2,7 +2,7 @@ import { PolarisSelect, PolarisCheckbox, PolarisNumberField } from "./PolarisCon
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PromotionImageField } from "./PromotionImageField";
 import { LinkDestinationField } from "./LinkDestinationField";
-import { applyPalette, colourElements, customisedPaletteBlocks, hasImage, isAutomaticText, matchPalette, neutralColour, paletteValues, readColour, settleSurfaces, switchProductAppearance, textColourFor, white, writeColour, type ColourKey, type PaletteRole, type PaletteValues } from "../design/campaignPalette";
+import { applyPalette, colourElements, customisedPaletteBlocks, hasImage, isAutomaticText, isButtonText, matchPalette, neutralColour, paletteValues, readColour, settleSurfaces, switchProductAppearance, textColourFor, white, writeColour, type ColourKey, type PaletteRole, type PaletteValues } from "../design/campaignPalette";
 import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign, selectedCampaignPlacements, type CampaignPatch } from "../design/sharedCampaign";
 import { contrastRatio, copyLimits, placements, presetDesign, promotionBlock, setPromotionBlock, validateWebsite, type BlockVisibility, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "../design/design";
 
@@ -11,23 +11,29 @@ const helpStyle = { color: "#616161", fontSize: 12, lineHeight: 1.5 };
 function ControlGroup({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   const id = useId();
   return <section aria-labelledby={id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 12, borderTop: "1px solid #ebebeb", paddingTop: 16, minWidth: 0 }}>
-    <div style={{ display: "grid", gap: 4 }}><h3 id={id} style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{title}</h3><p style={{ ...helpStyle, margin: 0 }}>{description}</p></div>
+    <div style={{ display: "grid", gap: 4 }}><s-heading id={id}>{title}</s-heading><s-text color="subdued">{description}</s-text></div>
     {children}
   </section>;
 }
+// Shopify's native colour field. Only complete six-digit colours are passed on while someone is typing.
 function ColourField({ label, value, onChange, details, reset }: { label: string; value: string; onChange: (value: string) => void; details: string; reset?: { label: string; value: string } }) {
-  const id = useId();
+  const ref = useRef<HTMLElementTagNameMap["s-color-field"]>(null);
+  const latest = useRef(onChange); latest.current = onChange;
+  useEffect(() => {
+    const element = ref.current;
+    const changed = () => { const next = String(element?.value ?? ""); if (/^#[\da-f]{6}$/i.test(next)) latest.current(next.toLowerCase()); };
+    element?.addEventListener("input", changed);
+    element?.addEventListener("change", changed);
+    return () => { element?.removeEventListener("input", changed); element?.removeEventListener("change", changed); };
+  }, []);
+  useEffect(() => { if (ref.current && String(ref.current.value).toLowerCase() !== value.toLowerCase()) ref.current.value = value; });
   return <div style={{ display: "grid", gap: 5 }}>
-    <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, border: "1px solid #8a8a8a", borderRadius: 8, padding: "8px 12px", background: "#fff", cursor: "pointer", minWidth: 0 }}>
-      <span style={{ display: "grid", gap: 3 }}><span style={{ fontSize: 12, fontWeight: 500 }}>{label}</span><span style={{ fontSize: 13, color: "#616161", fontVariantNumeric: "tabular-nums" }}>{value.toUpperCase()}</span></span>
-      <input type="color" aria-label={label} aria-describedby={id} value={value} onChange={event => onChange(event.currentTarget.value)} style={{ width: 28, height: 28, flexShrink: 0, padding: 0, border: 0, background: "transparent", cursor: "pointer" }} />
-    </label>
-    <small id={id} style={helpStyle}>{details}</small>
+    <s-color-field ref={ref} label={label} value={value} details={details} />
     {reset && value.toLowerCase() !== reset.value.toLowerCase() && <div><s-button type="button" variant="tertiary" onClick={() => onChange(reset.value)}>{reset.label}</s-button></div>}
   </div>;
 }
 function TextField({ label, value, onChange, maxLength, multiline = false, details, placeholder }: { label: string; value: string; onChange: (value: string) => void; maxLength?: number; multiline?: boolean; details?: string; placeholder?: string }) {
-  return <div style={{ display: "grid", gap: 5 }}>{multiline ? <s-text-area label={label} rows={3} value={value} placeholder={placeholder} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} /> : <s-text-field label={label} value={value} placeholder={placeholder} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} />}{maxLength && <small style={{ ...helpStyle, textAlign: "right" }}>{value.length}/{maxLength}</small>}</div>;
+  return <div style={{ display: "grid", gap: 5 }}>{multiline ? <s-text-area label={label} rows={3} value={value} placeholder={placeholder} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} /> : <s-text-field label={label} value={value} placeholder={placeholder} maxLength={maxLength} details={details} onInput={event => onChange(event.currentTarget.value)} />}{maxLength && <s-text color="subdued">{value.length}/{maxLength}</s-text>}</div>;
 }
 const numberSettings = {
   headingSize: { label: "Headline size (px)", min: 10, max: 48, details: "Size of this block's headline. Use a smaller size for a header or badge." },
@@ -66,7 +72,7 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
   function setColour(fill: ColourKey, text: ColourKey | undefined, next: string) {
     onChange(current => {
       let updated = writeColour(current, fill, next);
-      if (text && isAutomaticText(readColour(updated, text), palette)) updated = writeColour(updated, text, textColourFor(next, palette));
+      if (text && !isButtonText(text) && isAutomaticText(readColour(updated, text), palette)) updated = writeColour(updated, text, textColourFor(next, palette));
       return updated;
     });
   }
@@ -78,8 +84,8 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
   }
   function textField(label: string, text: ColourKey, surface: string) {
     return <ColourField label={label} value={readColour(block, text)} onChange={next => setColour(text, undefined, next)}
-      details="Uses the campaign text colour: Text on colour over a colour, Text on white over white. Choose a colour to override it."
-      reset={{ label: "Use campaign text colour", value: textColourFor(surface, palette) }} />;
+      details={isButtonText(text) ? "Uses the campaign button text colour. Choose a colour to override it." : "Uses the campaign text colour: Text on colour over a colour, Text on white over white. Choose a colour to override it."}
+      reset={isButtonText(text) ? { label: "Use campaign button text colour", value: palette.button ?? white } : { label: "Use campaign text colour", value: textColourFor(surface, palette) }} />;
   }
   const contrastIssues = [
     ["Promotion text", block.textColour, block.backgroundColour],
@@ -100,7 +106,7 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
           {block.visibility.image && <>
             <PromotionImageField label="Desktop image" url={style.desktopImage} fileId={style.desktopImageId} onBusy={busy => setBusySlots(current => ({ ...current, desktop: busy }))} onChange={image => onChange(current => ({ ...current, style: { ...current.style, desktopImage: image?.url ?? "", desktopImageId: image?.id ?? "" } }))} />
             <PromotionImageField label="Mobile image" url={style.mobileImage} fileId={style.mobileImageId} onBusy={busy => setBusySlots(current => ({ ...current, mobile: busy }))} onChange={image => onChange(current => ({ ...current, style: { ...current.style, mobileImage: image?.url ?? "", mobileImageId: image?.id ?? "" } }))} />
-            <small style={helpStyle}>Mobile uses the desktop image if left blank. Choose a Shopify file or drag a JPG, PNG or WebP up to 20 MB into the image area.</small>
+            <s-text color="subdued">Mobile uses the desktop image if left blank. Choose a Shopify file or drag a JPG, PNG or WebP up to 20 MB into the image area.</s-text>
             <TextField label="Image description (alt text)" value={campaign.imageAlt !== undefined && style.imageAlt === campaign.imageAlt ? "" : style.imageAlt} placeholder={campaign.imageAlt || undefined} maxLength={250} details="Describe the image for shoppers using screen readers." onChange={next => styling("imageAlt", next === "" && campaign.imageAlt !== undefined ? campaign.imageAlt : next)} />
           </>}
         </>}
@@ -120,8 +126,8 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
     <ControlGroup title="Styling" description={`These settings apply only to the ${placements.find(p => p.id === placement)!.title.toLowerCase()} block.`}>
       {!isBadge && <>
         <PolarisSelect label="Design preset" details="Adjusts this block's layout and spacing while keeping its messages and images." value={style.preset} onChange={event => onChange(current => {
-          const { overrides, blocks, ...nextStyle } = presetDesign(event.currentTarget.value as PromotionStyle["preset"], { ...current.style, overrides: { header: { headline: "", body: "", buttonText: "" }, collection: { headline: "", body: "", buttonText: "" }, product: { headline: "", body: "", buttonText: "" }, badge: { headline: "", body: "", buttonText: "" } } });
-          void overrides; void blocks;
+          const { overrides, blocks, palette: keptPalette, ...nextStyle } = presetDesign(event.currentTarget.value as PromotionStyle["preset"], { ...current.style, overrides: { header: { headline: "", body: "", buttonText: "" }, collection: { headline: "", body: "", buttonText: "" }, product: { headline: "", body: "", buttonText: "" }, badge: { headline: "", body: "", buttonText: "" } } });
+          void overrides; void blocks; void keptPalette;
           return { ...current, style: nextStyle };
         })}><s-option value="simple">Simple offer</s-option><s-option value="campaign">Image campaign</s-option><s-option value="compact">Compact offer</s-option></PolarisSelect>
         <PolarisSelect label="Text alignment" value={style.alignment} onChange={event => styling("alignment", event.currentTarget.value as PromotionStyle["alignment"])}><s-option value="left">Left</s-option><s-option value="center">Centre</s-option><s-option value="right">Right</s-option></PolarisSelect>
@@ -130,9 +136,9 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
         {hasImages && block.visibility.image && <>
           <PolarisSelect label="Image layout" value={style.imageLayout} onChange={event => styling("imageLayout", event.currentTarget.value as PromotionStyle["imageLayout"])}><s-option value="full">Full background</s-option><s-option value="half-left">Image left</s-option><s-option value="half-right">Image right</s-option></PolarisSelect>
           {numberField("bannerHeight")}
-          <label style={{ display: "grid", gap: 5 }}>Horizontal focal point ({style.focalX}%)<input aria-label="Horizontal focal point" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={100} value={style.focalX} onChange={event => styling("focalX", Number(event.currentTarget.value))} /><small style={helpStyle}>0% keeps the left edge visible; 100% keeps the right edge visible.</small></label>
-          <label style={{ display: "grid", gap: 5 }}>Vertical focal point ({style.focalY}%)<input aria-label="Vertical focal point" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={100} value={style.focalY} onChange={event => styling("focalY", Number(event.currentTarget.value))} /><small style={helpStyle}>0% keeps the top visible; 100% keeps the bottom visible.</small></label>
-          {style.imageLayout === "full" && <label style={{ display: "grid", gap: 5 }}>Dark image overlay ({style.overlay}%)<input aria-label="Image overlay" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={90} value={style.overlay} onChange={event => styling("overlay", Number(event.currentTarget.value))} /><small style={helpStyle}>Darkens the background image in this block to improve text contrast.</small></label>}
+          <label style={{ display: "grid", gap: 5 }}>Horizontal focal point ({style.focalX}%)<input aria-label="Horizontal focal point" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={100} value={style.focalX} onChange={event => styling("focalX", Number(event.currentTarget.value))} /><s-text color="subdued">0% keeps the left edge visible; 100% keeps the right edge visible.</s-text></label>
+          <label style={{ display: "grid", gap: 5 }}>Vertical focal point ({style.focalY}%)<input aria-label="Vertical focal point" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={100} value={style.focalY} onChange={event => styling("focalY", Number(event.currentTarget.value))} /><s-text color="subdued">0% keeps the top visible; 100% keeps the bottom visible.</s-text></label>
+          {style.imageLayout === "full" && <label style={{ display: "grid", gap: 5 }}>Dark image overlay ({style.overlay}%)<input aria-label="Image overlay" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={90} value={style.overlay} onChange={event => styling("overlay", Number(event.currentTarget.value))} /><s-text color="subdued">Darkens the background image in this block to improve text contrast.</s-text></label>}
         </>}
       </>}
       {placement === "product" && <>
@@ -200,16 +206,17 @@ function CampaignColours({ value, onChange, onMatch, onOverride }: { value: Webs
   const unreadable = elements.filter(element => !element.readable);
   const titleOf = (id: string) => placements.find(p => p.id === id)!.title;
   return <section aria-label="Campaign colours" style={sectionStyle}>
-    <h2 style={{ fontSize: 16, margin: 0 }}>Campaign colours</h2>
-    <small style={helpStyle}>Choose the campaign colours once. Text uses Text on colour over the main or secondary colour and Text on white over white, picked for you by contrast. Each block below can still override a colour.</small>
+    <s-heading>Campaign colours</s-heading>
+    <s-text color="subdued">Choose the campaign colours once. Text uses Text on colour over the main or secondary colour and Text on white over white, picked for you by contrast. Each block below can still override a colour.</s-text>
     <ColourField label="Main colour" value={values.primary ?? neutralColour} onChange={next => onChange({ primary: next })} details="Header background, collection button, product offer background or border and its button, and the product badge." />
     {(value.showHeaderBanner || value.showProductPage) && <ColourField label="Secondary colour" value={values.secondary ?? neutralColour} onChange={next => onChange({ secondary: next })} details="Header button and copy code button." />}
-    <ColourField label="Text on colour" value={values.onColour ?? white} onChange={next => onChange({ onColour: next })} details="Text and button labels that sit on the main or secondary colour." />
+    {(value.showHeaderBanner || value.showCollectionPage || value.showProductPage) && <ColourField label="Button text colour" value={values.button ?? white} onChange={next => onChange({ button: next })} details="The label on the header, collection and product buttons and the copy code button, whatever colour the button is." />}
+    <ColourField label="Text on colour" value={values.onColour ?? white} onChange={next => onChange({ onColour: next })} details="Headlines, body text, discount messages and the product badge when they sit on the main colour." />
     <ColourField label="Text on white" value={values.onWhite ?? "#000000"} onChange={next => onChange({ onWhite: next })} details="Text on white: collection banners, and any block that shows an image." />
     <ControlGroup title="What this controls" description="Where each colour is used on the blocks you selected. Open a block to override a single element.">
       {chosen.map(p => <div key={p.id} style={{ display: "grid", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <strong style={{ fontSize: 13 }}>{p.title}</strong>
+          <s-text type="strong">{p.title}</s-text>
           <s-button type="button" variant="tertiary" onClick={() => onOverride(p.id)}>Override colours</s-button>
         </div>
         {elements.filter(element => element.placement === p.id).map(element => <div key={element.label} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -242,8 +249,8 @@ function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDr
   const style = (key: "desktopImage" | "desktopImageId" | "mobileImage" | "mobileImageId" | "imageAlt") => campaignValue(value, "style", key) ?? "";
   const customised = customisedPlacements(value);
   return <section aria-label="Campaign content and style" style={sectionStyle}>
-    <h2 style={{ fontSize: 16, margin: 0 }}>Campaign content & style</h2>
-    <small style={helpStyle}>Set the wording and images once for {titles(selected)}. Each block below can still be fine-tuned. A block you change on its own keeps its own value.</small>
+    <s-heading>Campaign content & style</s-heading>
+    <s-text color="subdued">Set the wording and images once for {titles(selected)}. Each block below can still be fine-tuned. A block you change on its own keeps its own value.</s-text>
     <ControlGroup title="Content" description="Shown on each selected block that has this element turned on.">
       <TextField label="Headline" value={text("headline")} maxLength={copyLimits.headline} onChange={next => onChange({ headline: next })} />
       <TextField label="Body" value={text("body")} maxLength={copyLimits.body} multiline onChange={next => onChange({ body: next })} />
@@ -292,16 +299,16 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
   }
   return <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 20 }}>
     <section aria-label="Website promotion" style={sectionStyle}>
-      <h2 style={{ fontSize: 16, margin: 0 }}>Website promotion</h2>
+      <s-heading>Website promotion</s-heading>
       <PolarisSelect label="Website promotion status" disabled={publicationDisabled} details={publicationDisabled ? "Individual code lists stay in Draft. Distribute their codes using the CSV download." : "Enabled allows eligible offers to appear on the storefront. Draft saves the design while keeping it hidden."} value={value.websiteEnabled ? "enabled" : "draft"} onChange={event => set("websiteEnabled", event.currentTarget.value === "enabled")}><s-option value="enabled">Enabled</s-option><s-option value="draft">Draft</s-option></PolarisSelect>
       <PolarisCheckbox label="Include in promotion sync" details="Required for storefront display, alongside Enabled status." checked={value.included} onChange={event => set("included", event.currentTarget.checked)} />
       <PolarisNumberField label="Promotion priority" details="Higher numbers take precedence when more than one offer qualifies. Use 0 for normal priority." min={0} max={9999} step={1} value={String(value.priority)} onInput={event => set("priority", Math.max(0, Number(event.currentTarget.value) || 0))} onChange={event => set("priority", Math.max(0, Number(event.currentTarget.value) || 0))} />
     </section>
     <section aria-label="Choose promotion blocks" style={sectionStyle}>
-      <h2 style={{ fontSize: 16, margin: 0 }}>Where should this promotion appear?</h2>
-      <small style={helpStyle}>Only selected blocks appear below. Deselecting a block keeps its settings for later.</small>
+      <s-heading>Where should this promotion appear?</s-heading>
+      <s-text color="subdued">Only selected blocks appear below. Deselecting a block keeps its settings for later.</s-text>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
-        {placements.map(p => <div key={p.id} style={{ border: value[p.flag] ? "1px solid #8a8a8a" : "1px solid #dedede", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: value[p.flag] ? "#f7f7f7" : "#fff" }}><PolarisCheckbox label={p.title} checked={Boolean(value[p.flag])} disabled={busy} onChange={event => set(p.flag, event.currentTarget.checked)} /><small style={helpStyle}>{p.description}</small></div>)}
+        {placements.map(p => <div key={p.id} style={{ border: value[p.flag] ? "1px solid #8a8a8a" : "1px solid #dedede", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: value[p.flag] ? "#f7f7f7" : "#fff" }}><PolarisCheckbox label={p.title} checked={Boolean(value[p.flag])} disabled={busy} onChange={event => set(p.flag, event.currentTarget.checked)} /><s-text color="subdued">{p.description}</s-text></div>)}
       </div>
     </section>
     {hasCampaign && <CampaignEditor value={value} onChange={changeCampaign} onMatch={matchBlock} onBusy={next => setBusyBlocks(current => current.campaign === next ? current : { ...current, campaign: next })} />}
@@ -310,7 +317,7 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
       <summary style={{ cursor: "pointer", fontWeight: 600, padding: 16 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>{hasCampaign && p.id !== "badge" ? `Fine-tune ${p.title.toLowerCase()}` : p.title}<s-badge tone="success">Selected</s-badge></span></summary>
       <PromotionBlockEditor placement={p.id} block={promotionBlock(value, p.id)} palette={palette} campaign={campaign} onChange={change => changeBlock(p.id, change)} onBusy={next => setBusyBlocks(current => current[p.id] === next ? current : { ...current, [p.id]: next })} />
     </details>)}
-    {!selected.length && <p style={helpStyle}>Select a block above to customise its content and styling.</p>}
-    {errors.length > 0 && <ul style={{ margin: 0, paddingLeft: 18, color: "#b42318", fontSize: 12 }}>{errors.map(error => <li key={error}>{error}</li>)}</ul>}
+    {!selected.length && <s-text color="subdued">Select a block above to customise its content and styling.</s-text>}
+    {errors.length > 0 && <s-unordered-list>{errors.map(error => <s-list-item key={error}>{error}</s-list-item>)}</s-unordered-list>}
   </div>;
 }

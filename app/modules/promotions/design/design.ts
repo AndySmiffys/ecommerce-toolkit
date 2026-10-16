@@ -37,6 +37,8 @@ export type PromotionBlock = {
 export type PromotionDesign = PromotionStyle & {
   overrides: Record<Placement, PlacementCopy>;
   blocks?: Partial<Record<Placement, PromotionBlock>>;
+  /** The campaign text colours chosen in the campaign colours section. */
+  palette?: { onColour?: string; onWhite?: string; button?: string };
 };
 export type WebsiteDraft = {
   included: boolean; websiteEnabled: boolean;
@@ -113,6 +115,17 @@ export function readDesign(value: unknown): PromotionDesign {
     }
     design.overrides[placement.id] = copy;
   }
+  if (source.palette !== undefined) {
+    if (!source.palette || typeof source.palette !== "object" || Array.isArray(source.palette)) throw new Error("Invalid campaign colours.");
+    const palette: NonNullable<PromotionDesign["palette"]> = {};
+    for (const name of ["onColour", "onWhite", "button"] as const) {
+      const colour = (source.palette as Record<string, unknown>)[name];
+      if (colour === undefined) continue;
+      if (typeof colour !== "string" || !/^#[\da-f]{6}$/i.test(colour)) throw new Error("Use six-digit hex colours.");
+      palette[name] = colour.toLowerCase();
+    }
+    design.palette = palette;
+  }
   if (source.blocks !== undefined) {
     if (!source.blocks || typeof source.blocks !== "object" || Array.isArray(source.blocks)) throw new Error("Invalid block settings.");
     design.blocks = {};
@@ -143,8 +156,8 @@ function readBlock(value: unknown, placement: Placement): PromotionBlock {
     block.visibility[name] = next;
   }
   if (!source.style || typeof source.style !== "object" || Array.isArray(source.style)) throw new Error("Invalid block styling.");
-  const { overrides: ignoredOverrides, blocks: ignoredBlocks, ...style } = readDesign({ ...source.style, overrides: {}, blocks: undefined });
-  void ignoredOverrides; void ignoredBlocks;
+  const { overrides: ignoredOverrides, blocks: ignoredBlocks, palette: ignoredPalette, ...style } = readDesign({ ...source.style, overrides: {}, blocks: undefined, palette: undefined });
+  void ignoredOverrides; void ignoredBlocks; void ignoredPalette;
   block.style = style;
   return block;
 }
@@ -154,8 +167,8 @@ function readBlock(value: unknown, placement: Placement): PromotionBlock {
 export function promotionBlock(value: WebsiteDraft, placement: Placement): PromotionBlock {
   const saved = value.design.blocks?.[placement];
   if (saved) return saved;
-  const { overrides, blocks: ignoredBlocks, ...style } = value.design;
-  void ignoredBlocks;
+  const { overrides, blocks: ignoredBlocks, palette: ignoredPalette, ...style } = value.design;
+  void ignoredBlocks; void ignoredPalette;
   if (placement === "header") { style.headingSize = 16; style.bodySize = 13; style.spacing = 12; style.alignment = "center"; }
   if (placement === "product") style.headingSize = Math.min(style.headingSize, 26);
   if (placement === "badge") style.headingSize = 12;

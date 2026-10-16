@@ -4,12 +4,15 @@ import type { ShippingCountries } from "../services/shippingCountries.server";
 import { FormStep } from "./FormStep";
 import { buildDiscountMutation } from "../design/discountMutation";
 import { summarisePromotion } from "../design/promotionSummary";
-import { PolarisSelect, PolarisCheckbox } from "./PolarisControls";
+import { PolarisSelect, PolarisCheckbox, PolarisRadioList, PolarisCheckboxList } from "./PolarisControls";
+import { ModalOverlay } from "./ModalOverlay";
+import { DateTimeField } from "./DateTimeField";
 import { PromotionSaveBar } from "./PromotionSaveBar";
+import { SaveNotices } from "./SaveNotices";
 import { PromotionCodeList } from "./PromotionCodeList";
 import { validateCodeOptions, type CodeBatchSummary } from "../design/codeGeneration";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFetcher, useSearchParams, useNavigate } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import type { CreateDiscountDraft } from "../services/createPromotion.server";
@@ -21,142 +24,6 @@ import { customerVisibilityMessage, storefrontVisibilityNotices } from "../desig
 import { PromotionWebsiteEditor } from "./PromotionWebsiteEditor";
 import { PromotionPreview, type PreviewProduct } from "./PromotionPreview";
 import type { action as previewAction } from "../../../routes/app.promotion-preview";
-function RadioOption({ name, value, label, checked, onChange }: { name: string; value: string; label: string; checked: boolean; onChange: () => void }) {
-  return <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}><input type="radio" name={name} value={value} checked={checked} onChange={onChange} style={{ margin: 0, accentColor: "#202223" }} /><span>{label}</span></label>;
-}
-function ScheduleDateTimeField({
-  label,
-  value,
-  onChange,
-  min,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  min?: string;
-}) {
-  const id = useId();
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [month, setMonth] = useState({ year: 2000, month: 0 });
-  const fieldRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    dialogRef.current?.focus();
-    function outside(event: PointerEvent) {
-      if (event.target instanceof Node && !fieldRef.current?.contains(event.target)) {
-        setOpen(false);
-      }
-    }
-    function escape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    }
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [open]);
-
-  function close() {
-    setOpen(false);
-    triggerRef.current?.focus();
-  }
-
-  function toggle() {
-    if (open) {
-      close();
-      return;
-    }
-    const initial = value || min || "";
-    const date = initial ? new Date(initial) : new Date();
-    setDraft(initial);
-    setMonth({ year: date.getFullYear(), month: date.getMonth() });
-    setOpen(true);
-  }
-
-  const datePart = draft.slice(0, 10);
-  const hour = draft.slice(11, 13) || "00";
-  const minute = draft.slice(14, 16) || "00";
-  const valid = Boolean(datePart) && (!min || draft >= min);
-  const firstDay = (new Date(month.year, month.month, 1).getDay() + 6) % 7;
-  const days = new Date(month.year, month.month + 1, 0).getDate();
-  const monthTitle = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" })
-    .format(new Date(month.year, month.month, 1));
-  const summary = value
-    ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
-    : "Select date and time";
-  const controlStyle = { padding: "8px", border: "1px solid #c9c9c9", borderRadius: "8px", background: "#fff", color: "#202223", font: "inherit", cursor: "pointer" };
-
-  function moveMonth(offset: number) {
-    const date = new Date(month.year, month.month + offset, 1);
-    setMonth({ year: date.getFullYear(), month: date.getMonth() });
-  }
-
-  return (
-    <div style={{ display: "grid", gap: "5px", fontSize: "12px", color: "#303030" }}>
-      <span id={id + "-label"}>{label}</span>
-      <div ref={fieldRef} style={{ position: "relative" }}>
-        {open && (
-          <div ref={dialogRef} id={id + "-editor"} role="dialog" aria-labelledby={id + "-title"} tabIndex={-1}
-            style={{ position: "absolute", zIndex: 50, bottom: "calc(100% + 8px)", left: 0, width: "min(340px, 100%)", maxHeight: "60vh", overflowY: "auto", boxSizing: "border-box", padding: "16px", border: "1px solid #c9c9c9", borderRadius: "12px", background: "#fff", boxShadow: "0 10px 28px rgba(0,0,0,.16)" }}>
-            <div id={id + "-title"} style={{ fontSize: "13px", fontWeight: 600, marginBottom: "12px" }}>{label}</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "10px" }}>
-              <button type="button" aria-label="Previous month" onClick={() => moveMonth(-1)} style={controlStyle}>‹</button>
-              <span aria-live="polite" style={{ fontWeight: 600 }}>{monthTitle}</span>
-              <button type="button" aria-label="Next month" onClick={() => moveMonth(1)} style={controlStyle}>›</button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: "3px" }}>
-              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <span key={day} style={{ textAlign: "center", fontSize: "10px", color: "#616161", padding: "5px 0" }}>{day}</span>)}
-              {Array.from({ length: firstDay }, (_, index) => <span key={"blank-" + index} />)}
-              {Array.from({ length: days }, (_, index) => {
-                const day = index + 1;
-                const dayValue = String(month.year).padStart(4, "0") + "-" + String(month.month + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
-                const disabled = Boolean(min && dayValue < min.slice(0, 10));
-                const selected = dayValue === datePart;
-                return <button key={dayValue} type="button" disabled={disabled} aria-pressed={selected}
-                  aria-label={new Intl.DateTimeFormat("en-GB", { dateStyle: "full" }).format(new Date(month.year, month.month, day))}
-                  onClick={() => setDraft(dayValue + "T" + hour + ":" + minute)}
-                  style={{ ...controlStyle, padding: "7px 0", borderColor: selected ? "#202223" : "transparent", background: selected ? "#202223" : "#fff", color: selected ? "#fff" : disabled ? "#b5b5b5" : "#202223", cursor: disabled ? "default" : "pointer" }}>{day}</button>;
-              })}
-            </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "end", marginTop: "14px" }}>
-              <label htmlFor={id + "-hour"} style={{ display: "grid", gap: "5px", flex: 1 }}>Hour
-                <select id={id + "-hour"} disabled={!datePart} value={hour} onChange={event => setDraft(datePart + "T" + event.currentTarget.value + ":" + minute)} style={controlStyle}>
-                  {Array.from({ length: 24 }, (_, index) => { const option = String(index).padStart(2, "0"); return <option key={option} value={option}>{option}</option>; })}
-                </select>
-              </label>
-              <label htmlFor={id + "-minute"} style={{ display: "grid", gap: "5px", flex: 1 }}>Minute
-                <select id={id + "-minute"} disabled={!datePart} value={minute} onChange={event => setDraft(datePart + "T" + hour + ":" + event.currentTarget.value)} style={controlStyle}>
-                  {Array.from({ length: 60 }, (_, index) => { const option = String(index).padStart(2, "0"); return <option key={option} value={option}>{option}</option>; })}
-                </select>
-              </label>
-              <span style={{ color: "#616161", paddingBottom: "9px", fontSize: "11px" }}>Local time</span>
-            </div>
-            {datePart && !valid && <p role="alert" style={{ color: "#b42318", margin: "10px 0 0" }}>End date and time must be on or after the start.</p>}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "14px" }}>
-              <button type="button" onClick={close} style={controlStyle}>Cancel</button>
-              <button type="button" disabled={!valid} onClick={() => { onChange(draft); close(); }}
-                style={{ ...controlStyle, background: valid ? "#202223" : "#eee", color: valid ? "#fff" : "#999", cursor: valid ? "pointer" : "default" }}>Done</button>
-            </div>
-          </div>
-        )}
-        <button ref={triggerRef} type="button" aria-labelledby={id + "-label"} aria-haspopup="dialog" aria-expanded={open}
-          aria-controls={open ? id + "-editor" : undefined} onClick={toggle}
-          style={{ ...controlStyle, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", width: "100%", minHeight: "42px", padding: "8px 10px", fontSize: "13px", textAlign: "left", boxSizing: "border-box" }}>
-          <span suppressHydrationWarning>{summary}</span><span style={{ color: "#616161", fontSize: "11px" }}>Local time</span>
-        </button>
-      </div>
-    </div>
-  );
-}
 
 type DiscountType = "product" | "bxgy" | "order" | "shipping";
 
@@ -218,7 +85,7 @@ title: string;
 heading?: boolean;
 children: React.ReactNode;
 }) {
-return <section aria-label={title} style={{ display: "grid", gap: 12, minWidth: 0 }}>{heading && <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>{title}</h3>}{children}</section>;
+return <section aria-label={title} style={{ display: "grid", gap: 12, minWidth: 0 }}>{heading && <s-heading>{title}</s-heading>}{children}</section>;
 }
 
 export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null }) {
@@ -299,40 +166,11 @@ const [minimumQuantity, setMinimumQuantity] = useState(d?.minimumQuantity ?? "")
 const [limitTotalUses, setLimitTotalUses] = useState(d?.limitTotalUses ?? false);
 const [totalUsageLimit, setTotalUsageLimit] = useState(d?.totalUsageLimit ?? "");
 const [limitOncePerCustomer, setLimitOncePerCustomer] = useState(d?.limitOncePerCustomer ?? false);
-const [showCombinationPicker, setShowCombinationPicker] = useState(false);
-const combinationFieldRef = useRef<HTMLDivElement>(null);
-const combinationTriggerRef = useRef<HTMLButtonElement>(null);
-const combinationDialogRef = useRef<HTMLDivElement>(null);
-useEffect(() => {
-if (!showCombinationPicker) return;
-combinationDialogRef.current?.focus();
-function closeOnOutsideClick(event: PointerEvent) {
-if (event.target instanceof Node && !combinationFieldRef.current?.contains(event.target)) {
-setShowCombinationPicker(false);
-setShowCombinationTags(false);
-}
-}
-function closeOnEscape(event: KeyboardEvent) {
-if (event.key === "Escape") {
-setShowCombinationPicker(false);
-setShowCombinationTags(false);
-combinationTriggerRef.current?.focus();
-}
-}
-document.addEventListener("pointerdown", closeOnOutsideClick);
-document.addEventListener("keydown", closeOnEscape);
-return () => {
-document.removeEventListener("pointerdown", closeOnOutsideClick);
-document.removeEventListener("keydown", closeOnEscape);
-};
-}, [showCombinationPicker]);
 
 const [combineProductDiscounts, setCombineProductDiscounts] = useState(d?.combineProductDiscounts ?? false);
 const [combineOrderDiscounts, setCombineOrderDiscounts] = useState(d?.combineOrderDiscounts ?? false);
 const [combineShippingDiscounts, setCombineShippingDiscounts] = useState(d?.combineShippingDiscounts ?? false);
 const [productCombinationMode, setProductCombinationMode] = useState<"best" | "multiple">(d?.productCombinationMode ?? "best");
-const [showCombinationTags, setShowCombinationTags] = useState(false);
-const [combinationTagSearch, setCombinationTagSearch] = useState("");
 const [selectedCombinationTags, setSelectedCombinationTags] = useState<string[]>(d?.selectedCombinationTags ?? []);
 const [startDateTime, setStartDateTime] = useState(toLocalDateTime(d?.startsAt));
 const [hasEndDate, setHasEndDate] = useState(Boolean(d?.endsAt));
@@ -614,9 +452,11 @@ const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
 const submittedSnapshot = useRef(snapshot);
 const handledResponse = useRef<PromotionActionData | undefined>();
 const hasUnsavedChanges = snapshot !== savedSnapshot;
+const saveBarRef = useRef<UISaveBarElement>(null);
 
 async function discardChanges() {
 if (assetsBusy || createFetcher.state !== "idle" || (!promotionId && codeListLocked && !createdDiscountId)) return;
+await saveBarRef.current?.hide();
 // A partially created discount already exists in Shopify. Discard only its unsaved design.
 if (!promotionId && createdDiscountId) { navigate(appUrl(`/app/promotions/${createdDiscountId.split("/").pop()}`)); return; }
 const saved = JSON.parse(savedSnapshot) as { fields: typeof editorFields; website: WebsiteDraft };
@@ -670,7 +510,6 @@ setDismissedResponse(createFetcher.data);
 setSubmissionError("");
 setResourceSearch("");
 setEligibilitySearch("");
-setShowCombinationPicker(false);
 setShowEligibilityPicker(false);
 }
 
@@ -683,11 +522,11 @@ if (createFetcher.state !== "idle" || !createFetcher.data || handledResponse.cur
 saveInFlight.current = false;
 handledResponse.current = createFetcher.data;
 if (createFetcher.data?.savedId) setCreatedDiscountId(createFetcher.data.savedId);
-if (createFetcher.data?.success) { if (promotionId) { setSavedSnapshot(submittedSnapshot.current); setSavedDiscountSnapshot(submittedDiscountSnapshot.current); } else if (createFetcher.data.redirectId) {
+if (createFetcher.data?.success) { if (promotionId) { setSavedSnapshot(submittedSnapshot.current); setSavedDiscountSnapshot(submittedDiscountSnapshot.current); shopify.toast.show("Promotion saved"); } else if (createFetcher.data.redirectId) {
 setSavedSnapshot(submittedSnapshot.current);
 const destination = appUrl(`/app/promotions/${createFetcher.data.redirectId}`);
 shopify.toast.show("Promotion created");
-navigate(destination);
+void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(destination));
 } }
 });
 
@@ -722,8 +561,10 @@ createFetcher.submit({ intent: promotionId ? "updatePromotion" : "createPromotio
 return (
 <s-page heading={promotionId ? "Edit promotion" : "Create discount"} inlineSize="large">
 <s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
+<s-button slot="secondary-actions" data-preview-toggle="" onClick={() => setIsPreviewDrawerOpen(true)}>Preview</s-button>
 {promotionId && <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotionId.split("/").pop()}`} target="_blank">Edit in Shopify</s-button>}
-<PromotionSaveBar dirty={hasUnsavedChanges} saving={createFetcher.state !== "idle"} busy={assetsBusy} discardDisabled={!promotionId && codeListLocked && !createdDiscountId} issue={saveIssue} error={submissionError || (createFetcher.data !== dismissedResponse ? createFetcher.data?.error : undefined)} savedToken={promotionId && createFetcher.data?.success ? createFetcher.data : null} showWhileIncomplete={Boolean(promotionId)} onSave={savePromotion} onDiscard={discardChanges} />
+<PromotionSaveBar ref={saveBarRef} dirty={hasUnsavedChanges} saving={createFetcher.state !== "idle"} busy={assetsBusy} discardDisabled={!promotionId && codeListLocked && !createdDiscountId} issue={saveIssue} showWhileIncomplete={Boolean(promotionId)} onSave={savePromotion} onDiscard={discardChanges} />
+<SaveNotices error={submissionError || (createFetcher.data !== dismissedResponse ? createFetcher.data?.error : undefined)} issue={promotionId && hasUnsavedChanges ? saveIssue : null} onDismissError={() => { setSubmissionError(""); setDismissedResponse(createFetcher.data); }} />
 <div
 style={{
 width: "100%",
@@ -776,7 +617,7 @@ fontWeight: 650,
 </div>
 <FormStep {...stepProps("type")} summary={summary.type}>
 <FormSection title="Method">
-{promotionId && <p style={{ margin: "0 0 12px", color: "#616161", fontSize: 12 }}>The existing discount type and method are retained. Manage changes to discount codes in Shopify.</p>}
+{promotionId && <s-text color="subdued">The existing discount type and method are retained. Manage changes to discount codes in Shopify.</s-text>}
 <s-stack direction="block" gap="base">
 <div>
 <div
@@ -790,63 +631,7 @@ fontWeight: 650,
 Method
 </div>
 
-<div
-role="group"
-aria-label="Discount method"
-style={{
-display: "inline-flex",
-padding: "2px",
-borderRadius: "8px",
-background: "#f1f1f1",
-}}
->
-<button
-type="button"
-aria-pressed={method === "code"}
-disabled={Boolean(promotionId || codeListLocked)} onClick={() => setMethod("code")}
-style={{
-border: 0,
-borderRadius: "7px",
-padding: "7px 11px",
-background: method === "code" ? "#ffffff" : "transparent",
-boxShadow:
-method === "code"
-? "0 1px 2px rgba(0, 0, 0, 0.12)"
-: "none",
-color: "#202223",
-font: "inherit",
-fontSize: "12px",
-fontWeight: 600,
-cursor: "pointer",
-}}
->
-Discount code
-</button>
-
-<button
-type="button"
-aria-pressed={method === "automatic"}
-disabled={Boolean(promotionId || codeListLocked)} onClick={() => setMethod("automatic")}
-style={{
-border: 0,
-borderRadius: "7px",
-padding: "7px 11px",
-background:
-method === "automatic" ? "#ffffff" : "transparent",
-boxShadow:
-method === "automatic"
-? "0 1px 2px rgba(0, 0, 0, 0.12)"
-: "none",
-color: "#202223",
-font: "inherit",
-fontSize: "12px",
-fontWeight: 600,
-cursor: "pointer",
-}}
->
-Automatic discount
-</button>
-</div>
+<PolarisRadioList label="Discount method" value={method} disabled={Boolean(promotionId || codeListLocked)} options={[{ value: "code", label: "Discount code" }, { value: "automatic", label: "Automatic discount" }]} onChange={value => setMethod(value as "code" | "automatic")} />
 </div>
 
 {method === "code" && <PolarisSelect label="Code format" disabled={Boolean(promotionId || codeListLocked)} value={codeMode} onChange={event => changeCodeMode(event.currentTarget.value as "single" | "bulk")}>
@@ -859,7 +644,7 @@ Automatic discount
 <s-number-field label="Number of codes" min={1} max={10000} step={1} value={codeCount} disabled={codeListLocked} onInput={event => setCodeCount(event.currentTarget.value)} details="Generate from 1 to 10,000 different codes." />
 <s-text-field label="Prefix (optional)" value={codePrefix} maxLength={32} disabled={codeListLocked} onInput={event => setCodePrefix(event.currentTarget.value.toUpperCase())} details="Letters, numbers, hyphens or underscores. For example: HALLOWEEN-" />
 <s-text-field label="Suffix (optional)" value={codeSuffix} maxLength={32} disabled={codeListLocked} onInput={event => setCodeSuffix(event.currentTarget.value.toUpperCase())} details="Added after the random characters. For example: -2026" />
-<p style={{ margin: 0, color: "#616161", fontSize: 13 }}>Format: <strong>{codePrefix}XXXXXXXXXXXX{codeSuffix}</strong><br />Each X is a random letter or number. Codes default to one use each; adjust this under Maximum discount uses.</p>
+<s-text color="subdued">Format: <s-text type="strong">{codePrefix}XXXXXXXXXXXX{codeSuffix}</s-text> Each X is a random letter or number. Codes default to one use each; adjust this under Maximum discount uses.</s-text>
 <s-banner tone="info">Keep this promotion in website Draft status. After creation, the app generates the list in batches and provides a CSV download for customer distribution. Reopening the promotion resumes unfinished generation.</s-banner>
 </>}
 </div> : method === "code" ? (
@@ -883,21 +668,7 @@ fontWeight: 650,
 Discount code
 </span>
 
-<button
-type="button"
-disabled={Boolean(promotionId || codeListLocked)} onClick={generateDiscountCode}
-style={{
-border: 0,
-padding: 0,
-background: "transparent",
-color: "#005bd3",
-font: "inherit",
-fontSize: "12px",
-cursor: "pointer",
-}}
->
-Generate random code
-</button>
+<s-button type="button" variant="tertiary" disabled={Boolean(promotionId || codeListLocked) || undefined} onClick={generateDiscountCode}>Generate random code</s-button>
 </div>
 
 <s-text-field
@@ -1044,42 +815,12 @@ No matching {appliesTo === "products" ? "products" : "collections"}.
 )}
 
 {resourceFetcher.data?.resources?.map((resource) => (
-<button
-key={resource.id}
-type="button"
-onClick={() => addSearchedResource(resource)}
-style={{
-display: "flex",
-alignItems: "center",
-gap: "10px",
-width: "100%",
-padding: "9px 12px",
-border: 0,
-borderTop: "1px solid #f1f1f1",
-background: "#ffffff",
-color: "#202223",
-textAlign: "left",
-font: "inherit",
-cursor: "pointer",
-}}
->
-{resource.imageUrl && (
-<img
-src={resource.imageUrl}
-alt=""
-style={{
-width: "34px",
-height: "34px",
-borderRadius: "6px",
-objectFit: "cover",
-flex: "0 0 auto",
-}}
-/>
-)}
-<span style={{ fontSize: "12px", fontWeight: 600 }}>
-{resource.title}
-</span>
-</button>
+<s-clickable key={resource.id} border="base" borderRadius="base" padding="small" accessibilityLabel={`Add ${resource.title}`} onClick={() => addSearchedResource(resource)}>
+<s-stack direction="inline" gap="base" alignItems="center">
+{resource.imageUrl && <s-thumbnail src={resource.imageUrl} alt="" size="small-200" />}
+<s-text type="strong">{resource.title}</s-text>
+</s-stack>
+</s-clickable>
 ))}
 </div>
 )}
@@ -1151,35 +892,9 @@ flex: "0 0 auto",
 }}
 >
 {appliesTo === "products" && (
-<button
-type="button"
-onClick={browseDiscountResources}
-style={{
-border: 0,
-background: "transparent",
-color: "#005bd3",
-font: "inherit",
-fontSize: "11px",
-cursor: "pointer",
-}}
->
-Edit variants
-</button>
+<s-button type="button" variant="tertiary" onClick={browseDiscountResources}>Edit variants</s-button>
 )}
-<button
-type="button"
-onClick={() => removeSelectedResource(resource.id)}
-style={{
-border: 0,
-background: "transparent",
-color: "#8a1f11",
-font: "inherit",
-fontSize: "11px",
-cursor: "pointer",
-}}
->
-Remove
-</button>
+<s-button type="button" variant="tertiary" tone="critical" onClick={() => removeSelectedResource(resource.id)}>Remove</s-button>
 </div>
 </div>
 ))}
@@ -1245,20 +960,7 @@ Customer buys
 </div>
 
 <s-stack direction="block" gap="base">
-<RadioOption
-name="buyRequirement"
-value="quantity"
-label="Minimum quantity of items"
-checked={buyRequirement === "quantity"}
-onChange={() => setBuyRequirement("quantity")}
-/>
-<RadioOption
-name="buyRequirement"
-value="amount"
-label="Minimum purchase amount"
-checked={buyRequirement === "amount"}
-onChange={() => setBuyRequirement("amount")}
-/>
+<PolarisRadioList label="Customer buys" value={buyRequirement} options={[{ value: "quantity", label: "Minimum quantity of items" }, { value: "amount", label: "Minimum purchase amount" }]} onChange={value => setBuyRequirement(value as "quantity" | "amount")} />
 
 <div
 className="bxgy-pair-row"
@@ -1303,7 +1005,7 @@ onChange={(event) =>
 </PolarisSelect>
 </div>
 
-<div><s-button type="button" variant="secondary" onClick={()=>browseBxgy("buy")}>Select buy items</s-button><ul>{buySelection.map(item=><li key={item.id}>{item.title}</li>)}</ul></div>
+<div><s-button type="button" variant="secondary" onClick={()=>browseBxgy("buy")}>Select buy items</s-button><s-unordered-list>{buySelection.map(item=><s-list-item key={item.id}>{item.title}</s-list-item>)}</s-unordered-list></div>
 </s-stack>
 </div>
 
@@ -1364,7 +1066,7 @@ onChange={(event) =>
 </PolarisSelect>
 </div>
 
-<div><s-button type="button" variant="secondary" onClick={()=>browseBxgy("get")}>Select get items</s-button><ul>{getSelection.map(item=><li key={item.id}>{item.title}</li>)}</ul></div>
+<div><s-button type="button" variant="secondary" onClick={()=>browseBxgy("get")}>Select get items</s-button><s-unordered-list>{getSelection.map(item=><s-list-item key={item.id}>{item.title}</s-list-item>)}</s-unordered-list></div>
 
 <div
 style={{
@@ -1383,60 +1085,17 @@ At a discounted value
 </div>
 
 <s-stack direction="block" gap="small">
-<RadioOption
-name="rewardType"
-value="percentage"
-label="Percentage"
-checked={rewardType === "percentage"}
-onChange={() => setRewardType("percentage")}
-/>
+<PolarisRadioList label="Discounted value" value={rewardType} options={[{ value: "percentage", label: "Percentage" }, { value: "amount", label: "Amount off each" }, { value: "free", label: "Free" }]} onChange={value => setRewardType(value as "percentage" | "amount" | "free")} />
 {rewardType === "percentage" && (
-<div style={{ maxWidth: "150px", marginLeft: "26px" }}>
-<s-number-field
-label="Percentage"
-labelAccessibilityVisibility="exclusive"
-min={0}
-max={100}
-step={0.01}
-suffix="%"
-value={rewardValue}
-onInput={(event) =>
-setRewardValue(event.currentTarget.value)
-}
-/>
+<div style={{ maxWidth: "150px" }}>
+<s-number-field label="Percentage" labelAccessibilityVisibility="exclusive" min={0} max={100} step={0.01} suffix="%" value={rewardValue} onInput={(event) => setRewardValue(event.currentTarget.value)} />
 </div>
 )}
-
-<RadioOption
-name="rewardType"
-value="amount"
-label="Amount off each"
-checked={rewardType === "amount"}
-onChange={() => setRewardType("amount")}
-/>
 {rewardType === "amount" && (
-<div style={{ maxWidth: "150px", marginLeft: "26px" }}>
-<s-number-field
-label="Amount"
-labelAccessibilityVisibility="exclusive"
-min={0}
-step={0.01}
-prefix="£"
-value={rewardValue}
-onInput={(event) =>
-setRewardValue(event.currentTarget.value)
-}
-/>
+<div style={{ maxWidth: "150px" }}>
+<s-number-field label="Amount" labelAccessibilityVisibility="exclusive" min={0} step={0.01} prefix="£" value={rewardValue} onInput={(event) => setRewardValue(event.currentTarget.value)} />
 </div>
 )}
-
-<RadioOption
-name="rewardType"
-value="free"
-label="Free"
-checked={rewardType === "free"}
-onChange={() => setRewardType("free")}
-/>
 </s-stack>
 </div>
 
@@ -1577,42 +1236,12 @@ No matching {eligibility === "segments" ? "segments" : "customers"}.
 )}
 
 {eligibilityFetcher.data?.eligibilityResources?.map((resource) => (
-<button
-key={resource.id}
-type="button"
-onClick={() => {
-toggleEligibilityResource(resource);
-setEligibilitySearch("");
-}}
-style={{
-display: "block",
-width: "100%",
-padding: "9px 12px",
-border: 0,
-borderTop: "1px solid #f1f1f1",
-background: "#ffffff",
-color: "#202223",
-textAlign: "left",
-font: "inherit",
-cursor: "pointer",
-}}
->
-<span style={{ display: "block", fontSize: "12px", fontWeight: 600 }}>
-{resource.name}
-</span>
-{resource.secondary && (
-<span
-style={{
-display: "block",
-marginTop: "2px",
-color: "#616161",
-fontSize: "11px",
-}}
->
-{resource.secondary}
-</span>
-)}
-</button>
+<s-clickable key={resource.id} border="base" borderRadius="base" padding="small" accessibilityLabel={`Add ${resource.name}`} onClick={() => { toggleEligibilityResource(resource); setEligibilitySearch(""); }}>
+<s-stack direction="block" gap="small-300">
+<s-text type="strong">{resource.name}</s-text>
+{resource.secondary && <s-text color="subdued">{resource.secondary}</s-text>}
+</s-stack>
+</s-clickable>
 ))}
 </div>
 )}
@@ -1667,20 +1296,7 @@ fontSize: "11px",
 )}
 </div>
 
-<button
-type="button"
-onClick={() => removeEligibilityResource(resource.id)}
-style={{
-border: 0,
-background: "transparent",
-color: "#8a1f11",
-font: "inherit",
-fontSize: "11px",
-cursor: "pointer",
-}}
->
-Remove
-</button>
+<s-button type="button" variant="tertiary" tone="critical" onClick={() => removeEligibilityResource(resource.id)}>Remove</s-button>
 </div>
 ))}
 </div>
@@ -1707,7 +1323,7 @@ lineHeight: 1.45,
 <FormStep {...stepProps("schedule")} summary={summary.schedule}>
 <FormSection title="Schedule">
 <div style={{display:"grid",gap:"12px"}}>
-<ScheduleDateTimeField label="Start date and time" value={startDateTime} onChange={setStartDateTime} />
+<DateTimeField label="Start date and time" value={startDateTime} onChange={setStartDateTime} />
 
 <PolarisCheckbox
 label="Set end date"
@@ -1721,7 +1337,7 @@ setEndDateTime("");
 />
 
 {hasEndDate&&(
-<ScheduleDateTimeField label="End date and time" value={endDateTime} min={startDateTime||undefined} onChange={setEndDateTime} />
+<DateTimeField label="End date and time" value={endDateTime} min={startDateTime||undefined} onChange={setEndDateTime} />
 )}
 </div>
 </FormSection>
@@ -1730,118 +1346,17 @@ setEndDateTime("");
 <FormStep {...stepProps("advanced")} optional summary={summary.advanced}>
 {discountType !== "bxgy" && (
 <FormSection title="Minimum purchase requirements" heading>
-<div
-style={{
-display: "grid",
-gap: "10px",
-}}
->
-{[
-{
-value: "none",
-label: "No minimum requirements",
-},
-{
-value: "amount",
-label: "Minimum purchase amount",
-},
-{
-value: "quantity",
-label: "Minimum quantity of items",
-},
-].map((option) => (
-<div
-key={option.value}
-style={{
-display: "grid",
-gap: "8px",
-}}
->
-<label
-style={{
-display: "flex",
-alignItems: "center",
-gap: "8px",
-color: "#202223",
-fontSize: "13px",
-cursor: "pointer",
-}}
->
-<input
-type="radio"
-name="minimumRequirement"
-value={option.value}
-checked={minimumRequirement === option.value}
-onChange={() =>
-setMinimumRequirement(
-option.value as
-| "none"
-| "amount"
-| "quantity",
-)
-}
-style={{
-width: "16px",
-height: "16px",
-margin: 0,
-accentColor: "#202223",
-cursor: "pointer",
-}}
-/>
-<span>{option.label}</span>
-</label>
-
-{option.value === "amount" &&
-minimumRequirement === "amount" && (
-<div
-style={{
-maxWidth: "220px",
-marginLeft: "24px",
-}}
->
-<s-number-field
-label="Minimum purchase amount"
-labelAccessibilityVisibility="exclusive"
-min={0}
-step={0.01}
-prefix="£"
-value={minimumPurchaseAmount}
-onInput={(event) =>
-setMinimumPurchaseAmount(
-event.currentTarget.value,
-)
-}
-details="Customers must spend at least this amount to use the discount."
-/>
+<PolarisRadioList label="Minimum purchase requirements" value={minimumRequirement} options={[{ value: "none", label: "No minimum requirements" }, { value: "amount", label: "Minimum purchase amount" }, { value: "quantity", label: "Minimum quantity of items" }]} onChange={value => setMinimumRequirement(value as "none" | "amount" | "quantity")} />
+{minimumRequirement === "amount" && (
+<div style={{ maxWidth: "220px" }}>
+<s-number-field label="Minimum purchase amount" labelAccessibilityVisibility="exclusive" min={0} step={0.01} prefix="£" value={minimumPurchaseAmount} onInput={(event) => setMinimumPurchaseAmount(event.currentTarget.value)} details="Customers must spend at least this amount to use the discount." />
 </div>
 )}
-
-{option.value === "quantity" &&
-minimumRequirement === "quantity" && (
-<div
-style={{
-maxWidth: "220px",
-marginLeft: "24px",
-}}
->
-<s-number-field
-label="Minimum quantity of items"
-labelAccessibilityVisibility="exclusive"
-min={1}
-step={1}
-value={minimumQuantity}
-onInput={(event) =>
-setMinimumQuantity(
-event.currentTarget.value,
-)
-}
-details="Customers must add at least this many eligible items to use the discount."
-/>
+{minimumRequirement === "quantity" && (
+<div style={{ maxWidth: "220px" }}>
+<s-number-field label="Minimum quantity of items" labelAccessibilityVisibility="exclusive" min={1} step={1} value={minimumQuantity} onInput={(event) => setMinimumQuantity(event.currentTarget.value)} details="Customers must add at least this many eligible items to use the discount." />
 </div>
 )}
-</div>
-))}
-</div>
 </FormSection>
 )}
 
@@ -1901,66 +1416,25 @@ setLimitOncePerCustomer(event.currentTarget.checked)
 </FormSection>
 )}
 
-<section style={{borderTop:"1px solid #ebebeb",paddingTop:"16px"}}>
-<div id="combinations-label" style={{color:"#202223",fontSize:"14px",fontWeight:650,marginBottom:"8px"}}>Combinations</div>
-<div ref={combinationFieldRef} style={{position:"relative"}}>
-{showCombinationPicker&&(
-<div ref={combinationDialogRef} id="combinations-editor" role="dialog" aria-labelledby="combinations-editor-title" tabIndex={-1} style={{position:"absolute",zIndex:30,left:0,bottom:"calc(100% + 8px)",width:"min(390px, 100%)",maxHeight:"min(520px, 60vh)",overflowY:"auto",boxSizing:"border-box",padding:"16px",border:"1px solid #dedede",borderRadius:"12px",background:"#fff",boxShadow:"0 10px 28px rgba(0,0,0,.16)"}}>
-<div id="combinations-editor-title" style={{marginBottom:"12px",fontSize:"13px",fontWeight:600}}>Allow this discount to combine with other discounts</div>
-{[
-["Product discounts","Multiple can apply per order",combineProductDiscounts,setCombineProductDiscounts],
-["Order discounts","Multiple can apply per order",combineOrderDiscounts,setCombineOrderDiscounts],
-["Shipping discounts","Only one can apply per order (best value wins)",combineShippingDiscounts,setCombineShippingDiscounts],
-].map(([label,detail,checked,setChecked])=>(
-<label key={String(label)} aria-label={String(label)} htmlFor={`combination-${String(label).split(" ")[0].toLowerCase()}`} style={{display:"flex",alignItems:"flex-start",gap:"10px",padding:"8px 0",cursor:"pointer"}}>
-<input id={`combination-${String(label).split(" ")[0].toLowerCase()}`} type="checkbox" checked={Boolean(checked)} onChange={e=>{(setChecked as React.Dispatch<React.SetStateAction<boolean>>)(e.currentTarget.checked);if(label==="Product discounts"&&!e.currentTarget.checked){setShowCombinationTags(false);setSelectedCombinationTags([]);}}} style={{width:"18px",height:"18px",marginTop:"1px"}}/>
-<span><span style={{display:"block",fontSize:"13px"}}>{String(label)}</span><span style={{display:"block",marginTop:"2px",color:"#616161",fontSize:"11px"}}>{String(detail)}</span></span>
-</label>
-))}
-{combineProductDiscounts&&(
-<>
-<div style={{marginTop:"8px",maxWidth:"310px"}}>
-<PolarisSelect label="Product discount combination" labelAccessibilityVisibility="exclusive" value={productCombinationMode} onChange={e=>{const value=e.currentTarget.value as "best"|"multiple";setProductCombinationMode(value);if(value==="best"){setShowCombinationTags(false);setSelectedCombinationTags([]);}}}>
+<section aria-label="Combinations" style={{ display: "grid", gap: 12, borderTop: "1px solid #ebebeb", paddingTop: 16 }}>
+<s-heading>Combinations</s-heading>
+<s-text color="subdued">Allow this discount to combine with other discounts in the customer&apos;s cart.</s-text>
+<PolarisCheckbox label="Product discounts" details="Multiple can apply per order" checked={combineProductDiscounts} onChange={event => { setCombineProductDiscounts(event.currentTarget.checked); if (!event.currentTarget.checked) setSelectedCombinationTags([]); }} />
+{combineProductDiscounts && (
+<PolarisSelect label="Product discount combination" value={productCombinationMode} onChange={event => { const value = event.currentTarget.value as "best" | "multiple"; setProductCombinationMode(value); if (value === "best") setSelectedCombinationTags([]); }}>
 <s-option value="best">One per product (best value wins)</s-option>
 <s-option value="multiple">Multiple per product</s-option>
 </PolarisSelect>
-</div>
-{productCombinationMode==="multiple"&&(
-<div style={{position:"relative",marginTop:"10px"}}>
-<div style={{marginBottom:"5px",color:"#303030",fontSize:"12px"}}>Combine on same product with discounts tagged</div>
-<button type="button" onClick={()=>setShowCombinationTags(v=>!v)} style={{width:"100%",minHeight:"36px",padding:"7px 10px",border:"1px solid #c9c9c9",borderRadius:"8px",background:"#fff",color:"#202223",textAlign:"left",font:"inherit",fontSize:"12px",cursor:"pointer"}}>+ Select tags{selectedCombinationTags.length?` (${selectedCombinationTags.length})`:""}</button>
-{showCombinationTags&&(
-<div style={{marginTop:"8px",width:"100%",overflow:"hidden",border:"1px solid #dedede",borderRadius:"10px",background:"#fff",boxShadow:"0 8px 24px rgba(0,0,0,.16)"}}>
-<div style={{padding:"8px",borderBottom:"1px solid #eee"}}>
-<input type="search" value={combinationTagSearch} onChange={e=>setCombinationTagSearch(e.currentTarget.value)} placeholder="Search discount tags" style={{width:"100%",minHeight:"34px",border:"1px solid #c9c9c9",borderRadius:"7px",padding:"6px 9px",font:"inherit",fontSize:"12px"}}/>
-</div>
-{["FREE SHIPPING","ORDER","PRODUCT","BXGY","CUSTOMER TARGET"].filter(tag=>tag.toLowerCase().includes(combinationTagSearch.trim().toLowerCase())).map(tag=>(
-<label key={tag} style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px 10px",borderBottom:"1px solid #f3f3f3",fontSize:"12px",cursor:"pointer"}}>
-<input type="checkbox" checked={selectedCombinationTags.includes(tag)} onChange={()=>setSelectedCombinationTags(v=>v.includes(tag)?v.filter(x=>x!==tag):[...v,tag])}/>
-<span>{tag}</span>
-</label>
-))}
-</div>
 )}
-</div>
+{combineProductDiscounts && productCombinationMode === "multiple" && (
+<PolarisCheckboxList label="Combine on the same product with discounts tagged" values={selectedCombinationTags} options={["FREE SHIPPING", "ORDER", "PRODUCT", "BXGY", "CUSTOMER TARGET"].map(tag => ({ value: tag, label: tag }))} onChange={setSelectedCombinationTags} />
 )}
-</>
-)}
-<div style={{display:"flex",justifyContent:"flex-end",marginTop:"12px"}}>
-<button type="button" onClick={()=>{setShowCombinationPicker(false);setShowCombinationTags(false);combinationTriggerRef.current?.focus();}} style={{padding:"7px 14px",border:"1px solid #c9c9c9",borderRadius:"8px",background:"#fff",font:"inherit",fontSize:"12px",cursor:"pointer"}}>Done</button>
-</div>
-</div>
-)}
-<button ref={combinationTriggerRef} type="button" aria-labelledby="combinations-label" aria-haspopup="dialog" aria-expanded={showCombinationPicker} aria-controls={showCombinationPicker?"combinations-editor":undefined} onClick={()=>{setShowCombinationPicker(v=>!v);setShowCombinationTags(false);}} style={{display:"block",width:"100%",padding:"12px",border:"1px solid #c9c9c9",borderRadius:"8px",background:"#fff",color:"#202223",font:"inherit",textAlign:"left",cursor:"pointer",fontSize:"13px",lineHeight:1.5}}>
-<span style={{display:"block"}}>
-<strong>{method==="code"?discountCode||"This discount":automaticTitle||"This discount"}</strong>{" "}
-{!combineProductDiscounts&&!combineOrderDiscounts&&!combineShippingDiscounts?"won't combine with other product, order, or shipping discounts in the customer's cart.":"can be combined with the following discounts in the customer's cart:"}
-</span>
-{combineProductDiscounts&&<span style={{display:"block",marginTop:"8px"}}><strong>Product discounts</strong><span style={{display:"block",color:"#616161",fontSize:"11px"}}>Multiple can apply per order • {productCombinationMode==="best"?"One per product (best value wins)":"Multiple per product"}</span>{productCombinationMode==="multiple"&&<span style={{display:"block",color:"#616161",fontSize:"11px"}}>Tags: {selectedCombinationTags.join(", ")||"None selected"}</span>}</span>}
-{combineOrderDiscounts&&<span style={{display:"block",marginTop:"8px"}}><strong>Order discounts</strong><span style={{display:"block",color:"#616161",fontSize:"11px"}}>Multiple can apply per order</span></span>}
-{combineShippingDiscounts&&<span style={{display:"block",marginTop:"8px"}}><strong>Shipping discounts</strong><span style={{display:"block",color:"#616161",fontSize:"11px"}}>Only one can apply per order (best value wins)</span></span>}
-</button>
-</div>
+<PolarisCheckbox label="Order discounts" details="Multiple can apply per order" checked={combineOrderDiscounts} onChange={event => setCombineOrderDiscounts(event.currentTarget.checked)} />
+<PolarisCheckbox label="Shipping discounts" details="Only one can apply per order (best value wins)" checked={combineShippingDiscounts} onChange={event => setCombineShippingDiscounts(event.currentTarget.checked)} />
+<s-text color="subdued">
+{method === "code" ? discountCode || "This discount" : automaticTitle || "This discount"}{" "}
+{!combineProductDiscounts && !combineOrderDiscounts && !combineShippingDiscounts ? "won't combine with other product, order, or shipping discounts in the customer's cart." : "can be combined with the discounts ticked above in the customer's cart."}
+</s-text>
 </section>
 </FormStep>
 
@@ -1979,300 +1453,47 @@ setLimitOncePerCustomer(event.currentTarget.checked)
 </div>
 
 
-<button
-type="button"
-className="preview-drawer-toggle"
-onClick={() => setIsPreviewDrawerOpen(true)}
-aria-label="Open storefront preview"
->
-Preview
-</button>
-
-{isPreviewDrawerOpen && (
-<div
-className="preview-drawer-backdrop"
->
-<button type="button" aria-label="Close preview backdrop" onClick={()=>setIsPreviewDrawerOpen(false)} style={{position:"absolute",inset:0,border:0,background:"transparent"}} />
-<aside
-className="preview-drawer"
-role="dialog"
-aria-modal="true"
-aria-label="Storefront preview"
->
-<div className="preview-drawer-header">
-<div>
-<div style={{ fontSize: "14px", fontWeight: 700 }}>
-Storefront preview
-</div>
-<div style={{ marginTop: "2px", color: "#616161", fontSize: "11px" }}>
-Updates live as you change the promotion.
-</div>
-</div>
-
-<button
-type="button"
-aria-label="Close preview"
-onClick={() => setIsPreviewDrawerOpen(false)}
-style={{
-width: "32px",
-height: "32px",
-border: "1px solid #dedede",
-borderRadius: "8px",
-background: "#ffffff",
-color: "#202223",
-fontSize: "18px",
-cursor: "pointer",
-}}
->
-×
-</button>
-</div>
-
-<div className="preview-drawer-body">
+<ModalOverlay open={isPreviewDrawerOpen} heading="Storefront preview" size="large" onClose={() => setIsPreviewDrawerOpen(false)}>
+<s-stack direction="block" gap="base">
+<s-text color="subdued">Updates live as you change the promotion.</s-text>
 {websitePreview}
-</div>
-</aside>
-</div>
-)}
+</s-stack>
+<s-button slot="secondary-actions" onClick={() => setIsPreviewDrawerOpen(false)}>Close</s-button>
+</ModalOverlay>
 
-{showEligibilityPicker && (
-<div
-
-style={{
-position: "fixed",
-inset: 0,
-zIndex: 120,
-display: "flex",
-alignItems: "center",
-justifyContent: "center",
-padding: "24px",
-background: "rgba(0, 0, 0, 0.45)",
-}}
->
-<button type="button" aria-label="Close customer selector backdrop" onClick={()=>setShowEligibilityPicker(false)} style={{position:"absolute",inset:0,border:0,background:"transparent"}} />
-<div
-role="dialog"
-aria-modal="true"
-aria-labelledby="eligibility-picker-title"
-style={{
-position: "relative",
-width: "min(100%, 620px)",
-maxHeight: "78vh",
-display: "flex",
-flexDirection: "column",
-overflow: "hidden",
-borderRadius: "14px",
-background: "#ffffff",
-boxShadow: "0 18px 48px rgba(0,0,0,0.24)",
-}}
->
-<div
-style={{
-display: "flex",
-alignItems: "center",
-justifyContent: "space-between",
-gap: "12px",
-padding: "16px 18px",
-borderBottom: "1px solid #eeeeee",
-}}
->
-<div id="eligibility-picker-title" style={{ fontSize: "16px", fontWeight: 700 }}>
-{eligibility === "segments"
-? "Select customer segments"
-: "Select customers"}
-</div>
-
-<button
-type="button"
-aria-label="Close"
-onClick={() => setShowEligibilityPicker(false)}
-style={{
-width: "32px",
-height: "32px",
-border: "1px solid #dedede",
-borderRadius: "8px",
-background: "#ffffff",
-fontSize: "18px",
-cursor: "pointer",
-}}
->
-×
-</button>
-</div>
-
-<div style={{ padding: "12px", borderBottom: "1px solid #eeeeee" }}>
-<s-text-field
+<ModalOverlay open={showEligibilityPicker} heading={eligibility === "segments" ? "Select customer segments" : "Select customers"} onClose={() => setShowEligibilityPicker(false)}>
+<s-stack direction="block" gap="base">
+<s-search-field
 label={eligibility === "segments" ? "Search segments" : "Search customers"}
 labelAccessibilityVisibility="exclusive"
 placeholder={eligibility === "segments" ? "Search segments" : "Search customers"}
 value={eligibilityPickerSearch}
 onInput={(event) => searchEligibilityPicker(event.currentTarget.value)}
 />
-</div>
-
-<div style={{ overflowY: "auto", padding: "6px" }}>
-{eligibilityFetcher.state !== "idle" && (
-<div style={{ padding: "18px", color: "#616161", fontSize: "12px" }}>
-Loading…
-</div>
-)}
-
-{eligibilityFetcher.state === "idle" &&
-eligibilityFetcher.data?.eligibilityResources?.map((resource) => {
-const selected = selectedEligibility.some(
-(item) => item.id === resource.id,
-);
-
-return (
-<button
-key={resource.id}
-type="button"
-onClick={() => toggleEligibilityResource(resource)}
-style={{
-display: "flex",
-alignItems: "center",
-gap: "10px",
-width: "100%",
-padding: "10px 12px",
-border: 0,
-borderBottom: "1px solid #f1f1f1",
-background: selected ? "#f3f8f4" : "#ffffff",
-color: "#202223",
-textAlign: "left",
-font: "inherit",
-cursor: "pointer",
+{eligibilityFetcher.state !== "idle" && <s-text color="subdued">Loading…</s-text>}
+{eligibilityFetcher.state === "idle" && Boolean(eligibilityFetcher.data?.eligibilityResources?.length) && (
+<PolarisCheckboxList
+label={eligibility === "segments" ? "Customer segments" : "Customers"}
+values={selectedEligibility.map((item) => item.id)}
+options={(eligibilityFetcher.data?.eligibilityResources ?? []).map((resource) => ({ value: resource.id, label: resource.secondary ? `${resource.name} (${resource.secondary})` : resource.name }))}
+onChange={(values) => {
+for (const resource of eligibilityFetcher.data?.eligibilityResources ?? []) {
+if (values.includes(resource.id) !== selectedEligibility.some((item) => item.id === resource.id)) toggleEligibilityResource(resource);
+}
 }}
->
-<span
-aria-hidden="true"
-style={{
-display: "flex",
-alignItems: "center",
-justifyContent: "center",
-width: "18px",
-height: "18px",
-flex: "0 0 auto",
-border: selected
-? "1px solid #202223"
-: "1px solid #8c8c8c",
-borderRadius: "4px",
-background: selected ? "#202223" : "#ffffff",
-color: "#ffffff",
-fontSize: "11px",
-}}
->
-{selected ? "✓" : ""}
-</span>
-
-<span style={{ minWidth: 0 }}>
-<span style={{ display: "block", fontSize: "12px", fontWeight: 600 }}>
-{resource.name}
-</span>
-{resource.secondary && (
-<span
-style={{
-display: "block",
-marginTop: "2px",
-color: "#616161",
-fontSize: "11px",
-}}
->
-{resource.secondary}
-</span>
+/>
 )}
-</span>
-</button>
-);
-})}
-
-{eligibilityFetcher.state === "idle" &&
-eligibilityFetcher.data?.eligibilityResources?.length === 0 && (
-<div style={{ padding: "18px", color: "#616161", fontSize: "12px" }}>
-No {eligibility === "segments" ? "segments" : "customers"} found.
-</div>
+{eligibilityFetcher.state === "idle" && eligibilityFetcher.data?.eligibilityResources?.length === 0 && (
+<s-text color="subdued">No {eligibility === "segments" ? "segments" : "customers"} found.</s-text>
 )}
-</div>
-
-<div
-style={{
-display: "flex",
-justifyContent: "flex-end",
-gap: "8px",
-padding: "12px 16px",
-borderTop: "1px solid #eeeeee",
-}}
->
-<s-button
-type="button"
-variant="secondary"
-onClick={() => setShowEligibilityPicker(false)}
->
-Cancel
-</s-button>
-<s-button
-type="button"
-variant="primary"
-onClick={() => setShowEligibilityPicker(false)}
->
-Done
-</s-button>
-</div>
-</div>
-</div>
-)}
-
+</s-stack>
+<s-button slot="secondary-actions" onClick={() => setShowEligibilityPicker(false)}>Cancel</s-button>
+<s-button slot="primary-actions" variant="primary" onClick={() => setShowEligibilityPicker(false)}>Done</s-button>
+</ModalOverlay>
 
 <style>{`
-.preview-drawer-toggle {
+s-button[data-preview-toggle] {
 display: none;
-position: fixed;
-left: 0;
-top: 42%;
-z-index: 90;
-border: 1px solid #c9c9c9;
-border-left: 0;
-border-radius: 0 9px 9px 0;
-padding: 12px 8px;
-background: #dff5e5;
-color: #174c2a;
-box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-font: inherit;
-font-size: 11px;
-font-weight: 700;
-writing-mode: vertical-rl;
-cursor: pointer;
-}
-
-.preview-drawer-backdrop {
-position: fixed;
-inset: 0;
-z-index: 110;
-background: rgba(0,0,0,0.42);
-}
-
-.preview-drawer {
-position: absolute;
-inset: 0 auto 0 0;
-width: min(92vw, 560px);
-display: flex;
-flex-direction: column;
-background: #f6f6f7;
-box-shadow: 12px 0 32px rgba(0,0,0,0.2);
-}
-
-.preview-drawer-header {
-display: flex;
-align-items: center;
-justify-content: space-between;
-gap: 12px;
-padding: 14px 16px;
-border-bottom: 1px solid #dedede;
-background: #ffffff;
-}
-
-.preview-drawer-body {
-overflow-y: auto;
-padding: 14px;
 }
 
 @media (max-width: 1380px) {
@@ -2284,8 +1505,8 @@ grid-template-columns: minmax(0, 1fr) !important;
 display: none;
 }
 
-.preview-drawer-toggle {
-display: block;
+s-button[data-preview-toggle] {
+display: inline-flex;
 }
 }
 

@@ -6,6 +6,7 @@ import { useLoaderData } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { getStatusTone } from "../modules/promotions/design/statusTone";
+import { PolarisSelect } from "../modules/promotions/components/PolarisControls";
 import { getDiscounts } from "../modules/promotions/services/discounts.server";
 import { mapDiscountsToPromotions } from "../modules/promotions/mappers/promotionMapper";
 import { attachPromotionSettings } from "../modules/promotions/services/promotionSettings.server";
@@ -211,316 +212,74 @@ export default function PromotionsPage() {
             Review Shopify discounts and manage their Promotion Engine settings. {promotions.length} promotion{promotions.length === 1 ? "" : "s"}
           </s-text>
 
-          <style>{`
-            .promotion-filters {
-              display: grid;
-              grid-template-columns: minmax(0, 1fr) 180px;
-              gap: 12px;
-              padding: 12px;
-              border-bottom: 1px solid #ebebeb;
-              background: #fafafa;
-            }
-
-            .promotion-list-header,
-            .promotion-list-row {
-              display: grid;
-              grid-template-columns:
-                minmax(220px, 2.4fr)
-                minmax(84px, 0.75fr)
-                minmax(70px, 0.65fr)
-                minmax(110px, 1fr)
-                minmax(92px, 0.9fr)
-                minmax(92px, 0.85fr)
-                minmax(72px, 0.7fr)
-                minmax(96px, 0.85fr)
-                minmax(96px, 0.85fr)
-                64px;
-              column-gap: 12px;
-              align-items: center;
-            }
-
-            .promotion-list-header {
-              padding: 11px 14px;
-              border-bottom: 1px solid #ebebeb;
-              background: #fafafa;
-              color: #616161;
-              font-size: 12px;
-              font-weight: 650;
-            }
-
-            .promotion-list-row {
-              padding: 14px;
-              border-bottom: 1px solid #eeeeee;
-            }
-
-            .promotion-list-row:last-child {
-              border-bottom: 0;
-            }
-
-            .promotion-list-cell {
-              min-width: 0;
-              overflow-wrap: anywhere;
-              font-size: 13px;
-            }
-
-            .promotion-mobile-label {
-              display: none;
-              margin-bottom: 4px;
-              color: #616161;
-              font-size: 11px;
-              font-weight: 650;
-            }
-
-            .promotion-summary-lines {
-              display: grid;
-              gap: 2px;
-              margin-top: 4px;
-              color: #616161;
-              font-size: 12px;
-              line-height: 1.4;
-            }
-
-            .promotion-summary-line {
-              display: block;
-            }
-
-            @media (max-width: 980px) {
-              .promotion-list-header,
-              .promotion-list-row {
-                grid-template-columns:
-                  minmax(200px, 2fr)
-                  minmax(78px, 0.7fr)
-                  minmax(72px, 0.65fr)
-                  minmax(110px, 1fr)
-                  minmax(90px, 0.85fr)
-                  minmax(86px, 0.8fr)
-                  minmax(68px, 0.65fr)
-                  minmax(88px, 0.8fr)
-                  minmax(88px, 0.8fr)
-                  58px;
-                column-gap: 8px;
-              }
-
-              .promotion-list-row {
-                padding: 12px;
-              }
-
-              .promotion-list-header {
-                padding: 10px 12px;
-              }
-            }
-
-            @media (max-width: 760px) {
-              .promotion-filters {
-                grid-template-columns: 1fr;
-              }
-
-              .promotion-list-header {
-                display: none;
-              }
-
-              .promotion-list-row {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 14px 18px;
-                align-items: start;
-                padding: 16px;
-              }
-
-              .promotion-list-title {
-                grid-column: 1 / -1;
-              }
-
-              .promotion-list-action {
-                grid-column: 1 / -1;
-                text-align: left !important;
-              }
-
-              .promotion-mobile-label {
-                display: block;
-              }
-            }
-
-            @media (max-width: 480px) {
-              .promotion-list-row {
-                grid-template-columns: 1fr;
-              }
-
-              .promotion-list-title,
-              .promotion-list-action {
-                grid-column: 1;
-              }
-            }
-          `}</style>
-
-          <s-section padding="none">
-            <div className="promotion-filters">
-              <s-text-field
-                label="Search promotions"
-                labelAccessibilityVisibility="exclusive"
-                placeholder="Search promotions"
-                value={query}
-                onInput={(event) => setQuery(event.currentTarget.value)}
-              />
-
-              <s-select
-                label="Status"
-                labelAccessibilityVisibility="exclusive"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.currentTarget.value)}
-              >
-                <s-option value="ALL">All statuses</s-option>
-                <s-option value="ACTIVE">Active</s-option>
-                <s-option value="SCHEDULED">Scheduled</s-option>
-                <s-option value="EXPIRED">Expired</s-option>
-                <s-option value="UNKNOWN">Unknown</s-option>
-              </s-select>
-            </div>
+                    <s-section padding="none">
+            <s-box padding="base">
+              <s-stack direction="inline" gap="base" alignItems="center">
+                <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+                  <s-search-field label="Search promotions" labelAccessibilityVisibility="exclusive" placeholder="Search promotions" value={query} onInput={(event) => setQuery(event.currentTarget.value)} />
+                </div>
+                <div style={{ flex: "0 0 180px" }}>
+                  <PolarisSelect label="Status" labelAccessibilityVisibility="exclusive" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
+                    <s-option value="ALL">All statuses</s-option>
+                    <s-option value="ACTIVE">Active</s-option>
+                    <s-option value="SCHEDULED">Scheduled</s-option>
+                    <s-option value="EXPIRED">Expired</s-option>
+                    <s-option value="UNKNOWN">Unknown</s-option>
+                  </PolarisSelect>
+                </div>
+              </s-stack>
+            </s-box>
 
             {filteredPromotions.length === 0 ? (
-              <div
-                style={{
-                  padding: "40px 24px",
-                  textAlign: "center",
-                }}
-              >
-                <s-text type="strong">No promotions found</s-text>
-                <div
-                  style={{
-                    marginTop: "6px",
-                    color: "#616161",
-                    fontSize: "13px",
-                  }}
-                >
-                  Try changing the search or status filter.
-                </div>
-              </div>
+              <s-box padding="large">
+                <s-stack direction="block" gap="small-300" alignItems="center">
+                  <s-text type="strong">No promotions found</s-text>
+                  <s-text color="subdued">Try changing the search or status filter.</s-text>
+                </s-stack>
+              </s-box>
             ) : (
-              <div>
-                <div className="promotion-list-header" aria-hidden="true">
-                  <div>Title</div>
-                  <div>Status</div>
-                  <div>Method</div>
-                  <div>Eligibility</div>
-                  <div>Type</div>
-                  <div>Website</div>
-                  <div>Value</div>
-                  <div>Starts</div>
-                  <div>Ends</div>
-                  <div />
-                </div>
-
-                {filteredPromotions.map((promotion) => {
-                  const general = promotion.shopify.general;
-                  const summaryLines = getSummaryLines(general.summary);
-
-                  return (
-                    <div
-                      key={promotion.id}
-                      className="promotion-list-row"
-                    >
-                      <div className="promotion-list-cell promotion-list-title">
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: "10px",
-                          }}
-                        >
-                          <DiscountTypeIcon
-                            type={getPromotionIconType(promotion)}
-                            size={20}
-                          />
-
-                          <div style={{ minWidth: 0 }}>
-                            <s-link href={appUrl(`/app/promotions/${promotion.routeId}`)}>
-                              <span
-                                style={{
-                                  color: "#202223",
-                                  fontSize: "14px",
-                                  fontWeight: 650,
-                                }}
-                              >
-                                {general.title}
-                              </span>
-                            </s-link>
-
-                            {summaryLines.length > 0 && (
-                              <div className="promotion-summary-lines">
-                                {summaryLines.map((line, index) => (
-                                  <span
-                                    key={`${promotion.id}-summary-${index}`}
-                                    className="promotion-summary-line"
-                                  >
-                                    {line}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Status</span>
-                        <s-badge tone={getStatusTone(general.status)}>
-                          {general.status}
-                        </s-badge>
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Method</span>
-                        {general.method}
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Eligibility</span>
-                        {getEligibility(promotion)}
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Type</span>
-                        {general.type}
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Website</span>
-                        <s-badge
-                          tone={promotion.settings.included ? "success" : "neutral"}
-                        >
-                          {promotion.settings.included ? "Included" : "Excluded"}
-                        </s-badge>
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Value</span>
-                        {getPromotionValue(promotion)}
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Starts</span>
-                        {formatDate(promotion.shopify.schedule.startsAt)}
-                      </div>
-
-                      <div className="promotion-list-cell">
-                        <span className="promotion-mobile-label">Ends</span>
-                        {formatDate(promotion.shopify.schedule.endsAt)}
-                      </div>
-
-                      <div
-                        className="promotion-list-cell promotion-list-action"
-                        style={{ textAlign: "right" }}
-                      >
-                        <s-button
-                          href={appUrl(`/app/promotions/${promotion.routeId}`)}
-                          variant="secondary"
-                        >
-                          View
-                        </s-button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <s-table>
+                <s-table-header-row>
+                  <s-table-header>Title</s-table-header>
+                  <s-table-header>Status</s-table-header>
+                  <s-table-header>Method</s-table-header>
+                  <s-table-header>Eligibility</s-table-header>
+                  <s-table-header>Type</s-table-header>
+                  <s-table-header>Website</s-table-header>
+                  <s-table-header>Value</s-table-header>
+                  <s-table-header>Starts</s-table-header>
+                  <s-table-header>Ends</s-table-header>
+                  <s-table-header><span /></s-table-header>
+                </s-table-header-row>
+                <s-table-body>
+                  {filteredPromotions.map((promotion) => {
+                    const general = promotion.shopify.general;
+                    const summaryLines = getSummaryLines(general.summary);
+                    return (
+                      <s-table-row key={promotion.id}>
+                        <s-table-cell>
+                          <s-stack direction="inline" gap="base" alignItems="center">
+                            <DiscountTypeIcon type={getPromotionIconType(promotion)} size={20} />
+                            <s-stack direction="block" gap="small-300">
+                              <s-link href={appUrl(`/app/promotions/${promotion.routeId}`)}>{general.title}</s-link>
+                              {summaryLines.map((line, index) => <s-text key={`${promotion.id}-summary-${index}`} color="subdued">{line}</s-text>)}
+                            </s-stack>
+                          </s-stack>
+                        </s-table-cell>
+                        <s-table-cell><s-badge tone={getStatusTone(general.status)}>{general.status}</s-badge></s-table-cell>
+                        <s-table-cell>{general.method}</s-table-cell>
+                        <s-table-cell>{getEligibility(promotion)}</s-table-cell>
+                        <s-table-cell>{general.type}</s-table-cell>
+                        <s-table-cell><s-badge tone={promotion.settings.included ? "success" : "neutral"}>{promotion.settings.included ? "Included" : "Excluded"}</s-badge></s-table-cell>
+                        <s-table-cell>{getPromotionValue(promotion)}</s-table-cell>
+                        <s-table-cell>{formatDate(promotion.shopify.schedule.startsAt)}</s-table-cell>
+                        <s-table-cell>{formatDate(promotion.shopify.schedule.endsAt)}</s-table-cell>
+                        <s-table-cell><s-button href={appUrl(`/app/promotions/${promotion.routeId}`)} variant="secondary">View</s-button></s-table-cell>
+                      </s-table-row>
+                    );
+                  })}
+                </s-table-body>
+              </s-table>
             )}
           </s-section>
         </s-stack>

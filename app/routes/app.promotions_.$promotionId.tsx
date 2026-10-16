@@ -2,6 +2,8 @@ import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { getShippingCountries, validateShippingCountries } from "../modules/promotions/services/shippingCountries.server";
 import { PromotionSaveBar } from "../modules/promotions/components/PromotionSaveBar";
+import { SaveNotices } from "../modules/promotions/components/SaveNotices";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { getPromotionCodeBatch } from "../modules/promotions/services/promotionCodeBatches.server";
 import { getEditableDiscount } from "../modules/promotions/services/editableDiscount.server";
 import { PromotionEditor } from "../modules/promotions/components/PromotionEditor";
@@ -253,6 +255,9 @@ export default function PromotionDetailsPage() {
   }, [savedWebsite]);
   function resetFormState() { setWebsite(savedWebsite); setDismissedAction(actionData); }
   const hasUnsavedChanges = JSON.stringify(website) !== JSON.stringify(savedWebsite);
+  const shopify = useAppBridge();
+  useEffect(() => { if (actionData?.success) shopify.toast.show("Promotion saved"); }, [actionData, shopify]);
+  const saveIssue = validateWebsite(website, promotion.endsAt)[0] ?? null;
 
   if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} />;
 
@@ -260,7 +265,8 @@ export default function PromotionDetailsPage() {
     <s-page heading={general.title} inlineSize="large">
       <s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
       <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotion.routeId}`} target="_blank">Edit in Shopify</s-button>
-      <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} issue={validateWebsite(website, promotion.endsAt)[0] ?? null} error={actionData !== dismissedAction ? actionData?.error : undefined} savedToken={actionData?.success ? actionData : null} showWhileIncomplete onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
+      <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} issue={saveIssue} showWhileIncomplete onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
+      <SaveNotices error={actionData !== dismissedAction ? actionData?.error : undefined} issue={hasUnsavedChanges ? saveIssue : null} onDismissError={() => setDismissedAction(actionData)} />
       <div
         style={{
           width: "100%",

@@ -49,3 +49,35 @@ export function PolarisNumberField({ onInput, onChange, disabled, ...props }: Om
   }));
   return <s-number-field {...props} disabled={disabled || undefined} ref={ref} />;
 }
+
+/** Shopify's native radio group: a single-select choice list. */
+export function PolarisRadioList({ label, value, options, disabled, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; disabled?: boolean; onChange: (value: string) => void }) {
+  const ref = useRef<HTMLElementTagNameMap["s-choice-list"]>(null);
+  const latest = useRef(onChange); latest.current = onChange;
+  useEffect(() => {
+    const element = ref.current;
+    const changed = () => { const next = element?.values?.[0]; if (next !== undefined) latest.current(next); };
+    element?.addEventListener("change", changed);
+    return () => element?.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => afterDefinition("s-choice-list", () => { if (ref.current) ref.current.values = [value]; }));
+  return <s-choice-list ref={ref} label={label} labelAccessibilityVisibility="exclusive" disabled={disabled || undefined}>
+    {options.map(option => <s-choice key={option.value} value={option.value} selected={option.value === value || undefined}>{option.label}</s-choice>)}
+  </s-choice-list>;
+}
+
+/** Shopify's native checkbox group: a multi-select choice list. */
+export function PolarisCheckboxList({ label, values, options, onChange }: { label: string; values: string[]; options: Array<{ value: string; label: string }>; onChange: (values: string[]) => void }) {
+  const ref = useRef<HTMLElementTagNameMap["s-choice-list"]>(null);
+  const latest = useRef(onChange); latest.current = onChange;
+  useEffect(() => {
+    const element = ref.current;
+    const changed = () => latest.current([...(element?.values ?? [])]);
+    element?.addEventListener("change", changed);
+    return () => element?.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => afterDefinition("s-choice-list", () => { if (ref.current) ref.current.values = values; }));
+  return <s-choice-list ref={ref} multiple label={label} labelAccessibilityVisibility="exclusive">
+    {options.map(option => <s-choice key={option.value} value={option.value} selected={values.includes(option.value) || undefined}>{option.label}</s-choice>)}
+  </s-choice-list>;
+}

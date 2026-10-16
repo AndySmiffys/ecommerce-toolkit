@@ -1,19 +1,24 @@
 import { contrastRatio, placements, promotionBlock, setPromotionBlock, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "./design";
 
-// A campaign has a main colour, a secondary colour and two text colours: one for
-// text on a colour and one for text on white. Each block still stores its own
+// A campaign has a main colour, a secondary colour, a button text colour and two
+// text colours: one for text on a colour and one for text on white. Each block still stores its own
 // colours, so the palette only decides which saved field each role colours. A
 // field follows a palette change while it holds the shared value, so a colour set
 // on one block is never overwritten. A block that shows an image has a white
-// background, so its text uses the text-on-white colour.
+// background, so its text uses the text-on-white colour. Button labels always use
+// the button text colour, whatever colour the button is.
 export type PaletteRole = "primary" | "secondary";
-export type PaletteColour = PaletteRole | "onColour" | "onWhite";
+export type PaletteColour = PaletteRole | "onColour" | "onWhite" | "button";
 export type PaletteValues = Partial<Record<PaletteColour, string>>;
 type StyleColour = "buttonBackground" | "buttonColour" | "badgeTextColour" | "productBorderColour" | "copyCodeBackground" | "copyCodeColour";
 type BlockColour = "backgroundColour" | "textColour" | "badgeColour";
 export type ColourKey = BlockColour | `style.${StyleColour}`;
 /** A coloured element of a block. Paints without a role are surfaces, such as a banner background. */
-export type Paint = { label: string; role?: PaletteRole; fill: ColourKey; text?: ColourKey };
+export type Paint = { label: string; role?: PaletteRole; fill: ColourKey; text?: ColourKey; button?: true };
+/** The text keys that hold a button label colour. */
+export function isButtonText(key: ColourKey): boolean {
+  return key === "style.buttonColour" || key === "style.copyCodeColour";
+}
 
 export const white = "#ffffff";
 export const black = "#000000";
@@ -31,14 +36,15 @@ const startingColour: Record<ColourKey, string> = {
 export function autoText(background: string): string {
   return contrastRatio(background, white) >= contrastRatio(background, black) ? white : black;
 }
-/** The campaign text colour for a background: "on colour" for dark colours, "on white" for light ones. */
-export function textColourFor(background: string, palette: PaletteValues = {}): string {
+/** The campaign text colour for a background: "on colour" for dark colours, "on white" for light ones. Buttons use the button text colour. */
+export function textColourFor(background: string, palette: PaletteValues = {}, button = false): string {
+  if (button) return palette.button ?? white;
   return autoText(background) === white ? palette.onColour ?? white : palette.onWhite ?? black;
 }
 /** Text is automatic while it is black, white or one of the campaign text colours. */
 export function isAutomaticText(colour: string, palette: PaletteValues = {}): boolean {
   const value = colour.toLowerCase();
-  return value === white || value === black || value === palette.onColour?.toLowerCase() || value === palette.onWhite?.toLowerCase();
+  return value === white || value === black || value === palette.onColour?.toLowerCase() || value === palette.onWhite?.toLowerCase() || value === palette.button?.toLowerCase();
 }
 
 export function readColour(block: PromotionBlock, key: ColourKey): string {
@@ -57,19 +63,19 @@ export function paintsFor(placement: Placement, block: PromotionBlock): Paint[] 
   switch (placement) {
     case "header": return [
       { label: "Header background", role: "primary", fill: "backgroundColour", text: "textColour" },
-      { label: "Header button", role: "secondary", fill: "style.buttonBackground", text: "style.buttonColour" },
+      { label: "Header button", role: "secondary", fill: "style.buttonBackground", text: "style.buttonColour", button: true },
     ];
     case "collection": return [
       { label: "Collection banner", fill: "backgroundColour", text: "textColour" },
-      { label: "Collection button", role: "primary", fill: "style.buttonBackground", text: "style.buttonColour" },
+      { label: "Collection button", role: "primary", fill: "style.buttonBackground", text: "style.buttonColour", button: true },
     ];
     case "product": return [
       block.style.productOfferStyle === "solid" && !hasImage(block)
         ? { label: "Product offer background", role: "primary", fill: "backgroundColour", text: "textColour" }
         : { label: "Product offer text", fill: "backgroundColour", text: "textColour" },
       ...(block.style.productOfferStyle === "solid" ? [] : [{ label: "Product offer border", role: "primary" as const, fill: "style.productBorderColour" as const }]),
-      { label: "Product button", role: "primary", fill: "style.buttonBackground", text: "style.buttonColour" },
-      { label: "Copy code button", role: "secondary", fill: "style.copyCodeBackground", text: "style.copyCodeColour" },
+      { label: "Product button", role: "primary", fill: "style.buttonBackground", text: "style.buttonColour", button: true },
+      { label: "Copy code button", role: "secondary", fill: "style.copyCodeBackground", text: "style.copyCodeColour", button: true },
     ];
     case "badge": return [{ label: "Product badge", role: "primary", fill: "badgeColour", text: "style.badgeTextColour" }];
   }
@@ -104,10 +110,15 @@ export function paletteValues(draft: WebsiteDraft): PaletteValues {
     result[role] = own.every(slot => slot.fill === startingColour[slot.paint.fill]) ? neutralColour : mode(own.map(slot => slot.fill));
   }
   for (const kind of ["onColour", "onWhite"] as const) {
-    const texts = all.filter(slot => slot.text !== undefined && (autoText(slot.fill) === white) === (kind === "onColour")).map(slot => slot.text!);
+    const texts = all.filter(slot => slot.text !== undefined && !slot.paint.button && (autoText(slot.fill) === white) === (kind === "onColour")).map(slot => slot.text!);
     const top = mode(texts);
     result[kind] = top && top !== white && top !== black ? top : kind === "onColour" ? white : black;
   }
+  const buttonTexts = all.filter(slot => slot.paint.button && slot.text !== undefined).map(slot => slot.text!);
+  if (buttonTexts.length) result.button = mode(buttonTexts);
+  // A chosen text colour is saved, so it survives a main colour that no block currently puts it on.
+  const saved = draft.design.palette;
+  for (const key of ["onColour", "onWhite", "button"] as const) if (saved?.[key]) result[key] = saved[key];
   return result;
 }
 export function paletteColour(draft: WebsiteDraft, key: PaletteColour): string | undefined {
@@ -129,13 +140,16 @@ export function applyPalette(draft: WebsiteDraft, change: PaletteValues): Websit
       if (target && paint.role && (fillOld === old[paint.role] || fillOld === startingColour[paint.fill])) fill = target;
       if (paint.text) {
         const textOld = readColour(block, paint.text).toLowerCase();
-        const textNew = textColourFor(fill, next).toLowerCase();
-        if (isAutomaticText(textOld, old) && textNew !== textOld) block = writeColour(block, paint.text, textNew);
+        const textNew = textColourFor(fill, next, paint.button).toLowerCase();
+        const automatic = paint.button ? textOld === old.button || textOld === white : isAutomaticText(textOld, old);
+        if (automatic && textNew !== textOld) block = writeColour(block, paint.text, textNew);
       }
       if (fill !== fillOld) block = writeColour(block, paint.fill, fill);
     }
     result = setPromotionBlock(result, id, block);
   }
+  const chosen = (Object.keys(wanted) as PaletteColour[]).filter(key => key === "onColour" || key === "onWhite" || key === "button");
+  if (chosen.length) result = { ...result, design: { ...result.design, palette: { ...result.design.palette, ...Object.fromEntries(chosen.map(key => [key, wanted[key]])) } } };
   return result;
 }
 
@@ -159,7 +173,7 @@ export function matchPalette(draft: WebsiteDraft, placement: Placement): Website
   for (const paint of paintsFor(placement, block)) {
     const shared = paint.role ? values[paint.role] : undefined;
     if (shared !== undefined) block = writeColour(block, paint.fill, shared);
-    if (paint.text) block = writeColour(block, paint.text, textColourFor(readColour(block, paint.fill), values));
+    if (paint.text) block = writeColour(block, paint.text, textColourFor(readColour(block, paint.fill), values, paint.button));
   }
   return setPromotionBlock(draft, placement, block);
 }

@@ -39,7 +39,7 @@ export function PromotionCodeList({ initialBatch }: { initialBatch: CodeBatchSum
   }
   return <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
     <s-banner tone="info">Individual codes are for distribution to customers. This promotion stays in website Draft status, and no individual code is published in the website preview.</s-banner>
-    <div><strong>{batch.title}</strong><p style={{ margin: "6px 0", color: "#616161", fontSize: 13 }}>{batch.confirmed.toLocaleString()} of {batch.total.toLocaleString()} codes confirmed in Shopify.</p>
+    <div><s-text type="strong">{batch.title}</s-text><s-text color="subdued">{batch.confirmed.toLocaleString()} of {batch.total.toLocaleString()} codes confirmed in Shopify.</s-text>
       <progress aria-label="Code generation progress" value={batch.confirmed} max={batch.total} style={{ width: "100%", accentColor: "#202223" }} />
     </div>
     {batch.status === "RUNNING" && <s-text>{batch.reconciling ? "Checking codes already in Shopify…" : "Generating codes…"} Keep this page open. You can reopen the promotion to resume.</s-text>}

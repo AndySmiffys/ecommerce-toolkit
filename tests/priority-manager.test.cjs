@@ -19,7 +19,11 @@ class NumberField extends HTMLElement {
   set value(value) { this.currentValue = value; }
 }
 window.customElements.define('s-number-field', NumberField);
-window.shopify = {};
+// Exercise the real SaveBar wrapper with a minimal Shopify custom element.
+class SaveBar extends HTMLElement { show() { this.open = true; } hide() { this.open = false; } }
+window.customElements.define('ui-save-bar', SaveBar);
+let toast;
+window.shopify = { toast: { show: message => { toast = message; } } };
 const wait = () => new Promise(resolve => setTimeout(resolve, 30));
 test('Editing priority shares values across placements, supports Discard, and submits one priority-only save', async () => {
   let priority = 17, submitted, fail = false;
@@ -42,24 +46,24 @@ test('Editing priority shares values across placements, supports Discard, and su
     await change('100');
     assert.deepEqual(fields().map(field => field.value), ['100', '100']);
     assert.equal(button('Save').disabled, false);
-    assert.match(document.body.textContent, /Unsaved changes/);
     await React.act(async () => button('Discard').click());
     assert.deepEqual(fields().map(field => field.value), ['17', '17']);
     assert.equal(submitted, undefined);
-    assert.equal(button('Save'), undefined, 'the bar is hidden when nothing has changed');
     await change('10000', 'input');
     assert.equal(button('Save').disabled, true);
-    assert.match(document.body.textContent, /Complete before saving: Enter whole-number priorities between 0 and 9999\./);
+    assert.equal(document.querySelector("s-banner[tone=warning]").getAttribute("heading"), "Complete before saving");
+    assert.match(document.body.textContent, /Enter whole-number priorities between 0 and 9999\./);
     await change('100', 'input');
     await React.act(async () => { button('Save').click(); await wait(); });
     assert.deepEqual(submitted, [{ id: 'gid://shopify/DiscountNode/1', priority: 100, expectedPriority: 17 }]);
     assert.deepEqual(fields().map(field => field.value), ['100', '100']);
-    assert.equal(button('Save'), undefined, 'a saved form needs no Save button');
-    assert.match(document.body.textContent, /Saved/);
+    assert.equal(button('Save').disabled, true);
+    assert.equal(toast, 'Priorities saved');
     fail = true;
     await change('200');
     await React.act(async () => { button('Save').click(); await wait(); });
-    assert.match(document.body.textContent, /Not saved: Save failed\. Please retry\./);
+    assert.equal(document.querySelector("s-banner[tone=critical]").getAttribute("heading"), "Not saved");
+    assert.match(document.body.textContent, /Save failed/);
     assert.deepEqual(fields().map(field => field.value), ['200', '200']);
     await React.act(async () => button('Discard').click());
     assert.deepEqual(fields().map(field => field.value), ['100', '100']);
