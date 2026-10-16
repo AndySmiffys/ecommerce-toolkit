@@ -7,7 +7,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { getPromotionCodeBatch } from "../modules/promotions/services/promotionCodeBatches.server";
 import { getEditableDiscount } from "../modules/promotions/services/editableDiscount.server";
 import { PromotionEditor } from "../modules/promotions/components/PromotionEditor";
-import { discountToEditorDraft, type EditorDiscountDraft } from "../modules/promotions/design/editorDraft";
+import { discountToEditorDraft, toLocalDateTime, type EditorDiscountDraft } from "../modules/promotions/design/editorDraft";
 import { getPromotionEditorResources } from "../modules/promotions/services/promotionEditorResources.server";
 import { promotionEditorAction } from "../modules/promotions/services/promotionEditorAction.server";
 import { updateShopifyPromotion } from "../modules/promotions/services/updatePromotion.server";
@@ -37,6 +37,10 @@ import { authenticate } from "../shopify.server";
 import { readWebsite, websiteFromSettings, websiteStorage, validateWebsite, type Placement } from "../modules/promotions/design/design";
 import { PromotionWebsiteEditor } from "../modules/promotions/components/PromotionWebsiteEditor";
 import { PromotionPreview } from "../modules/promotions/components/PromotionPreview";
+import { FormStep } from "../modules/promotions/components/FormStep";
+import { ModalOverlay } from "../modules/promotions/components/ModalOverlay";
+import { editorCss } from "../modules/promotions/components/editor/editorStyles";
+import { summaryDate } from "../modules/promotions/design/promotionSummary";
 import { getPreviewProducts } from "../modules/promotions/services/previewProducts.server";
 
 import {
@@ -46,16 +50,7 @@ import {
 
 import { mapDiscountToPromotion } from "../modules/promotions/mappers/promotionMapper";
 
-import { getPromotionCoverage } from "../modules/promotions/coverage/coverage.server";
-
-import {
-  PromotionTabs,
-  type PromotionTab,
-} from "../modules/promotions/components/PromotionTabs";
-
 import { PromotionGeneralTab } from "../modules/promotions/components/PromotionGeneralTab";
-
-import { PromotionProductsTab } from "../modules/promotions/components/PromotionProductsTab";
 
 import { PromotionCustomersTab } from "../modules/promotions/components/PromotionCustomersTab";
 
@@ -118,14 +113,6 @@ export async function loader({
   const selectedCollections =
     promotion.shopify.products.collections;
 
-  const coverage =
-    selectedCollections.length > 0
-      ? await getPromotionCoverage(
-        admin,
-        selectedCollections,
-      )
-      : null;
-
   const previewProducts = await getPreviewProducts(admin, [...promotion.shopify.products.products.map(p=>p.id), ...promotion.shopify.products.variants.flatMap(v=>v.productId ? [v.productId] : [])], selectedCollections.map(c=>c.id));
   let editorDiscount: EditorDiscountDraft | null = null;
   let editRulesMessage: string | null = null;
@@ -134,7 +121,7 @@ export async function loader({
   if (editorDiscount && codeBatch) Object.assign(editorDiscount, { codeMode: "bulk", codeCount: String(codeBatch.total), codePrefix: codeBatch.prefix, codeSuffix: codeBatch.suffix, codeListTitle: codeBatch.title });
   const resources = editorDiscount ? await getPromotionEditorResources(admin) : { products: [], collections: [] };
   const shippingCountries = editorDiscount?.discountType === "shipping" ? await getShippingCountries(admin) : null;
-  return { promotion, coverage, previewProducts, editorDiscount, editRulesMessage, products: resources.products, codeBatch, shippingCountries };
+  return { promotion, previewProducts, editorDiscount, editRulesMessage, products: resources.products, codeBatch, shippingCountries };
 }
 export async function action({
   request,
@@ -223,7 +210,7 @@ export async function action({
 
 export default function PromotionDetailsPage() {
   const appUrl = useEmbeddedAppUrl();
-  const { promotion, coverage, previewProducts, editorDiscount, editRulesMessage, products, codeBatch, shippingCountries } =
+  const { promotion, previewProducts, editorDiscount, editRulesMessage, products, codeBatch, shippingCountries } =
     useLoaderData<typeof loader>();
 
   const general = promotion.shopify.general;
@@ -246,7 +233,9 @@ export default function PromotionDetailsPage() {
   const formRef = useRef<HTMLFormElement>(null);
   const previousSavedWebsite = useRef(savedWebsite);
   const submittedWebsite = useRef(savedWebsite);
-  const [activeTab, setActiveTab] = useState<PromotionTab>("general");
+  // The website settings are what can be changed here, so that section opens first.
+  const [openSection, setOpenSection] = useState<string | null>("website");
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   useEffect(() => {
     const previous = JSON.stringify(previousSavedWebsite.current);
     const submitted = JSON.stringify(submittedWebsite.current);
@@ -261,110 +250,58 @@ export default function PromotionDetailsPage() {
 
   if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} />;
 
+  const startsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.startsAt));
+  const endsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.endsAt));
+  const sections = [
+    { id: "general", title: "Overview", summary: `${general.type}, ${general.method}${general.value ? `, ${general.value}` : ""}` },
+    { id: "customers", title: "Customers", summary: promotion.shopify.customers.appliesToAllCustomers ? "All customers" : "Selected customers or segments" },
+    { id: "conditions", title: "Conditions", summary: "Minimum requirements and usage limits" },
+    { id: "schedule", title: "Schedule", summary: `${startsOn ? `Starts ${startsOn}` : "Starts when saved"}, ${endsOn ? `ends ${endsOn}` : "no end date"}` },
+    { id: "website", title: "Website promotion", summary: website.websiteEnabled ? "Enabled" : "Draft" },
+  ];
+  const section = (id: string) => {
+    const index = sections.findIndex(item => item.id === id);
+    return { id, number: index + 1, title: sections[index].title, summary: sections[index].summary, open: openSection === id, onToggle: (open: boolean) => setOpenSection(current => open ? id : current === id ? null : current) };
+  };
+
   return (
     <s-page heading={general.title} inlineSize="large">
       <s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
+      <s-button slot="secondary-actions" data-preview-toggle="" onClick={() => setIsPreviewOpen(true)}>Preview</s-button>
       <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotion.routeId}`} target="_blank">Edit in Shopify</s-button>
       <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} issue={saveIssue} showWhileIncomplete onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
       <SaveNotices error={actionData !== dismissedAction ? actionData?.error : undefined} issue={hasUnsavedChanges ? saveIssue : null} onDismissError={() => setDismissedAction(actionData)} />
-      <div
-        style={{
-          width: "100%",
-        }}
-      >
-        <s-stack
-          direction="block"
-          gap="large"
-        >
+      <div style={{ width: "100%" }}>
+        <s-stack direction="block" gap="large">
           <div>
             <s-badge tone={getStatusTone(general.status)}>{general.status}</s-badge>
           </div>
-
           {editRulesMessage && <s-banner tone="info">{editRulesMessage}</s-banner>}
-          <PromotionTabs
-          activeTab={activeTab}
-          onChange={setActiveTab}
-        />
-
-        <Form ref={formRef} method="post" onSubmit={() => { submittedWebsite.current = website; setDismissedAction(actionData); }}>
-          <input
-            type="hidden"
-            name="shopifyDiscountId"
-            value={promotion.id}
-          />
-
-          {/* General tab */}
-          <div
-            style={{
-              display:
-                activeTab === "general"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionGeneralTab promotion={promotion} />
-          </div>
-
-          {/* Products tab */}
-          <div
-            style={{
-              display:
-                activeTab === "products"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionProductsTab
-              promotion={promotion}
-              coverage={coverage}
-            />
-          </div>
-
-          {/* Customers tab */}
-          <div
-            style={{
-              display:
-                activeTab === "customers"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionCustomersTab promotion={promotion} />
-          </div>
-
-          {/* Conditions tab */}
-          <div
-            style={{
-              display:
-                activeTab === "conditions"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionConditionsTab promotion={promotion} />
-          </div>
-
-          {/* Schedule tab */}
-          <div
-            style={{
-              display:
-                activeTab === "schedule"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionScheduleTab promotion={promotion} />
-          </div>
-
-          <input type="hidden" name="website" value={JSON.stringify(website)} />
-          <div style={{ display: activeTab === "website" || activeTab === "messages" ? "grid" : "none", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,360px),1fr))", gap: 20 }}>
-            <PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} value={website} onChange={setWebsite} endsAt={promotion.endsAt} onBusyChange={setAssetsBusy} />
-            <div style={{ alignSelf: "start", position: "sticky", top: 20 }}><PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} /></div>
-          </div>
-
+          <Form ref={formRef} method="post" onSubmit={() => { submittedWebsite.current = website; setDismissedAction(actionData); }}>
+            <input type="hidden" name="shopifyDiscountId" value={promotion.id} />
+            <input type="hidden" name="website" value={JSON.stringify(website)} />
+            <div className="create-discount-layout" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "24px", alignItems: "start" }}>
+              <aside className="desktop-preview-panel" style={{ position: "sticky", top: "20px", maxHeight: "calc(100vh - 40px)", overflowY: "auto", scrollbarGutter: "stable", alignSelf: "start" }}>
+                <PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} />
+              </aside>
+              <s-stack direction="block" gap="large">
+                <FormStep {...section("general")}><PromotionGeneralTab promotion={promotion} /></FormStep>
+                <FormStep {...section("customers")}><PromotionCustomersTab promotion={promotion} /></FormStep>
+                <FormStep {...section("conditions")}><PromotionConditionsTab promotion={promotion} /></FormStep>
+                <FormStep {...section("schedule")}><PromotionScheduleTab promotion={promotion} /></FormStep>
+                <FormStep {...section("website")}>
+                  <PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} value={website} onChange={setWebsite} endsAt={promotion.endsAt} onBusyChange={setAssetsBusy} />
+                </FormStep>
+              </s-stack>
+            </div>
           </Form>
         </s-stack>
       </div>
+      <ModalOverlay open={isPreviewOpen} heading="Storefront preview" size="large" onClose={() => setIsPreviewOpen(false)}>
+        <PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} allowEnlarge={false} />
+        <s-button slot="secondary-actions" onClick={() => setIsPreviewOpen(false)}>Close</s-button>
+      </ModalOverlay>
+      <style>{editorCss}</style>
     </s-page>
   );
 }
