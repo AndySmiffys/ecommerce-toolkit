@@ -17,7 +17,7 @@ import { firstIssue, stepIssues } from "../design/stepValidation";
 import { summarisePromotion } from "../design/promotionSummary";
 import { ModalOverlay } from "./ModalOverlay";
 import { PromotionSaveBar } from "./PromotionSaveBar";
-import { SaveNotices } from "./SaveNotices";
+import { SaveNotices, draftSavedWarning } from "./SaveNotices";
 import { validateCodeOptions, type CodeBatchSummary } from "../design/codeGeneration";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
 import { cloneElement, useEffect, useRef, useState } from "react";
@@ -40,6 +40,8 @@ const creationRequestKey = useRef<string>();
 // Whether the saved promotion is in the priority order, so a save that puts it there can take the merchant to place it.
 const wasRanked = useRef(Boolean(promotionId && initialWebsite && canRank({ endsAt: initialDiscount?.endsAt ?? null, website: initialWebsite })));
 const submittedRankable = useRef(false);
+const submittedDraft = useRef(false);
+const [draftSaved, setDraftSaved] = useState(false);
 const [previewProductId, setPreviewProductId] = useState("");
 const [isPreviewDrawerOpen, setIsPreviewDrawerOpen] = useState(false);
   const appUrl = useEmbeddedAppUrl();
@@ -166,10 +168,10 @@ if (createFetcher.state !== "idle" || !createFetcher.data || handledResponse.cur
 saveInFlight.current = false;
 handledResponse.current = createFetcher.data;
 if (createFetcher.data?.savedId) setCreatedDiscountId(createFetcher.data.savedId);
-if (createFetcher.data?.success) { wasRanked.current = submittedRankable.current; if (promotionId) { setSavedSnapshot(submittedSnapshot.current); setSavedDiscountSnapshot(submittedDiscountSnapshot.current); shopify.toast.show("Promotion saved"); if (createFetcher.data.rankEntry) void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(appUrl(`/app/storefront-priorities?highlight=${promotionId.split("/").pop()}`))); } else if (createFetcher.data.redirectId) {
+if (createFetcher.data?.success) { wasRanked.current = submittedRankable.current; if (promotionId) { setSavedSnapshot(submittedSnapshot.current); setSavedDiscountSnapshot(submittedDiscountSnapshot.current); { setDraftSaved(submittedDraft.current); shopify.toast.show(submittedDraft.current ? "Promotion saved. Website status is Draft, so it is not showing on the storefront." : "Promotion saved", submittedDraft.current ? { duration: 8000 } : undefined); } if (createFetcher.data.rankEntry) void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(appUrl(`/app/storefront-priorities?highlight=${promotionId.split("/").pop()}`))); } else if (createFetcher.data.redirectId) {
 setSavedSnapshot(submittedSnapshot.current);
 const destination = createFetcher.data.rankEntry ? appUrl(`/app/storefront-priorities?highlight=${createFetcher.data.redirectId}`) : appUrl(`/app/promotions/${createFetcher.data.redirectId}`);
-shopify.toast.show("Promotion created");
+shopify.toast.show(submittedDraft.current ? "Promotion created. Website status is Draft, so it is not showing on the storefront." : "Promotion created", submittedDraft.current ? { duration: 8000 } : undefined);
 void Promise.resolve(saveBarRef.current?.hide()).then(() => navigate(destination));
 } }
 });
@@ -207,6 +209,7 @@ creationRequestKey.current ??= window.crypto.randomUUID();
 submittedSnapshot.current = snapshot;
 submittedDiscountSnapshot.current = discountSnapshot;
 submittedRankable.current = rankable;
+submittedDraft.current = !websiteEnabled && !isCodeList;
 createFetcher.submit({ intent: promotionId ? "updatePromotion" : "createPromotion", payload:JSON.stringify({ requestKey: creationRequestKey.current, discount, website:websiteDraft, savedId:createdDiscountId, updateRules: discountSnapshot !== savedDiscountSnapshot, rankEntry: rankable && !wasRanked.current }) }, { method:"post" });
 }
 
@@ -216,7 +219,7 @@ return (
 <s-button slot="secondary-actions" data-preview-toggle="" onClick={() => setIsPreviewDrawerOpen(true)}>Preview</s-button>
 {promotionId && <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotionId.split("/").pop()}`} target="_blank">Edit in Shopify</s-button>}
 <PromotionSaveBar ref={saveBarRef} dirty={hasUnsavedChanges} saving={createFetcher.state !== "idle"} busy={assetsBusy} discardDisabled={!promotionId && codeListLocked && !createdDiscountId} issue={saveIssue} showWhileIncomplete={Boolean(promotionId)} onSave={savePromotion} onDiscard={discardChanges} />
-<SaveNotices error={submissionError || (createFetcher.data !== dismissedResponse ? createFetcher.data?.error : undefined)} issue={promotionId && hasUnsavedChanges ? saveIssue : null} onDismissError={() => { setSubmissionError(""); setDismissedResponse(createFetcher.data); }} />
+<SaveNotices warning={draftSaved && !websiteEnabled && !isCodeList ? draftSavedWarning : null} error={submissionError || (createFetcher.data !== dismissedResponse ? createFetcher.data?.error : undefined)} issue={promotionId && hasUnsavedChanges ? saveIssue : null} onDismissError={() => { setSubmissionError(""); setDismissedResponse(createFetcher.data); }} />
 <div
 style={{
 width: "100%",

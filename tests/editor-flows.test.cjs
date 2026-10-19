@@ -49,7 +49,7 @@ test('a new promotion is filled in, saved, and the merchant lands on it', async 
   assert.equal(request.payload.discount.eligibility, 'all');
   assert.ok(request.payload.requestKey, 'every save carries a key so it can be retried safely');
   assert.ok(request.payload.website, 'the website design travels with the discount');
-  assert.deepEqual(toasts, ['Promotion created']);
+  assert.deepEqual(toasts, ['Promotion created. Website status is Draft, so it is not showing on the storefront.'], 'a Draft website status is called out in the confirmation');
   assert.equal(view.router.state.location.pathname, '/app/promotions/9', 'the merchant lands on the new promotion');
   await view.unmount();
 });
@@ -108,7 +108,7 @@ test('saving an existing promotion sends an update and confirms with a toast', a
   assert.equal(request.payload.updateRules, true, 'changed discount rules are sent to Shopify');
   assert.equal(request.payload.discount.discountValue, '25');
   assert.equal(request.payload.savedId, undefined);
-  assert.deepEqual(toasts, ['Promotion saved']);
+  assert.deepEqual(toasts, ['Promotion saved. Website status is Draft, so it is not showing on the storefront.']);
   assert.ok(saveButton(view).disabled, 'once saved there is nothing left to save');
   assert.equal(view.router.state.location.pathname, '/app/promotions/new', 'an existing promotion stays open');
   await view.unmount();
@@ -252,6 +252,23 @@ test('a new promotion that cannot appear on the website goes straight to the pro
   const [request] = view.requests.filter(item => item.intent === 'createPromotion');
   assert.equal(request.payload.rankEntry, false);
   assert.equal(view.router.state.location.pathname, '/app/promotions/9');
+  await view.unmount();
+});
+
+test('saving with the website status on Draft warns that the promotion is hidden until it is enabled', async () => {
+  const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
+  toasts.length = 0;
+  const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(defaultDesign, { websiteEnabled: false }) }, '/app/promotions/new', { respond: intent => intent === 'updatePromotion' ? { success: true } : undefined });
+  const warning = () => findAll(view.container, 's-banner[heading="Website status is Draft"]');
+  assert.equal(warning().length, 0, 'nothing to warn about before saving');
+  await type(value(view), '25');
+  await click(saveButton(view));
+  await settle(100);
+  assert.equal(toasts.length, 1);
+  assert.match(toasts[0], /Website status is Draft/);
+  assert.equal(warning().length, 1, 'a banner stays on the page after the save');
+  await change(find(view.container, 's-select[label="Website promotion status"]'), 'enabled');
+  assert.equal(warning().length, 0, 'enabling the website status removes the warning');
   await view.unmount();
 });
 

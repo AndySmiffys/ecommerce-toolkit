@@ -1,7 +1,7 @@
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { getShippingCountries, validateShippingCountries } from "../modules/promotions/services/shippingCountries.server";
 import { PromotionSaveBar } from "../modules/promotions/components/PromotionSaveBar";
-import { SaveNotices } from "../modules/promotions/components/SaveNotices";
+import { SaveNotices, draftSavedWarning } from "../modules/promotions/components/SaveNotices";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { getPromotionCodeBatch } from "../modules/promotions/services/promotionCodeBatches.server";
 import { getEditableDiscount } from "../modules/promotions/services/editableDiscount.server";
@@ -254,7 +254,15 @@ export default function PromotionDetailsPage() {
   function resetFormState() { setWebsite(savedWebsite); setDismissedAction(actionData); }
   const hasUnsavedChanges = JSON.stringify(website) !== JSON.stringify(savedWebsite);
   const shopify = useAppBridge();
-  useEffect(() => { if (actionData?.success) shopify.toast.show("Promotion saved"); }, [actionData, shopify]);
+  const [draftSaved, setDraftSaved] = useState(false);
+  useEffect(() => {
+    if (!actionData?.success) return;
+    const draft = !website.websiteEnabled;
+    setDraftSaved(draft);
+    shopify.toast.show(draft ? "Promotion saved. Website status is Draft, so it is not showing on the storefront." : "Promotion saved", draft ? { duration: 8000 } : undefined);
+    // Only react to a new save result, not to later edits of the status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionData, shopify]);
   const saveIssue = validateWebsite(website, promotion.endsAt)[0] ?? null;
   const navigate = useNavigate();
   const rankInput = { endsAt: promotion.endsAt, website };
@@ -286,7 +294,7 @@ export default function PromotionDetailsPage() {
       <s-button slot="secondary-actions" data-preview-toggle="" onClick={() => setIsPreviewOpen(true)}>Preview</s-button>
       <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotion.routeId}`} target="_blank">Edit in Shopify</s-button>
       <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} issue={saveIssue} showWhileIncomplete onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
-      <SaveNotices error={actionData !== dismissedAction ? actionData?.error : undefined} issue={hasUnsavedChanges ? saveIssue : null} onDismissError={() => setDismissedAction(actionData)} />
+      <SaveNotices warning={draftSaved && !website.websiteEnabled ? draftSavedWarning : null} error={actionData !== dismissedAction ? actionData?.error : undefined} issue={hasUnsavedChanges ? saveIssue : null} onDismissError={() => setDismissedAction(actionData)} />
       <div style={{ width: "100%" }}>
         <s-stack direction="block" gap="large">
           <PromotionOverview
