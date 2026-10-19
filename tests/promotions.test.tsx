@@ -14,7 +14,8 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { defaultDesign, readDesign, readWebsite, websiteStorage, websiteFromSettings, validateWebsite, countdownParts, countdown, contrastRatio, presetDesign, promotionBlock, setPromotionBlock, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { buildDiscountMutation, createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
-import { resolvePromotionImage, uploadPromotionImage } from "../app/modules/promotions/services/promotionAssets.server";
+import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
+import { resolvePromotionImage, uploadPromotionImage, withImageRatios } from "../app/modules/promotions/services/promotionAssets.server";
 import { PromotionOffer, promotionCss } from "../app/modules/promotions/components/PromotionPreview";
 import { matchesStorefront, type StorefrontContext } from "../app/modules/promotions/services/storefrontEligibility.server";
 import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promotionMapper";
@@ -77,6 +78,10 @@ test("banners take their shape from the image: ratio sizing for text over an ima
   assert.ok(sized.includes("Frightfully good fun"), "the wording is still shown");
   const unknown = renderToStaticMarkup(<PromotionOffer value={{ ...value, design: { ...value.design, desktopImageRatio: "", mobileImageRatio: "" } }} placement="collection" now={Date.now()} />);
   assert.ok(!unknown.includes("pe-full pe-ratio"), "an image whose shape is unknown keeps the saved banner height");
+  const phone = renderToStaticMarkup(<PromotionOffer value={{ ...value, design: { ...value.design, mobileImageRatio: "" } }} placement="collection" now={Date.now()} />);
+  assert.ok(phone.includes("--pe-ratio:3") && phone.includes("--pe-ratio-m:auto"), "a mobile image of unknown shape is never squeezed into the desktop shape");
+  const phoneOnly = renderToStaticMarkup(<PromotionOffer value={{ ...value, design: { ...value.design, mobileImage: "", mobileImageRatio: "" } }} placement="collection" now={Date.now()} />);
+  assert.ok(phoneOnly.includes("--pe-ratio-m:3"), "with no separate mobile image, phones use the desktop image's shape");
   value.design.imageLayout = "only";
   const only = renderToStaticMarkup(<PromotionOffer value={value} placement="collection" now={Date.now()} />);
   assert.ok(only.includes("pe-only") && only.includes('alt="Family in costumes"'), "the image alone, with its description");
@@ -88,6 +93,25 @@ test("banners take their shape from the image: ratio sizing for text over an ima
   assert.equal(presetDesign("banner", defaultDesign()).imageLayout, "only");
   const resolved = await resolvePromotionImage({ graphql: async () => Response.json({ data: { node: { id: "gid://shopify/MediaImage/1", alt: null, fileStatus: "READY", image: { url: "https://cdn.shopify.com/a.jpg", width: 1800, height: 600 } } } }) }, "gid://shopify/MediaImage/1");
   assert.equal(resolved.ratio, "3", "the image's shape is taken from Shopify");
+});
+test("saving fills in the shape of images saved before banners were sized from them, and tolerates Shopify not answering", async () => {
+  const calls: string[] = [];
+  const admin: ShopifyAdminClient = { graphql: async (_query: string, options?: { variables?: Record<string, unknown> }) => {
+    const id = String(options?.variables?.id);
+    calls.push(id);
+    if (id.endsWith("/2")) return Response.json({ errors: [{ message: "nope" }] });
+    return Response.json({ data: { node: { id, alt: null, fileStatus: "READY", image: { url: "https://cdn.shopify.com/a.jpg", width: 1080, height: 1080 } } } });
+  } };
+  const value = website();
+  Object.assign(value.design, { desktopImageId: "gid://shopify/MediaImage/1", mobileImageId: "gid://shopify/MediaImage/2", desktopImageRatio: "", mobileImageRatio: "" });
+  value.design.blocks = { collection: { ...promotionBlock(value, "collection"), style: { ...promotionBlock(value, "collection").style, desktopImageId: "gid://shopify/MediaImage/1", desktopImageRatio: "", mobileImageId: "", mobileImageRatio: "" } } };
+  const filled = await withImageRatios(admin, value);
+  assert.equal(filled.design.desktopImageRatio, "1", "a missing shape is read from Shopify");
+  assert.equal(filled.design.mobileImageRatio, "", "an image Shopify cannot describe stays unknown without failing the save");
+  assert.equal(filled.design.blocks!.collection!.style.desktopImageRatio, "1");
+  assert.equal(calls.filter(id => id.endsWith("/1")).length, 1, "each image is looked up once");
+  const known = await withImageRatios(admin, { ...value, design: { ...value.design, desktopImageRatio: "3", mobileImageId: "", blocks: undefined } });
+  assert.equal(known.design.desktopImageRatio, "3", "a shape that is already known is kept");
 });
 test("shared renderer escapes copy, honours colours/overrides and switches mobile images", () => {
   const value = website(); value.headline = '<script>alert("x")</script>'; value.design.overrides.header.headline = "Short headline"; value.design.desktopImage = "https://cdn.shopify.com/desktop.jpg"; value.design.mobileImage = "https://cdn.shopify.com/mobile.jpg"; value.design.imageLayout = "full"; value.design.buttonColour = "#00ff00";

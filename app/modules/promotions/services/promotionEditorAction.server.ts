@@ -5,6 +5,7 @@ import { createPromotionCodeBatch } from "./promotionCodeBatches.server";
 import { authenticate } from "../../../shopify.server";
 import { createShopifyPromotion, type CreateDiscountDraft } from "./createPromotion.server";
 import { getDiscount } from "./discount.server";
+import { withImageRatios } from "./promotionAssets.server";
 import { priorityForSave, updatePromotionWebsiteSettings } from "./promotionSettings.server";
 import { readWebsite, websiteStorage, validateWebsite } from "../design/design";
 import type { PromotionActionData } from "../design/editorTypes";
@@ -18,7 +19,7 @@ let requestKey: string | undefined;
 let codeListLocked = false;
 try {
 const payload = JSON.parse(String(formData.get("payload") ?? "{}"));
-const website = readWebsite(payload.website);
+const website = await withImageRatios(admin, readWebsite(payload.website));
 const errors = validateWebsite(website, payload.discount?.endsAt);
 if (errors.length) throw new Error(errors.join(" "));
 await validateShippingCountries(admin, payload.discount);

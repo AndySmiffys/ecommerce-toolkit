@@ -1,3 +1,4 @@
+import { withImageRatios } from "../modules/promotions/services/promotionAssets.server";
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { getShippingCountries, validateShippingCountries } from "../modules/promotions/services/shippingCountries.server";
 import { PromotionSaveBar } from "../modules/promotions/components/PromotionSaveBar";
@@ -155,7 +156,7 @@ export async function action({
       const node = await getEditableDiscount(admin, getDiscountNodeId(promotionId));
       if (!node) throw new Error("This discount no longer exists.");
       const payload = JSON.parse(String(formData.get("payload") ?? "{}"));
-      const website = readWebsite(payload.website);
+      const website = await withImageRatios(admin, readWebsite(payload.website));
       if (website.websiteEnabled && ((node.discount.codesCount?.count ?? node.discount.codes?.nodes.length ?? 0) > 1 || await getPromotionCodeBatch(session.shop, node.id))) throw new Error("Individual code lists must stay in website Draft status.");
       const errors = validateWebsite(website, payload.updateRules === false ? node.discount.endsAt : payload.discount?.endsAt);
       if (errors.length) throw new Error(errors.join(" "));
@@ -190,7 +191,7 @@ export async function action({
     if (shopifyDiscountId.split("/").pop() !== promotionId.split("/").pop()) throw new Error("The discount does not match this page.");
     const discount = await getDiscount(admin, shopifyDiscountId);
     if (!discount) throw new Error("This discount no longer exists.");
-    const website = readWebsite(JSON.parse(String(formData.get("website") ?? "{}")));
+    const website = await withImageRatios(admin, readWebsite(JSON.parse(String(formData.get("website") ?? "{}"))));
     if (website.websiteEnabled && ((discount.discount.codesCount?.count ?? discount.discount.codes?.nodes.length ?? 0) > 1 || await getPromotionCodeBatch(session.shop, shopifyDiscountId))) throw new Error("Individual code lists must stay in website Draft status.");
     const errors = validateWebsite(website, discount.discount.endsAt);
     if (errors.length) throw new Error(errors.join(" "));

@@ -1,5 +1,5 @@
 import type { ShopifyAdminClient } from "./discount.server";
-import { imageRatio } from "../design/design";
+import { imageRatio, type WebsiteDraft } from "../design/design";
 
 export type PromotionImage = { id: string; url: string; alt: string | null; ratio: string };
 export async function resolvePromotionImage(admin: ShopifyAdminClient, id: string): Promise<PromotionImage> {
@@ -40,3 +40,32 @@ export async function uploadPromotionImage(admin: ShopifyAdminClient, file: File
   }
   throw new Error("Select the processed image from Shopify Files.");
 }
+
+/**
+ * Campaigns saved before banners were sized from their images have no image shape recorded. Fill it in from
+ * Shopify when such a promotion is saved, so older banners fit their images without every image being re-applied.
+ * Best effort: an image Shopify cannot describe keeps an unknown shape, and the save carries on.
+ */
+export async function withImageRatios(admin: ShopifyAdminClient, website: WebsiteDraft): Promise<WebsiteDraft> {
+  const known = new Map<string, string>();
+  async function ratioFor(id: string) {
+    if (!id) return "";
+    if (!known.has(id)) known.set(id, await resolvePromotionImage(admin, id).then(image => image.ratio, () => ""));
+    return known.get(id)!;
+  }
+  async function fill<T extends { desktopImageId: string; desktopImageRatio: string; mobileImageId: string; mobileImageRatio: string }>(style: T): Promise<T> {
+    return {
+      ...style,
+      desktopImageRatio: style.desktopImageRatio || (await ratioFor(style.desktopImageId)),
+      mobileImageRatio: style.mobileImageRatio || (await ratioFor(style.mobileImageId)),
+    };
+  }
+  const design = await fill(website.design);
+  const blocks = website.design.blocks ? { ...website.design.blocks } : undefined;
+  if (blocks) for (const id of Object.keys(blocks) as Array<keyof typeof blocks>) {
+    const block = blocks[id];
+    if (block) blocks[id] = { ...block, style: await fill(block.style) };
+  }
+  return { ...website, design: { ...design, ...(blocks ? { blocks } : {}) } };
+}
+
