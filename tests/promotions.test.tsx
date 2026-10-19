@@ -492,9 +492,8 @@ test("visibility guidance follows draft changes, schedule boundaries and placeme
   assert.deepEqual(notices.map(notice => notice.id), ["draft", "scheduled", "collection", "products"]);
   assert.match(notices.find(notice => notice.id === "collection")!.message, /will not appear/);
   const changed = storefrontVisibilityNotices(website(), { ...context, startsAt: null, productTarget: "collections" }, now);
-  assert.deepEqual(changed.map(notice => notice.id), ["badge-collections", "products"]);
-  assert.match(changed[0].message, /specific products/, "badges cannot follow a collection discount, and the merchant is told");
-  assert.match(changed[1].message, /qualifying collections/);
+  assert.deepEqual(changed.map(notice => notice.id), ["products"]);
+  assert.match(changed[0].message, /qualifying collections/);
   const ended = storefrontVisibilityNotices(website(), { ...context, startsAt: null, endsAt: "2026-10-09T12:00:00Z", productTarget: null }, now);
   assert.equal(ended[0].id, "ended");
   assert.equal(storefrontVisibilityNotices(website(), { ...context, startsAt: null, endsAt: null, productTarget: null }, now).length, 0);

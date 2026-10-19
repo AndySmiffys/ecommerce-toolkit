@@ -27,6 +27,14 @@ api_version = "2026-07"
   uri = "/webhooks/discounts/changed"
   topics = [ "discounts/update", "discounts/delete", "discounts/redeemcode_added", "discounts/redeemcode_removed" ]
 
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/collections/update"
+  topics = [ "collections/update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/products/update"
+  topics = [ "products/update" ]
+
 [build]
 include_config_on_deploy = true
 automatically_update_urls_on_dev = true

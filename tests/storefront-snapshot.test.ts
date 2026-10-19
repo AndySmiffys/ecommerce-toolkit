@@ -9,6 +9,7 @@ import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promot
 import { defaultDesign } from "../app/modules/promotions/design/design";
 import { encodeIds, decodeIds } from "../app/modules/promotions/design/compactIds";
 import { completeDiscountScope } from "../app/modules/promotions/services/discountScope.server";
+import { collectionCacheState, collectionProductIds, collectionProductLimit, forgetCollectionProducts } from "../app/modules/promotions/services/collectionProducts.server";
 import type { ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
 import type { getLatestPromotionSettings } from "../app/modules/promotions/services/promotionSettings.server";
 const now = Date.parse("2026-10-09T12:00:00Z");
@@ -380,4 +381,109 @@ test('end to end: the loader embed joins each promotion\'s badge data into the p
   } finally { page.window.close(); }
   assert.ok(!(await liquid.parseAndRender(loader, context('cart'))).includes('promotion-engine-badges'), 'the cart has no product cards');
   assert.ok(!(await liquid.parseAndRender(loader, context('customers/account'))).includes('promotion-engine-badges'));
+});
+
+// A fake Admin API holding collections of products, handing them out a page at a time.
+function collectionApi(collections: Record<string, string[]>, throttleFirst = 0) {
+  const calls: Array<{ id: string; after: string | null }> = [];
+  let throttled = 0;
+  const api = { graphql: async (_query: string, options?: { variables?: Record<string, unknown> }) => {
+    const id = String(options!.variables!.id);
+    const after = (options!.variables!.after as string | null) ?? null;
+    calls.push({ id, after });
+    if (throttled < throttleFirst) { throttled++; return Response.json({ errors: [{ message: 'Throttled', extensions: { code: 'THROTTLED' } }] }); }
+    const members = collections[id.split('/').pop()!] ?? [];
+    const start = after ? Number(after) : 0;
+    const page = members.slice(start, start + 250);
+    return Response.json({ data: { collection: { products: { pageInfo: { hasNextPage: start + 250 < members.length, endCursor: String(start + 250) }, nodes: page.map(product => ({ id: `gid://shopify/Product/${product}` })) } } } });
+  } };
+  return { api, calls };
+}
+const ids = (count: number, from = 1000) => Array.from({ length: count }, (_, i) => String(from + i));
+test('the products in a collection are read in pages, kept for a few minutes, and read again when stale or forgotten', async () => {
+  forgetCollectionProducts();
+  const { api, calls } = collectionApi({ '5': ids(600), '6': ids(3, 50) });
+  const first = await collectionProductIds(api, ['gid://shopify/Collection/5', 'gid://shopify/Collection/6'], 1_000_000);
+  assert.equal(first.ids.length, 603);
+  assert.deepEqual(first.tooLarge, []);
+  assert.equal(calls.length, 4, '600 products are three pages, and the small collection is one');
+  await collectionProductIds(api, ['gid://shopify/Collection/5'], 1_000_000 + 5 * 60000);
+  assert.equal(calls.length, 4, 'a second publish within minutes reads nothing');
+  assert.deepEqual(collectionCacheState(1_000_000 + 5 * 60000), { inUse: true, due: false });
+  assert.equal(collectionCacheState(1_000_000 + 11 * 60000).due, true, 'old lists are due to be read again');
+  await collectionProductIds(api, ['gid://shopify/Collection/6'], 1_000_000 + 11 * 60000);
+  assert.equal(calls.length, 5, 'a stale list is read again');
+  assert.equal(forgetCollectionProducts('5'), true, 'a collection that changed is forgotten');
+  assert.equal(forgetCollectionProducts('999'), false, 'a collection no promotion uses is ignored');
+  await collectionProductIds(api, ['gid://shopify/Collection/5'], 1_000_000 + 12 * 60000);
+  assert.equal(calls.length, 8);
+  forgetCollectionProducts();
+});
+test('reading collections waits out Shopify throttling and reports a collection that is too large instead of cutting it short', async () => {
+  forgetCollectionProducts();
+  const waits: number[] = [];
+  const throttled = collectionApi({ '5': ids(3) }, 2);
+  const found = await collectionProductIds(throttled.api, ['gid://shopify/Collection/5'], 1, async ms => { waits.push(ms); });
+  assert.deepEqual(found.ids, ['1000', '1001', '1002']);
+  assert.deepEqual(waits, [1500, 3000], 'it waits a little longer each time');
+  forgetCollectionProducts();
+  const stuck = collectionApi({ '5': ids(3) }, 100);
+  await assert.rejects(collectionProductIds(stuck.api, ['gid://shopify/Collection/5'], 1, async () => {}), /limiting requests/);
+  forgetCollectionProducts();
+  const huge = collectionApi({ '7': ids(collectionProductLimit + 1) });
+  const tooBig = await collectionProductIds(huge.api, ['gid://shopify/Collection/7'], 1, async () => {});
+  assert.deepEqual(tooBig, { ids: [], tooLarge: ['gid://shopify/Collection/7'] });
+  forgetCollectionProducts();
+});
+test('end to end: a badge promotion on a collection outranks one on all products for the products it covers, and the rest keep the lower one', async () => {
+  const collection = promotion(1);
+  collection.node.discount.discountClasses = ["PRODUCT"];
+  collection.node.discount.customerGets!.items = { __typename: "DiscountCollections", collections: { pageInfo: noNextPage, nodes: [{ id: 'gid://shopify/Collection/5', title: 'Test Collection 1', productsCount: { count: 2 } }] } } as never;
+  const byCollection = mapDiscountToPromotion(collection.node);
+  Object.assign(byCollection.settings, { websiteEnabled: true, showProductBadge: true, priority: 9 });
+  const everything = promotion(2).result;
+  Object.assign(everything.settings, { websiteEnabled: true, showProductBadge: true, priority: 1 });
+  // Without the collection's products the collection promotion cannot be matched to a card, as it was before.
+  assert.deepEqual(splitSnapshot([publicSnapshotEntry(byCollection, now)!, publicSnapshotEntry(everything, now)!], 'rev').badgeIndex.keys, ['2']);
+  forgetCollectionProducts();
+  const { api } = collectionApi({ '5': ['100', '101'] });
+  const found = await collectionProductIds(api, ['gid://shopify/Collection/5'], now);
+  const split = splitSnapshot([publicSnapshotEntry(byCollection, now, true, found.ids)!, publicSnapshotEntry(everything, now)!], 'rev');
+  assert.deepEqual(split.badgeIndex.keys, ['1', '2'], 'the higher-ranked collection promotion comes first');
+  assert.deepEqual(decodeIds(JSON.parse(split.badgeShards['1']).i), [100, 101], 'its badge lists the products found in the collection');
+  assert.ok(!('badgeProducts' in split.promotions[0]), 'the lists are not added to the snapshot every page reads');
+  assert.ok(split.scopes['1'].collections, 'Liquid still sees its collection for the product page offer');
+  forgetCollectionProducts();
+});
+
+test('publishing gives a discount on a collection a badge listing the products in it, reads the collection once, and names a collection that is too large', async () => {
+  forgetCollectionProducts();
+  const { result, node } = promotion(1);
+  result.endsAt = null; node.discount.endsAt = null; node.discount.discountClasses = ["PRODUCT"];
+  node.discount.customerGets!.items = { __typename: "DiscountCollections", collections: { pageInfo: noNextPage, nodes: [{ id: 'gid://shopify/Collection/5', title: 'Test Collection 1', productsCount: { count: 2 } }] } } as never;
+  const rows = [{ ...result.settings, showProductBadge: true, id: 1, shop: 'test.myshopify.com', shopifyDiscountId: result.id, createdAt: new Date(0), updatedAt: new Date(0), lastSyncedAt: null }] as Awaited<ReturnType<typeof getLatestPromotionSettings>>;
+  const members = { current: ids(2, 100) };
+  let collectionReads = 0;
+  const written: Record<string, string> = {};
+  const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
+    if (query.includes('PromotionInstallation')) return Response.json({ data: { currentAppInstallation: { id: 'gid://shopify/AppInstallation/1', metafield: { value: '', compareDigest: 'd' }, companions: { nodes: [] } } } });
+    if (query.includes('GetDiscount')) return Response.json({ data: { discountNode: node } });
+    if (query.includes('CollectionProductIds')) {
+      collectionReads++;
+      return Response.json({ data: { collection: { products: { pageInfo: noNextPage, nodes: members.current.map(product => ({ id: `gid://shopify/Product/${product}` })) } } } });
+    }
+    for (const field of options!.variables!.metafields as Array<{ key: string; value: string }>) written[field.key] = field.value;
+    return Response.json({ data: { metafieldsSet: { userErrors: [] } } });
+  } };
+  await syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows);
+  assert.deepEqual(decodeIds(JSON.parse(written.badge_1).i), [100, 101], 'the badge lists the products found in the collection');
+  assert.deepEqual(JSON.parse(written.badge_index).keys, ['1']);
+  assert.deepEqual(JSON.parse(written.scope_1).collections, ['5'], 'the product page offer still follows the collection');
+  assert.ok(!('badgeProducts' in JSON.parse(written.storefront).promotions[0]));
+  await syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows);
+  assert.equal(collectionReads, 1, 'a second publish within minutes does not read the collection again');
+  forgetCollectionProducts();
+  members.current = ids(collectionProductLimit + 1);
+  await assert.rejects(syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows), /targets a collection with more than 9,000 products/);
+  forgetCollectionProducts();
 });

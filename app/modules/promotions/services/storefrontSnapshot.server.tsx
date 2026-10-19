@@ -3,6 +3,7 @@ import { PromotionOffer, promotionCss, promotionInlineCss } from "../components/
 import { placements, websiteFromSettings } from "../design/design";
 import { encodeIds } from "../design/compactIds";
 import { completeDiscountScope } from "./discountScope.server";
+import { collectionProductIds } from "./collectionProducts.server";
 import { mapDiscountToPromotion } from "../mappers/promotionMapper";
 import type { PromotionRecord } from "../models/promotion";
 import { getDiscount, type ShopifyAdminClient } from "./discount.server";
@@ -20,7 +21,11 @@ const mainLimit = 128000;
 
 // This is public storefront data. Never publish customer IDs, segment IDs or
 // restricted offer content. Liquid checks dates and product/collection scope.
-export function publicSnapshotEntry(promotion: PromotionRecord, now = Date.now(), complete = true) {
+/**
+ * `collectionProducts` is the products in the promotion's collections, read separately by the publisher, because a
+ * product card can only be matched by product. Without it a discount on collections gets no badge.
+ */
+export function publicSnapshotEntry(promotion: PromotionRecord, now = Date.now(), complete = true, collectionProducts: string[] | null = null) {
   if (!promotion.settings.websiteEnabled ||
       !promotion.shopify.customers.appliesToAllCustomers ||
       !["ACTIVE", "SCHEDULED"].includes(promotion.status) ||
@@ -43,7 +48,9 @@ export function publicSnapshotEntry(promotion: PromotionRecord, now = Date.now()
     starts: promotion.startsAt ? Math.floor(Date.parse(promotion.startsAt) / 1000) : 0,
     ends: promotion.endsAt ? Math.floor(Date.parse(promotion.endsAt) / 1000) : 0,
     all, products: scope.products.map(p => shortId(p.id)), collections: scope.collections.map(c => shortId(c.id)),
-    variants: scope.variants.map(v => ({ id: shortId(v.id), product: v.productId ? shortId(v.productId) : "" })), html, renderKeys };
+    variants: scope.variants.map(v => ({ id: shortId(v.id), product: v.productId ? shortId(v.productId) : "" })), html, renderKeys,
+    // Only for badges and never published as such: see splitSnapshot.
+    ...(collectionProducts ? { badgeProducts: collectionProducts } : {}) };
 }
 
 type SnapshotEntry = NonNullable<ReturnType<typeof publicSnapshotEntry>>;
@@ -67,13 +74,14 @@ export function splitSnapshot(entries: SnapshotEntry[], revision: string) {
   const badgeKeys: string[] = [];
   for (const entry of entries) {
     const scopeKey = shortId(entry.id);
-    const { products, collections, variants, ...rest } = entry;
+    const { products, collections, variants, badgeProducts: resolved, ...rest } = entry;
     promotions.push({ ...rest, key: scopeKey });
     if (!entry.all && (products.length || collections.length || variants.length)) {
       scopes[scopeKey] = { ...(products.length ? { products } : {}), ...(collections.length ? { collections } : {}), ...(variants.length ? { variants } : {}) };
     }
     // Cards can only be matched by product, so a badge needs specific products (or every product).
-    const badgeProducts = [...products, ...variants.map(v => v.product).filter(Boolean)];
+    // A discount on collections is matched by the products found in those collections.
+    const badgeProducts = [...products, ...variants.map(v => v.product).filter(Boolean), ...(resolved ?? [])];
     if (entry.html.badge && (entry.all || badgeProducts.length)) {
       badgeShards[scopeKey] = safeJson({ k: scopeKey, p: entry.priority, s: entry.starts, e: entry.ends, a: entry.all ? 1 : 0, i: entry.all ? "" : encodeIds(badgeProducts), h: entry.html.badge, r: entry.renderKeys.badge });
       badgeKeys.push(scopeKey);
@@ -122,7 +130,14 @@ export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: st
       const { complete } = await completeDiscountScope(admin, node);
       const promotion = mapDiscountToPromotion(node);
       promotion.settings = { ...promotion.settings, ...row, lastSyncedAt: null };
-      const entry = publicSnapshotEntry(promotion, Date.now(), complete);
+      let collectionProducts: string[] | null = null;
+      const scope = promotion.shopify.bxgy?.get.products ?? promotion.shopify.products;
+      if (row.showProductBadge && complete && !scope.allProducts && promotion.type !== "Order" && promotion.type !== "Shipping" && scope.collections.length && !scope.products.length && !scope.variants.length) {
+        const found = await collectionProductIds(admin, scope.collections.map(collection => collection.id));
+        if (found.tooLarge.length) throw new Error(`The promotion “${promotion.title}” targets a collection with more than 9,000 products, which is too many for a product badge. Turn off its product badge or use a smaller collection.`);
+        collectionProducts = found.ids;
+      }
+      const entry = publicSnapshotEntry(promotion, Date.now(), complete, collectionProducts);
       if (entry) { entries.push(entry); titles.set(shortId(entry.id), promotion.title); }
     }
     const revision = storefrontRevision(shop, rows);
