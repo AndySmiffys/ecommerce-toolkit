@@ -1,0 +1,92 @@
+# Progress
+
+Status of the Smiffys Promotion Engine, a Shopify embedded app that creates and edits native Shopify discounts and manages how they appear on the storefront. Last updated 19 October 2026.
+
+Branch `feature/free-shipping-support`, at `f2c6a00`, pushed and up to date with GitHub. 141 tests pass, and lint, typecheck and the build are clean.
+
+For the architecture and the rules to follow when changing the code, see `CLAUDE.md`. For setup and storefront behaviour, see `docs/storefront-setup.md` and `docs/promotion-designs.md`.
+
+## What the app does
+
+- **Create and edit native Shopify discounts** (product, order, buy X get Y and free shipping; code or automatic) in one shared editor.
+- **Control how each promotion looks on the storefront** through four blocks: header announcement, collection banner, product offer and product badge.
+- **Rank promotions** in one drag-and-drop priority order.
+
+## Done
+
+### Discounts and codes
+- Shared create/edit editor for all four types, code or automatic. Existing discounts are updated, not replaced, and website-only edits skip the rule update.
+- Free-shipping countries come from the store's shipping setup. Customer segments, schedules, usage limits and combinations are editable.
+- One shared code by default. Generated code lists of up to 10,000, in resumable batches with CSV export.
+- Unsupported or oversized discounts open on a fallback page that edits the website promotion only.
+
+### The editor
+- **Six collapsible steps:** Type and method, Discount value (or Countries), Who can use it, Schedule, Advanced options and Website promotion. Steps after the first incomplete one are locked, Continue stays greyed until a step is valid, and steps show Complete or Needs attention once opened.
+- **One overview card at the top:** name, type, Shopify status, website visibility, a plain-English summary, the Website promotion status (Enabled or Draft), the priority position with a link to change it, and what is left before saving.
+- **Validation** reuses the server's own checks (`design/stepValidation.ts`), so Save only appears for a discount Shopify will accept.
+- **Native Shopify save bar,** with toasts for success and banners for failures and missing items.
+- The editor is split into `PromotionEditor.tsx` plus `components/editor/` (a form hook and a component per step).
+
+### Website promotion design
+- **Campaign content and colours set once:** headline, body, button, countdown label and images apply to Header, Collection and Product together. Fine-tune sections override per block and show the campaign wording in grey while following it.
+- **Campaign colours:** main colour, secondary colour, button text colour, and two text colours (on colour and on white), chosen per surface by contrast. Blocks showing an image get a white background. A live list shows where each colour is used and flags low contrast.
+- **One link destination picker** for collections, products, pages, blogs or a web address.
+- **Header block is always square.** The preview shows each block in a realistic mock storefront and can be enlarged.
+
+### Priority
+- One drag-and-drop order for the whole storefront, with Move up and Move down for keyboard and touch. It lists only Active and Scheduled promotions that can appear on the website, and explains the rest.
+- A promotion that joins the order starts at the top, and the merchant is taken to place it. The editor never writes priority; it is stored in the existing `priority` number.
+- The "include in promotion sync" setting is removed: an enabled promotion syncs.
+
+### Storefront
+- Public promotions are published to an app metafield and rendered in Shopify's first HTML response, so there is no layout shift. A desktop Lighthouse run went from CLS 0.222 to 0.0006.
+- Signed app-proxy route for customer-specific offers. Automatic badges for Dawn and Horizon.
+
+### Quality
+- The admin uses Shopify's native components (Polaris web components and App Bridge) throughout. The exceptions are listed in `CLAUDE.md`.
+- Tests render the real editor in a simulated browser (`tests/editor-render.test.cjs`, with a recorded baseline, and `tests/editor-flows.test.cjs`). Run with `npm test`.
+
+## Needs doing
+
+### Needs checking in a browser
+None of the following has been seen in a real browser by the assistant, only tested in a simulated one: the priority page and dragging, the overview card and the status control, the stepped form, the preview and its modals, and the native event wiring on the Shopify components. Please try them in the dev store. Start with a new promotion, Enabled and Draft, and the priority page.
+
+### Storefront validation
+- Mobile Lighthouse.
+- A page with no eligible promotion, to confirm there is no blank space.
+- Future schedules, and customer or segment-restricted offers (these render live and can still shift layout).
+- Dawn and Horizon with variants, filters, quick-add and theme-editor reloads.
+- The newer rules on a live theme: white backgrounds on image blocks, button text colours and the square header.
+- Production deployment and field performance.
+
+### Housekeeping
+- **Package manager:** the repo mixes npm (`package-lock.json`) with pnpm config (`pnpm-workspace.yaml`, `.npmrc` with `shamefully-hoist`), and the CLI reports pnpm.
+- **Vulnerabilities:** `npm ci` reports 73, including 2 critical. Not yet reviewed.
+- **Config drift:** two app configs with different app IDs (`shopify.app.toml` and `shopify.app.smiffys-promotion-engine.toml`), webhook API versions 2026-07 and 2026-10, and `app/shopify.server.ts` on July 2026. Always deploy with `--config smiffys-promotion-engine`.
+- The Shopify CLI may remove `include_config_on_deploy = true` from the real config when it deploys. Restore it if it does.
+
+### Platform
+- **Polaris 2.0:** Shopify's new admin design needs the `polaris-2.0-rc.js` script. The app's `AppProvider` hardcodes the old script, so it needs its own change. Built for Shopify apps have until 1 May 2027.
+
+## Known limitations
+
+- Arbitrary third-party themes are not guaranteed to work; badge selectors are configurable.
+- Checkout stays authoritative for geography, minimums and eligibility.
+- Shopify test orders did not increment the discount usage counter in an earlier test. No app-side fix exists.
+- Generated code imports pause when the page is closed and resume when it is reopened (no background worker). Uploaded Shopify Files stay after Discard so they can be reused.
+- Browser drag-and-drop does not work on touch, so the priority page also has Move up and Move down buttons.
+- Priority numbers of ended or draft promotions are left alone. A promotion that becomes active again slots in by its old number.
+
+## Deployment
+
+- The app was deployed with `shopify app deploy --config smiffys-promotion-engine` after adding the `read_online_store_pages` scope, and Pages and Blogs now list in the link picker.
+- A git push never deploys to Shopify or activates theme blocks. Redeploy the extension for theme changes, and re-add blocks per theme.
+- Existing stores republish the storefront snapshot automatically the next time the app opens after the shared CSS changes.
+
+## Ideas
+
+- A duplicate-promotion action.
+- Templates, for example a Halloween 20% off that pre-fills the discount and the website design.
+- A storefront health panel on Home, showing whether the loader embed and blocks are set up.
+- A "why isn't mine showing?" hint on each priority row.
+- A preview of what a given visitor would see, such as a chosen customer or date.

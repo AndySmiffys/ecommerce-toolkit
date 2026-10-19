@@ -10,7 +10,7 @@ A Shopify embedded app (React Router 7 + Prisma/SQLite, forked from the Shopify 
 
 - `npm run dev` — `shopify app dev` (tunnel required; storefront testing does not work with `--use-localhost` because the app proxy is called server-side by Shopify). `shopify.web.toml` predev runs `sync:promotion-ui` + `prisma generate`, and dev runs `prisma migrate deploy`.
 - `npm run build` / `npm run typecheck` (`react-router typegen && tsc --noEmit`) / `npm run lint`
-- `npm test` — runs `scripts/test-promotions.mjs`: esbuild bundles the `.ts/.tsx` tests (with a `?raw` import loader) to a temp dir, then runs everything under `node --test`. The list of test files is **hardcoded in that script** — add new test files there or they won't run. To run one test file, bundle it the same way or run a `.cjs` test directly, e.g. `node --test tests/header-check.test.cjs`.
+- `npm test` — runs `scripts/test-promotions.mjs`: esbuild bundles the `.ts/.tsx` tests (with a `?raw` import loader) to a temp dir, then runs everything under `node --test`. The list of test files is **hardcoded in that script** — add new test files there or they won't run. To run one test file, bundle it the same way or run a `.cjs` test directly, e.g. `node --test tests/priority-manager.test.cjs`.
 - `npm run deploy` — `shopify app deploy`; use `--config smiffys-promotion-engine` for the real app config (`shopify.app.smiffys-promotion-engine.toml`; `shopify.app.toml` is the template default).
 - `npm run setup` — `prisma generate && prisma migrate deploy`.
 
@@ -66,7 +66,6 @@ Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`;
 - Missing Shopify discounts are omitted from lists without deleting saved designs. Unsupported/oversized native configs fall back to a detail/website editor with an "Edit in Shopify" link.
 - Snapshot metafield `promotion_engine.storefront` is version 2. It is published on app init/upgrade (`app/routes/app.tsx`), listing refresh, create/edit/priority saves and discount/code webhooks, with compare-digest concurrency checks. Initial HTML uses scoped CSS; JS moves it into shadow DOM after parsing. A failed live validation keeps the initial offer until its known expiry; a successful empty response removes it. No reserved height when nothing is eligible. Restricted customer offers and scopes hitting API limits render live and can still shift layout.
 - Keep legacy generic `blocks/promotion.liquid` and saved designs compatible. Collection banners use dedicated wrappers with Content width / Full page width modes (earlier viewport-margin approaches caused overflow).
-- `PromotionHeaderCheck.tsx` and the diagnostics route remain in the repo although the visible check was removed.
 
 ### Known issues
 - `npm test`: 83 passed. `npm run build` passes. **`npm run typecheck` fails on existing errors**: unsupported Polaris `fontWeight`/`"subdued"` props in `PromotionBxgyTab.tsx`, `PromotionCustomersTab.tsx`, `PromotionGeneralTab.tsx` and `app/routes/app.promotions.tsx`, plus a nullable count passed as a number in `PromotionProductsTab.tsx`.
