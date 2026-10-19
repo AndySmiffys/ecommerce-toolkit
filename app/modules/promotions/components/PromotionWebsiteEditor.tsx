@@ -303,7 +303,6 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
   useEffect(() => { busyRef.current(busy); }, [busy]);
   // Every change settles block backgrounds: a block that shows an image is white.
   function commit(next: WebsiteDraft) { latestValue.current = settleSurfaces(next); onChange(latestValue.current); }
-  function set<K extends keyof WebsiteDraft>(name: K, next: WebsiteDraft[K]) { commit({ ...latestValue.current, [name]: next }); }
   function changeBlock(placement: Placement, change: (current: PromotionBlock) => PromotionBlock) {
     commit(setPromotionBlock(latestValue.current, placement, change(promotionBlock(latestValue.current, placement))));
   }
