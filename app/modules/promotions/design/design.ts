@@ -17,6 +17,7 @@ export type PromotionStyle = {
   imageLayout: "full" | "half-left" | "half-right";
   focalX: number;
   focalY: number;
+  /** No longer used: the dark image overlay was removed. Kept so saved designs still load. */
   overlay: number;
   alignment: "left" | "center" | "right";
   bannerHeight: number;
@@ -184,7 +185,7 @@ export function setPromotionBlock(value: WebsiteDraft, placement: Placement, blo
   return { ...value, design: { ...value.design, blocks: { ...value.design.blocks, [placement]: block } } };
 }
 export function presetDesign(preset: PromotionDesign["preset"], current: PromotionDesign): PromotionDesign {
-  const styles = preset === "campaign" ? { imageLayout: "full" as const, bannerHeight: 360, headingSize: 36, spacing: 32, radius: 12, overlay: 55 } : preset === "compact" ? { imageLayout: "half-right" as const, bannerHeight: 180, headingSize: 22, spacing: 16, radius: 6, overlay: 45 } : { imageLayout: "half-right" as const, bannerHeight: 280, headingSize: 28, spacing: 24, radius: 8, overlay: 45 };
+  const styles = preset === "campaign" ? { imageLayout: "full" as const, bannerHeight: 360, headingSize: 36, spacing: 32, radius: 12 } : preset === "compact" ? { imageLayout: "half-right" as const, bannerHeight: 180, headingSize: 22, spacing: 16, radius: 6 } : { imageLayout: "half-right" as const, bannerHeight: 280, headingSize: 28, spacing: 24, radius: 8 };
   return { ...current, ...styles, preset };
 }
 export function contrastRatio(a: string, b: string): number {

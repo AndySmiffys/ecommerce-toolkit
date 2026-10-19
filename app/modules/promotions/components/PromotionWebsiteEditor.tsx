@@ -1,5 +1,6 @@
 import { PolarisSelect, PolarisCheckbox } from "./PolarisControls";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { FocalPointField } from "./FocalPointField";
 import { PromotionImageField } from "./PromotionImageField";
 import { LinkDestinationField } from "./LinkDestinationField";
 import { applyPalette, colourElements, customisedPaletteBlocks, hasImage, isAutomaticText, isButtonText, matchPalette, neutralColour, paletteValues, readColour, settleSurfaces, switchProductAppearance, textColourFor, white, writeColour, type ColourKey, type PaletteRole, type PaletteValues } from "../design/campaignPalette";
@@ -125,20 +126,13 @@ function PromotionBlockEditor({ placement, block, palette, campaign, onChange, o
     </ControlGroup>
     <ControlGroup title="Styling" description={`These settings apply only to the ${placements.find(p => p.id === placement)!.title.toLowerCase()} block.`}>
       {!isBadge && <>
-        <PolarisSelect label="Design preset" details="Adjusts this block's layout and spacing while keeping its messages and images." value={style.preset} onChange={event => onChange(current => {
-          const { overrides, blocks, palette: keptPalette, ...nextStyle } = presetDesign(event.currentTarget.value as PromotionStyle["preset"], { ...current.style, overrides: { header: { headline: "", body: "", buttonText: "" }, collection: { headline: "", body: "", buttonText: "" }, product: { headline: "", body: "", buttonText: "" }, badge: { headline: "", body: "", buttonText: "" } } });
-          void overrides; void blocks; void keptPalette;
-          return { ...current, style: nextStyle };
-        })}><s-option value="simple">Simple offer</s-option><s-option value="campaign">Image campaign</s-option><s-option value="compact">Compact offer</s-option></PolarisSelect>
         <PolarisSelect label="Text alignment" value={style.alignment} onChange={event => styling("alignment", event.currentTarget.value as PromotionStyle["alignment"])}><s-option value="left">Left</s-option><s-option value="center">Centre</s-option><s-option value="right">Right</s-option></PolarisSelect>
         {numberField("headingSize")}
         {numberField("bodySize")}
         {hasImages && block.visibility.image && <>
           <PolarisSelect label="Image layout" value={style.imageLayout} onChange={event => styling("imageLayout", event.currentTarget.value as PromotionStyle["imageLayout"])}><s-option value="full">Full background</s-option><s-option value="half-left">Image left</s-option><s-option value="half-right">Image right</s-option></PolarisSelect>
           {numberField("bannerHeight")}
-          <label style={{ display: "grid", gap: 5 }}>Horizontal focal point ({style.focalX}%)<input aria-label="Horizontal focal point" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={100} value={style.focalX} onChange={event => styling("focalX", Number(event.currentTarget.value))} /><s-text color="subdued">0% keeps the left edge visible; 100% keeps the right edge visible.</s-text></label>
-          <label style={{ display: "grid", gap: 5 }}>Vertical focal point ({style.focalY}%)<input aria-label="Vertical focal point" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={100} value={style.focalY} onChange={event => styling("focalY", Number(event.currentTarget.value))} /><s-text color="subdued">0% keeps the top visible; 100% keeps the bottom visible.</s-text></label>
-          {style.imageLayout === "full" && <label style={{ display: "grid", gap: 5 }}>Dark image overlay ({style.overlay}%)<input aria-label="Image overlay" style={{ width: "100%", accentColor: "#303030" }} type="range" min={0} max={90} value={style.overlay} onChange={event => styling("overlay", Number(event.currentTarget.value))} /><s-text color="subdued">Darkens the background image in this block to improve text contrast.</s-text></label>}
+          <FocalPointField imageUrl={style.desktopImage || style.mobileImage} x={style.focalX} y={style.focalY} onChange={(x, y) => onChange(current => ({ ...current, style: { ...current.style, focalX: x, focalY: y } }))} />
         </>}
       </>}
       {placement === "product" && <>
@@ -237,7 +231,7 @@ function CampaignColours({ value, onChange, onMatch, onOverride }: { value: Webs
   </section>;
 }
 
-function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDraft; onChange: (patch: CampaignPatch) => void; onMatch: (placement: Placement) => void; onBusy: (busy: boolean) => void }) {
+function CampaignEditor({ value, onChange, onPreset, onMatch, onBusy }: { value: WebsiteDraft; onChange: (patch: CampaignPatch) => void; onPreset: (preset: PromotionStyle["preset"]) => void; onMatch: (placement: Placement) => void; onBusy: (busy: boolean) => void }) {
   const [busy, setBusy] = useState({ desktop: false, mobile: false });
   const busyRef = useRef(onBusy); busyRef.current = onBusy;
   useEffect(() => { busyRef.current(busy.desktop || busy.mobile); }, [busy]);
@@ -248,6 +242,8 @@ function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDr
   const text = (key: "headline" | "body" | "buttonText" | "countdownText") => campaignValue(value, key) ?? "";
   const style = (key: "desktopImage" | "desktopImageId" | "mobileImage" | "mobileImageId" | "imageAlt") => campaignValue(value, "style", key) ?? "";
   const customised = customisedPlacements(value);
+  const firstImageBlock = selected.find(id => id === "collection" || id === "product");
+  const preset = firstImageBlock ? promotionBlock(value, firstImageBlock).style.preset : "simple";
   return <section aria-label="Campaign content and style" style={sectionStyle}>
     <s-heading>Campaign content & style</s-heading>
     <s-text color="subdued">Set the wording and images once for {titles(selected)}. Each block below can still be fine-tuned. A block you change on its own keeps its own value.</s-text>
@@ -259,6 +255,7 @@ function CampaignEditor({ value, onChange, onMatch, onBusy }: { value: WebsiteDr
       <TextField label="Countdown label" value={text("countdownText")} maxLength={copyLimits.countdownText} details="Needs an end date in Schedule." onChange={next => onChange({ countdownText: next })} />
     </ControlGroup>
     {showImages && <ControlGroup title="Images" description="Used by the Collection and Product blocks. Mobile uses the desktop image if left blank.">
+      <PolarisSelect label="Design preset" details="Sets the image layout, height, heading size, spacing and corners for the Collection and Product blocks. It keeps their wording and images." value={preset} onChange={event => onPreset(event.currentTarget.value as PromotionStyle["preset"])}><s-option value="simple">Simple offer</s-option><s-option value="campaign">Image campaign</s-option><s-option value="compact">Compact offer</s-option></PolarisSelect>
       <PromotionImageField label="Desktop image" url={style("desktopImage")} fileId={style("desktopImageId")} onBusy={next => setBusy(current => ({ ...current, desktop: next }))} onChange={image => onChange({ style: { desktopImage: image?.url ?? "", desktopImageId: image?.id ?? "" } })} />
       <PromotionImageField label="Mobile image" url={style("mobileImage")} fileId={style("mobileImageId")} onBusy={next => setBusy(current => ({ ...current, mobile: next }))} onChange={image => onChange({ style: { mobileImage: image?.url ?? "", mobileImageId: image?.id ?? "" } })} />
       <TextField label="Image description (alt text)" value={style("imageAlt")} maxLength={250} details="Describe the image for shoppers using screen readers." onChange={next => onChange({ style: { imageAlt: next } })} />
@@ -281,6 +278,17 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
   function set<K extends keyof WebsiteDraft>(name: K, next: WebsiteDraft[K]) { commit({ ...latestValue.current, [name]: next }); }
   function changeBlock(placement: Placement, change: (current: PromotionBlock) => PromotionBlock) {
     commit(setPromotionBlock(latestValue.current, placement, change(promotionBlock(latestValue.current, placement))));
+  }
+  // The preset belongs to the campaign images, so it applies to every selected block that can show an image.
+  function changePreset(preset: PromotionStyle["preset"]) {
+    let next = latestValue.current;
+    for (const id of selectedCampaignPlacements(next).filter(id => id === "collection" || id === "product")) {
+      const block = promotionBlock(next, id);
+      const { overrides, blocks, palette: keptPalette, ...nextStyle } = presetDesign(preset, { ...block.style, overrides: { header: { headline: "", body: "", buttonText: "" }, collection: { headline: "", body: "", buttonText: "" }, product: { headline: "", body: "", buttonText: "" }, badge: { headline: "", body: "", buttonText: "" } } });
+      void overrides; void blocks; void keptPalette;
+      next = setPromotionBlock(next, id, { ...block, style: nextStyle });
+    }
+    commit(next);
   }
   function changeCampaign(patch: CampaignPatch) { commit(applyCampaignPatch(latestValue.current, patch)); }
   function matchBlock(placement: Placement) { commit(matchCampaign(latestValue.current, placement)); }
@@ -305,7 +313,7 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
         {placements.map(p => <div key={p.id} style={{ border: value[p.flag] ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: value[p.flag] ? "#f7f7f7" : "#fff" }}><PolarisCheckbox label={p.title} checked={Boolean(value[p.flag])} disabled={busy} onChange={event => set(p.flag, event.currentTarget.checked)} /><s-text color="subdued">{p.description}</s-text></div>)}
       </div>
     </section>
-    {hasCampaign && <CampaignEditor value={value} onChange={changeCampaign} onMatch={matchBlock} onBusy={next => setBusyBlocks(current => current.campaign === next ? current : { ...current, campaign: next })} />}
+    {hasCampaign && <CampaignEditor value={value} onChange={changeCampaign} onPreset={changePreset} onMatch={matchBlock} onBusy={next => setBusyBlocks(current => current.campaign === next ? current : { ...current, campaign: next })} />}
     {selected.length > 0 && <CampaignColours value={value} onChange={changePalette} onMatch={matchColours} onOverride={placement => toggleBlock(placement, true)} />}
     {selected.map(p => <details key={p.id} data-promotion-block={p.id} open={openId === p.id} onToggle={event => toggleBlock(p.id, event.currentTarget.open)} style={{ border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", minWidth: 0 }}>
       <summary style={{ cursor: "pointer", fontWeight: 600, padding: 16 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>{hasCampaign && p.id !== "badge" ? `Fine-tune ${p.title.toLowerCase()}` : p.title}<s-badge tone="success">Selected</s-badge></span></summary>

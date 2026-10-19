@@ -272,6 +272,37 @@ test('saving with the website status on Draft warns that the promotion is hidden
   await view.unmount();
 });
 
+test('the design preset sits with the campaign images, and the focal point is set by clicking in a modal', async () => {
+  const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
+  const design = { ...defaultDesign(), desktopImage: 'https://cdn.example.com/hero.jpg', imageLayout: 'half-right', focalX: 50, focalY: 50 };
+  const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(() => design, { showCollectionPage: true, showProductPage: true }) }, '/app/promotions/new');
+  const presets = findAll(view.container, 's-select[label="Design preset"]');
+  assert.equal(presets.length, 1, 'one preset control, not one per block');
+  assert.ok(presets[0].closest('section[aria-label="Campaign content and style"]'), 'it is in the campaign content and style section');
+  assert.equal(find(view.container, 'input[aria-label="Image overlay"]'), null, 'the dark image overlay is gone');
+  assert.equal(find(view.container, 'input[aria-label="Horizontal focal point"]'), null, 'the focal point sliders are gone');
+
+  await change(presets[0], 'campaign');
+  await click(saveButton(view));
+  await settle(100);
+  const [request] = view.requests.filter(item => item.intent === 'updatePromotion');
+  for (const id of ['collection', 'product']) assert.equal(request.payload.website.design.blocks[id].style.imageLayout, 'full', `${id} takes the preset's layout`);
+
+  const open = byText(view.container, 's-button', 'Set focal point');
+  await click(open);
+  await settle(50);
+  const surface = find(document.body, '[role="button"][aria-label^="Focal point"]');
+  assert.ok(surface, 'the modal shows the image to click');
+  assert.match(surface.getAttribute('aria-label'), /50% across and 50% down/);
+  for (const key of ['ArrowRight', 'ArrowRight', 'ArrowDown']) surface.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true }));
+  await settle(50);
+  assert.match(find(document.body, '[role="button"][aria-label^="Focal point"]').getAttribute('aria-label'), /52% across and 51% down/);
+  await click(byText(document.body, 's-button', 'Apply'));
+  await settle(50);
+  assert.match(view.container.textContent, /Currently 52% across and 51% down/);
+  await view.unmount();
+});
+
 test('editing a promotion so that it joins the order takes the merchant to place it', async () => {
   const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
   toasts.length = 0;
