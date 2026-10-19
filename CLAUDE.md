@@ -83,4 +83,4 @@ Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`;
 - Smiffys marketing tone/imagery: fun and family-friendly (Andy rejected a dark masquerade concept).
 
 ### Next work
-No code patch was in progress. The immediate task is assembling and testing an SLT demo promotion (Halloween: headline "Frightfully good fun for everyone", body "Get the whole family Halloween-ready with 20% off selected costumes.", button "Shop Halloween"; text #242124, button #642080 with white text, 0% overlay, left aligned) using generated family-costume images that live outside the repo and that Andy hasn't yet accepted. No campaign has been created in Shopify. Also pending are the mobile and no-promotion storefront checks above.
+No code patch is in progress. The SLT Halloween demo promotion is finished. What remains is in `PROGRESS.md`: the storefront validation that needs a real store (mobile and no-promotion checks, Dawn and Horizon, future schedules, restricted offers, production), deploying the app config with `shopify app deploy`, and Polaris 2 once the save bar issue under it is fixed.
