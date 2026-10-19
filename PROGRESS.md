@@ -65,7 +65,7 @@ None of the following has been seen in a real browser by the assistant, only tes
 - The Shopify CLI may remove `include_config_on_deploy = true` from the real config when it deploys. Restore it if it does.
 
 ### Platform
-- **Polaris 2.0:** Shopify's new admin design needs the `polaris-2.0-rc.js` script. The app's `AppProvider` hardcodes the old script, so it needs its own change. Built for Shopify apps have until 1 May 2027.
+- **Polaris 2.0 (release candidate):** the app now loads `polaris-2.0-rc.js` through `polarisUrl` (set in `shopifyApp()` and `AppProvider`, one constant in `app/shopify.server.ts`). This needed `@shopify/shopify-app-react-router` 3.0.2 (Node 22+, `shopify-api` 15) and `@shopify/shopify-app-session-storage-prisma` 11.0.1, plus `@shopify/polaris-types` 2.0.0-rc.3. **Not yet seen in a browser:** test on a dev store with the new admin design (`shopify store create dev --feature-preview new_admin_design`) and on one without it. Check hand-written colours, which stay on the old palette: the greys in the editor styles (`#e3e3e3`, `#616161`, `#f7f7f7`, `#8a8a8a`) and the Inter stylesheet in `app/root.tsx` (the new admin uses ShopifyInter). To roll back, remove the `polarisUrl` lines (it then falls back to Polaris 1). Switch to the stable URL when Polaris 2 leaves release candidate. Built for Shopify apps have until 1 May 2027.
 
 ## Known limitations
 

@@ -25,7 +25,7 @@ import {
 
 import { useEmbeddedAppUrl } from "../modules/navigation/embeddedAppUrl";
 
-import { authenticate } from "../shopify.server";
+import { authenticate, polarisUrl } from "../shopify.server";
 
 export const loader = async ({
   request,
@@ -37,6 +37,7 @@ export const loader = async ({
   return {
     shop: session.shop,
     storefrontSyncError,
+    polarisUrl,
     host: new URL(request.url).searchParams.get("host"),
     apiKey:
       process.env.SHOPIFY_API_KEY || "",
@@ -45,13 +46,13 @@ export const loader = async ({
 
 export default function App() {
   const appUrl = useEmbeddedAppUrl();
-  const { apiKey, storefrontSyncError } =
+  const { apiKey, polarisUrl, storefrontSyncError } =
     useLoaderData<typeof loader>();
 
   return (
     <AppProvider
-      embedded
       apiKey={apiKey}
+      polarisUrl={polarisUrl}
     >
       <NavMenu>
         <Link

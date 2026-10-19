@@ -51,7 +51,7 @@ Andy's rule: use Shopify's native functionality everywhere in the admin so the a
 Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`; verify against the code before relying on it. Repo: https://github.com/AndySmiffys/smiffys-promotion-engine. The user (Andy, Head of eCommerce at Smiffys) wants a professional, Shopify-consistent editor that supports multiple themes and lets merchants control each placement's content, styling and visibility independently.
 
 ### Environment and deployment
-- Andy's setup: Windows, Shopify CLI 4.9.2, Node v24.18.0. Update flow: `git pull --ff-only origin feature/free-shipping-support`, `npm ci`, `npm run setup`, `shopify app dev`. After committed updates, give Andy the local pull/restart command.
+- Andy's setup: Windows, Shopify CLI 4.9.2, Node v24.18.0. Update flow: `git pull --ff-only origin feature/free-shipping-support`, `npm ci`, `npm run setup`, `shopify app dev` (needs Node 22.12+; stop any running dev server before `npm ci` or Windows locks `esbuild.exe`). After committed updates, give Andy the local pull/restart command.
 - Production: `npm run setup`, `npm run build`, `npm start`. Theme extension/app config deploys separately via `shopify app deploy`; git updates never activate theme blocks or deploy production.
 - There is one app config, `shopify.app.toml` (client ID `c8717906a421013fbf5c47e976637862`). Earlier there were two files with different app IDs; the other was a template leftover and was removed. The CLI may rewrite `shopify.app.toml` when deploying; check `git diff` afterwards.
 - `docs/promotion-designs.md` has an obsolete `--use-localhost` instruction in its free-shipping section; follow `docs/storefront-setup.md` (public tunnel).
