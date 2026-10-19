@@ -75,7 +75,7 @@ Browse
 style={{
 marginTop: "6px",
 overflow: "hidden",
-border: "1px solid #dedede",
+border: "1px solid #e3e3e3",
 borderRadius: "8px",
 background: "#ffffff",
 }}

@@ -33,7 +33,7 @@ export function SummaryCard({
         minHeight: "118px",
         overflow: "hidden",
         padding: "22px",
-        border: "1px solid #dedede",
+        border: "1px solid #e3e3e3",
         borderRadius: "16px",
         background: "linear-gradient(145deg, #ffffff 0%, #fbfbfb 100%)",
         boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",

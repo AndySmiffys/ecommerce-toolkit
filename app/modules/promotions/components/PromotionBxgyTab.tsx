@@ -155,7 +155,7 @@ function ProductTargetList({ products }: { products: PromotionProducts }) {
           gap: "12px",
           padding: "13px 0",
           fontWeight: 650,
-          borderBottom: "1px solid #eeeeee",
+          borderBottom: "1px solid #e3e3e3",
         }}
       >
         <span>Products</span>
@@ -171,7 +171,7 @@ function ProductTargetList({ products }: { products: PromotionProducts }) {
               borderBottom:
                 index === productGroups.length - 1
                   ? "none"
-                  : "1px solid #eeeeee",
+                  : "1px solid #e3e3e3",
             }}
           >
             <summary
@@ -250,7 +250,7 @@ function CollectionTargetList({ products }: { products: PromotionProducts }) {
             borderBottom:
               index === products.collections.length - 1
                 ? "none"
-                : "1px solid #eeeeee",
+                : "1px solid #e3e3e3",
           }}
         >
           <div style={{ minWidth: 0 }}>
@@ -303,7 +303,7 @@ function ScopePanel({
       style={{
         minWidth: 0,
         flex: "1 1 390px",
-        border: "1px solid #dedede",
+        border: "1px solid #e3e3e3",
         borderRadius: "16px",
         background: "#ffffff",
         boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
@@ -360,7 +360,7 @@ export function PromotionBxgyTab({ promotion }: PromotionBxgyTabProps) {
       <section
         aria-label="Offer summary"
         style={{
-          border: "1px solid #dedede",
+          border: "1px solid #e3e3e3",
           borderRadius: "16px",
           background: "#ffffff",
           boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",

@@ -6,11 +6,11 @@ import { applyPalette, colourElements, customisedPaletteBlocks, hasImage, isAuto
 import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign, selectedCampaignPlacements, type CampaignPatch } from "../design/sharedCampaign";
 import { contrastRatio, copyLimits, placements, presetDesign, promotionBlock, setPromotionBlock, validateWebsite, type BlockVisibility, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "../design/design";
 
-const sectionStyle = { border: "1px solid #dedede", borderRadius: 12, background: "#fff", padding: 16, display: "grid", gap: 14 };
+const sectionStyle = { border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", padding: 16, display: "grid", gap: 14 };
 const helpStyle = { color: "#616161", fontSize: 12, lineHeight: 1.5 };
 function ControlGroup({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   const id = useId();
-  return <section aria-labelledby={id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 12, borderTop: "1px solid #ebebeb", paddingTop: 16, minWidth: 0 }}>
+  return <section aria-labelledby={id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 12, borderTop: "1px solid #e3e3e3", paddingTop: 16, minWidth: 0 }}>
     <div style={{ display: "grid", gap: 4 }}><s-heading id={id}>{title}</s-heading><s-text color="subdued">{description}</s-text></div>
     {children}
   </section>;
@@ -302,12 +302,12 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
       <s-heading>Where should this promotion appear?</s-heading>
       <s-text color="subdued">Only selected blocks appear below. Deselecting a block keeps its settings for later.</s-text>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
-        {placements.map(p => <div key={p.id} style={{ border: value[p.flag] ? "1px solid #8a8a8a" : "1px solid #dedede", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: value[p.flag] ? "#f7f7f7" : "#fff" }}><PolarisCheckbox label={p.title} checked={Boolean(value[p.flag])} disabled={busy} onChange={event => set(p.flag, event.currentTarget.checked)} /><s-text color="subdued">{p.description}</s-text></div>)}
+        {placements.map(p => <div key={p.id} style={{ border: value[p.flag] ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: value[p.flag] ? "#f7f7f7" : "#fff" }}><PolarisCheckbox label={p.title} checked={Boolean(value[p.flag])} disabled={busy} onChange={event => set(p.flag, event.currentTarget.checked)} /><s-text color="subdued">{p.description}</s-text></div>)}
       </div>
     </section>
     {hasCampaign && <CampaignEditor value={value} onChange={changeCampaign} onMatch={matchBlock} onBusy={next => setBusyBlocks(current => current.campaign === next ? current : { ...current, campaign: next })} />}
     {selected.length > 0 && <CampaignColours value={value} onChange={changePalette} onMatch={matchColours} onOverride={placement => toggleBlock(placement, true)} />}
-    {selected.map(p => <details key={p.id} data-promotion-block={p.id} open={openId === p.id} onToggle={event => toggleBlock(p.id, event.currentTarget.open)} style={{ border: "1px solid #dedede", borderRadius: 12, background: "#fff", minWidth: 0 }}>
+    {selected.map(p => <details key={p.id} data-promotion-block={p.id} open={openId === p.id} onToggle={event => toggleBlock(p.id, event.currentTarget.open)} style={{ border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", minWidth: 0 }}>
       <summary style={{ cursor: "pointer", fontWeight: 600, padding: 16 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>{hasCampaign && p.id !== "badge" ? `Fine-tune ${p.title.toLowerCase()}` : p.title}<s-badge tone="success">Selected</s-badge></span></summary>
       <PromotionBlockEditor placement={p.id} block={promotionBlock(value, p.id)} palette={palette} campaign={campaign} onChange={change => changeBlock(p.id, change)} onBusy={next => setBusyBlocks(current => current[p.id] === next ? current : { ...current, [p.id]: next })} />
     </details>)}

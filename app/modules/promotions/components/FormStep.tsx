@@ -17,7 +17,7 @@ export function FormStep({ id, number, title, summary, optional = false, status,
   next?: { label: string; onClick: () => void; disabled?: boolean; hint?: string };
   children: ReactNode;
 }) {
-  return <details data-step={id} open={open} onToggle={event => onToggle(event.currentTarget.open)} style={{ border: "1px solid #dedede", borderRadius: 12, background: "#fff", boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)", minWidth: 0 }}>
+  return <details data-step={id} open={open} onToggle={event => onToggle(event.currentTarget.open)} style={{ border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)", minWidth: 0 }}>
     <summary aria-disabled={locked || undefined} onClick={event => { if (locked) event.preventDefault(); }} style={{ cursor: locked ? "not-allowed" : "pointer", opacity: locked ? 0.55 : 1, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
       <span aria-hidden="true" style={{ flex: "0 0 auto", width: 24, height: 24, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, background: open ? "#202223" : "#f1f1f1", color: open ? "#fff" : "#303030" }}>{number}</span>
       <span style={{ display: "grid", gap: 2, minWidth: 0 }}>

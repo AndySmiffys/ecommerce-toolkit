@@ -28,7 +28,7 @@ export function PromotionCustomersTab({
       <section
         aria-label="Customer eligibility"
         style={{
-          border: "1px solid #dedede",
+          border: "1px solid #e3e3e3",
           borderRadius: "16px",
           background: "#ffffff",
           boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
@@ -90,7 +90,7 @@ export function PromotionCustomersTab({
         <section
           aria-label="All customers"
           style={{
-            border: "1px solid #dedede",
+            border: "1px solid #e3e3e3",
             borderRadius: "16px",
             background: "#ffffff",
             boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
@@ -105,7 +105,7 @@ export function PromotionCustomersTab({
         <section
           aria-label="Customer segments"
           style={{
-            border: "1px solid #dedede",
+            border: "1px solid #e3e3e3",
             borderRadius: "16px",
             background: "#ffffff",
             boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
@@ -133,7 +133,7 @@ export function PromotionCustomersTab({
                     borderBottom:
                       index === customers.segments.length - 1
                         ? "none"
-                        : "1px solid #eeeeee",
+                        : "1px solid #e3e3e3",
                   }}
                 >
                   <div style={{ minWidth: 0, fontWeight: 650 }}>
@@ -156,7 +156,7 @@ export function PromotionCustomersTab({
         <section
           aria-label="Selected customers"
           style={{
-            border: "1px solid #dedede",
+            border: "1px solid #e3e3e3",
             borderRadius: "16px",
             background: "#ffffff",
             boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
@@ -184,7 +184,7 @@ export function PromotionCustomersTab({
                     borderBottom:
                       index === customers.customers.length - 1
                         ? "none"
-                        : "1px solid #eeeeee",
+                        : "1px solid #e3e3e3",
                   }}
                 >
                   <div style={{ minWidth: 0, fontWeight: 650 }}>

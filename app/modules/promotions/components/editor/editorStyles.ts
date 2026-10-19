@@ -35,7 +35,7 @@ grid-template-columns: 1fr !important;
 
 .link-selector-layout > div:first-child {
 border-right: 0 !important;
-border-bottom: 1px solid #eeeeee;
+border-bottom: 1px solid #e3e3e3;
 }
 }
 `;

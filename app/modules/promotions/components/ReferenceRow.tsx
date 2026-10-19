@@ -32,7 +32,7 @@ export function ReferenceRow({
         justifyContent: "space-between",
         gap: "16px",
         padding: "13px 0",
-        borderBottom: isLast ? "none" : "1px solid #eeeeee",
+        borderBottom: isLast ? "none" : "1px solid #e3e3e3",
       }}
     >
       <div

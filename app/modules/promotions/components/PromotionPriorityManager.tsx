@@ -83,7 +83,7 @@ export function PromotionPriorityManager({ rows, hidden, errors, highlight, refr
                   onDragOver={event => { if (dragging) { event.preventDefault(); setOver(id); } }}
                   onDrop={event => { event.preventDefault(); if (dragging) move(order.indexOf(dragging), index); setDragging(null); setOver(null); }}
                   onDragEnd={() => { setDragging(null); setOver(null); }}
-                  style={{ display: "grid", gridTemplateColumns: "auto auto minmax(0, 1fr) auto", gap: 12, alignItems: "center", padding: "12px 14px", border: over === id && dragging !== id ? "2px solid #202223" : "1px solid #dedede", borderRadius: 12, background: isTarget ? "#f1f8f5" : "#fff", opacity: dragging === id ? 0.5 : 1, cursor: "grab" }}>
+                  style={{ display: "grid", gridTemplateColumns: "auto auto minmax(0, 1fr) auto", gap: 12, alignItems: "center", padding: "12px 14px", border: over === id && dragging !== id ? "2px solid #202223" : "1px solid #e3e3e3", borderRadius: 12, background: isTarget ? "#f1f8f5" : "#fff", opacity: dragging === id ? 0.5 : 1, cursor: "grab" }}>
                   <span aria-hidden="true" style={{ display: "inline-flex" }}><s-icon type="drag-handle" /></span>
                   <span style={{ minWidth: 28, textAlign: "center", fontWeight: 600 }} aria-label={`Position ${index + 1}`}>{index + 1}</span>
                   <s-stack direction="block" gap="small-300">

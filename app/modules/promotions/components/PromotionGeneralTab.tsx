@@ -163,7 +163,7 @@ function OrderDiscountOverview({
     <section
       aria-label="Order discount coverage"
       style={{
-        border: "1px solid #dedede",
+        border: "1px solid #e3e3e3",
         borderRadius: "16px",
         background: "#ffffff",
         boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
@@ -247,7 +247,7 @@ export function PromotionGeneralTab({
         data-promotion-type={general.type}
         aria-label="Promotion quick summary"
         style={{
-          border: "1px solid #dedede",
+          border: "1px solid #e3e3e3",
           borderRadius: "16px",
           background: "#ffffff",
           boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
@@ -337,7 +337,7 @@ export function PromotionGeneralTab({
               gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
               gap: "18px",
               paddingTop: "20px",
-              borderTop: "1px solid #ebebeb",
+              borderTop: "1px solid #e3e3e3",
             }}
           >
             <SummaryItem

@@ -77,7 +77,7 @@ setLimitOncePerCustomer(event.currentTarget.checked)
 </FormSection>
 )}
 
-<section aria-label="Combinations" style={{ display: "grid", gap: 12, borderTop: "1px solid #ebebeb", paddingTop: 16 }}>
+<section aria-label="Combinations" style={{ display: "grid", gap: 12, borderTop: "1px solid #e3e3e3", paddingTop: 16 }}>
 <s-heading>Combinations</s-heading>
 <s-text color="subdued">Allow this discount to combine with other discounts in the customer&apos;s cart.</s-text>
 <PolarisCheckbox label="Product discounts" details="Multiple can apply per order" checked={combineProductDiscounts} onChange={event => { setCombineProductDiscounts(event.currentTarget.checked); if (!event.currentTarget.checked) setSelectedCombinationTags([]); }} />

@@ -71,7 +71,7 @@ onChange={(event) =>
 <div
 style={{
 paddingTop: "16px",
-borderTop: "1px solid #eeeeee",
+borderTop: "1px solid #e3e3e3",
 }}
 >
 <div
@@ -161,7 +161,7 @@ At a discounted value
 <div
 style={{
 paddingTop: "14px",
-borderTop: "1px solid #eeeeee",
+borderTop: "1px solid #e3e3e3",
 }}
 >
 <PolarisCheckbox
