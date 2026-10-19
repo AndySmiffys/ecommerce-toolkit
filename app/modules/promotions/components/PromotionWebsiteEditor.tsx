@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PromotionImageField } from "./PromotionImageField";
 import { LinkDestinationField } from "./LinkDestinationField";
 import { applyPalette, colourElements, customisedPaletteBlocks, hasImage, isAutomaticText, isButtonText, matchPalette, neutralColour, paletteValues, readColour, settleSurfaces, switchProductAppearance, textColourFor, white, writeColour, type ColourKey, type PaletteRole, type PaletteValues } from "../design/campaignPalette";
-import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign, selectedCampaignPlacements, type CampaignPatch } from "../design/sharedCampaign";
+import { applyCampaignPatch, campaignValue, customisedPlacements, joinCampaign, matchCampaign, selectedCampaignPlacements, type CampaignPatch } from "../design/sharedCampaign";
 import { contrastRatio, copyLimits, defaultDesign, placements, presetDesign, promotionBlock, setPromotionBlock, validateWebsite, type BlockVisibility, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "../design/design";
 
 const sectionStyle = { border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", padding: 16, display: "grid", gap: 14 };
@@ -326,6 +326,12 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
     }
     commit(next);
   }
+  // Selecting a block for the first time adds it to the campaign, so it starts with the shared wording and colours.
+  function selectBlock(placement: (typeof placements)[number], on: boolean) {
+    const before = latestValue.current;
+    const after = { ...before, [placement.flag]: on };
+    commit(on ? joinCampaign(before, after, placement.id) : after);
+  }
   function changeCampaign(patch: CampaignPatch) { commit(applyCampaignPatch(latestValue.current, patch)); }
   function matchBlock(placement: Placement) { commit(matchCampaign(latestValue.current, placement)); }
   function changePalette(change: PaletteValues) { commit(applyPalette(latestValue.current, change)); }
@@ -346,7 +352,7 @@ export function PromotionWebsiteEditor({ value, onChange, endsAt, onBusyChange, 
       <s-heading>Where should this promotion appear?</s-heading>
       <s-text color="subdued">Only selected blocks appear below. Deselecting a block keeps its settings for later.</s-text>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
-        {placements.map(p => <div key={p.id} style={{ border: value[p.flag] ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: value[p.flag] ? "#f7f7f7" : "#fff" }}><PolarisCheckbox label={p.title} checked={Boolean(value[p.flag])} disabled={busy} onChange={event => set(p.flag, event.currentTarget.checked)} /><s-text color="subdued">{p.description}</s-text></div>)}
+        {placements.map(p => <div key={p.id} style={{ border: value[p.flag] ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: value[p.flag] ? "#f7f7f7" : "#fff" }}><PolarisCheckbox label={p.title} checked={Boolean(value[p.flag])} disabled={busy} onChange={event => selectBlock(p, event.currentTarget.checked)} /><s-text color="subdued">{p.description}</s-text></div>)}
       </div>
     </section>
     {hasCampaign && <CampaignEditor value={value} onChange={changeCampaign} onPreset={changePreset} onFocal={changeFocal} onMatch={matchBlock} onBusy={next => setBusyBlocks(current => current.campaign === next ? current : { ...current, campaign: next })} />}

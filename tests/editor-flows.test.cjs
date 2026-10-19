@@ -329,6 +329,21 @@ test('the design preset sits with the campaign images, and the focal point is se
   await view.unmount();
 });
 
+test('adding the Header to a live promotion uses the campaign wording instead of asking for a headline', async () => {
+  const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
+  // The wording lives in the collection block (the campaign), and the old top-level headline is empty.
+  const { overrides, blocks, palette, ...style } = defaultDesign();
+  const collection = { headline: 'Frightfully good fun', body: 'Costumes for everyone', buttonText: 'Shop Halloween', buttonUrl: '/collections/halloween', countdownText: '', backgroundColour: '#ffffff', textColour: '#000000', badgeColour: '#d72c0d', visibility: { headline: true, body: true, image: false, offerNote: true, discountCode: true, countdown: false, button: true }, style };
+  const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(() => ({ ...defaultDesign(), blocks: { collection } }), { headline: '', showHeaderBanner: false, showCollectionPage: true }) }, '/app/promotions/new');
+  try {
+    assert.ok(!view.container.textContent.includes('Add a headline for the Header block'));
+    await check(find(view.container, 's-checkbox[label="Header"]'), true);
+    assert.ok(find(view.container, 'details[data-promotion-block="header"]'), 'the Header block is now selected');
+    assert.ok(!view.container.textContent.includes('Add a headline for the Header block'), 'the new block takes the campaign headline');
+    assert.equal(find(find(view.container, 'details[data-promotion-block="header"]'), 's-text-field[label="Headline"]').getAttribute('placeholder'), 'Frightfully good fun', 'and shows it as the campaign wording it follows');
+  } finally { await view.unmount(); }
+});
+
 test('editing a promotion so that it joins the order takes the merchant to place it', async () => {
   const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
   toasts.length = 0;

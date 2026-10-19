@@ -1,4 +1,5 @@
 import { placements, promotionBlock, setPromotionBlock, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "./design";
+import { matchPalette } from "./campaignPalette";
 
 // Header, Collection and Product tell the same campaign story, so the editor
 // offers one set of shared fields for them. Each block still stores its own
@@ -72,6 +73,26 @@ export function applyCampaignPatch(draft: WebsiteDraft, patch: CampaignPatch): W
     }
   }
   return next;
+}
+
+/**
+ * A block that is being selected for the first time joins the campaign: it takes the wording, link, countdown label
+ * and images the other selected blocks share, and their colours, so a promotion whose wording was set once does not
+ * ask for it again. `before` is the draft as it was before the block was selected, which keeps the new block's empty
+ * fields out of the vote. A block that was selected earlier keeps the settings it was saved with.
+ */
+export function joinCampaign(before: WebsiteDraft, after: WebsiteDraft, placement: Placement): WebsiteDraft {
+  if (!campaignPlacements.includes(placement) || before.design.blocks?.[placement]) return after;
+  let block = promotionBlock(after, placement);
+  for (const field of fields) {
+    if (!takesPart(placement, "style" in field ? field.style : undefined)) continue;
+    const shared = reference(before, field);
+    if (shared !== undefined) block = write(block, field, shared);
+  }
+  const joined = setPromotionBlock(after, placement, block);
+  // Colours follow the campaign too. They are read with the block still unselected, so only the other blocks vote.
+  const colours = matchPalette({ ...before, design: joined.design }, placement);
+  return { ...joined, design: colours.design };
 }
 
 /** Make one customised block use the shared values again. */

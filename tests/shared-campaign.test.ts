@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultDesign, promotionBlock, setPromotionBlock, type WebsiteDraft } from "../app/modules/promotions/design/design";
-import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign, selectedCampaignPlacements } from "../app/modules/promotions/design/sharedCampaign";
+import { defaultDesign, promotionBlock, setPromotionBlock, validateWebsite, type WebsiteDraft } from "../app/modules/promotions/design/design";
+import { applyCampaignPatch, campaignValue, customisedPlacements, joinCampaign, matchCampaign, selectedCampaignPlacements } from "../app/modules/promotions/design/sharedCampaign";
 
 function draft(flags: Partial<WebsiteDraft> = {}): WebsiteDraft {
   return {
@@ -48,4 +48,36 @@ test("only selected blocks are edited and deselected blocks keep their saved set
   assert.equal(promotionBlock(next, "product").headline, "Header and product");
   assert.equal(campaignValue(draft({ showHeaderBanner: false, showCollectionPage: false, showProductPage: false }), "headline"), undefined);
   assert.equal(applyCampaignPatch(draft({ showHeaderBanner: false, showCollectionPage: false, showProductPage: false }), { headline: "x" }).design.blocks, undefined);
+});
+
+test("a block added to a live promotion starts with the campaign wording instead of asking for it again", () => {
+  // A promotion with its wording set once, on the collection and product blocks. The header was never selected.
+  const live = applyCampaignPatch(draft({ showHeaderBanner: false }), { headline: "Frightfully good fun", body: "20% off costumes", buttonText: "Shop Halloween", buttonUrl: "/collections/halloween", countdownText: "Ends in" });
+  assert.deepEqual(validateWebsite(live, null), []);
+  const added = joinCampaign(live, { ...live, showHeaderBanner: true }, "header");
+  const header = promotionBlock(added, "header");
+  assert.equal(header.headline, "Frightfully good fun");
+  assert.equal(header.body, "20% off costumes");
+  assert.equal(header.buttonText, "Shop Halloween");
+  assert.equal(header.buttonUrl, "/collections/halloween");
+  assert.equal(header.countdownText, "Ends in");
+  assert.deepEqual(validateWebsite(added, null), [], "the header no longer complains about a missing headline");
+  assert.deepEqual(customisedPlacements(added), [], "the new block follows the campaign, so it is not reported as customised");
+  assert.equal(promotionBlock(added, "header").style.desktopImage, "", "the header still takes no image");
+  // Without joining, the problem the merchant saw: the new block has no headline of its own.
+  assert.match(validateWebsite({ ...live, showHeaderBanner: true }, null).join(" "), /Add a headline for the Header block/);
+});
+
+test("a block added first takes the images, and a block selected earlier keeps its own saved settings", () => {
+  const live = applyCampaignPatch(draft({ showCollectionPage: false, showHeaderBanner: false }), { headline: "Shared", style: { desktopImage: "https://cdn.shopify.com/a.jpg", desktopImageId: "gid://shopify/MediaImage/1", desktopImageRatio: "3" } });
+  const added = joinCampaign(live, { ...live, showCollectionPage: true }, "collection");
+  assert.equal(promotionBlock(added, "collection").style.desktopImage, "https://cdn.shopify.com/a.jpg");
+  assert.equal(promotionBlock(added, "collection").style.desktopImageRatio, "3");
+  // The header was selected before and deselected: its own saved headline is kept.
+  const own = setPromotionBlock(live, "header", { ...promotionBlock(live, "header"), headline: "Header only" });
+  const again = joinCampaign(own, { ...own, showHeaderBanner: true }, "header");
+  assert.equal(promotionBlock(again, "header").headline, "Header only");
+  // The badge is not part of the campaign.
+  const badge = joinCampaign(live, { ...live, showProductBadge: true }, "badge");
+  assert.equal(promotionBlock(badge, "badge").headline, "20% OFF");
 });
