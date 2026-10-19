@@ -35,12 +35,20 @@ export function PromotionOverview({ title, typeLabel, discountStatus, websiteVis
         </s-stack>
         <div role="status" aria-label="Promotion summary" style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.35, overflowWrap: "anywhere" }}>{summary}</div>
         <s-divider />
-        <s-stack direction="inline" gap="large" alignItems="start">
-          <div style={{ flex: "0 1 280px", minWidth: 220 }}>
-            <PolarisSelect label="Website promotion status" disabled={websiteLocked} details={websiteLocked ? "Code lists stay in Draft. Distribute their codes using the CSV download." : "Enabled shows eligible offers on the storefront. Draft keeps the design saved but hidden."} value={websiteEnabled ? "enabled" : "draft"} onChange={event => onWebsiteEnabledChange(event.currentTarget.value === "enabled")}><s-option value="enabled">Enabled</s-option><s-option value="draft">Draft</s-option></PolarisSelect>
-          </div>
-          <div style={{ flex: "1 1 320px", minWidth: 0 }}>{priority}</div>
-        </s-stack>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+          <s-box background="base" border="base" borderRadius="base" padding="base">
+            <s-stack direction="block" gap="small-200">
+              <s-heading>Website status</s-heading>
+              <PolarisSelect label="Website promotion status" labelAccessibilityVisibility="exclusive" disabled={websiteLocked} details={websiteLocked ? "Code lists stay in Draft. Distribute their codes using the CSV download." : "Enabled shows eligible offers on the storefront. Draft keeps the design saved but hidden."} value={websiteEnabled ? "enabled" : "draft"} onChange={event => onWebsiteEnabledChange(event.currentTarget.value === "enabled")}><s-option value="enabled">Enabled</s-option><s-option value="draft">Draft</s-option></PolarisSelect>
+            </s-stack>
+          </s-box>
+          <s-box background="base" border="base" borderRadius="base" padding="base">
+            <s-stack direction="block" gap="small-200">
+              <s-heading>Priority</s-heading>
+              {priority}
+            </s-stack>
+          </s-box>
+        </div>
         {issue && <s-text color="subdued">To save: {issue.message} <s-button type="button" variant="tertiary" onClick={issue.onGo}>Go to {issue.stepTitle}</s-button></s-text>}
       </s-stack>
     </div>

@@ -222,12 +222,12 @@ test('a new promotion that can appear on the website sends the merchant to place
   await click(byText(view.container, 's-button', 'Continue to discount value'));
   await type(value(view), '20');
   await click(byText(step(view.container, 'value'), 's-button', 'Browse'));
-  assert.match(overview(view).textContent, /Priority: Not in the order\. Its website status is Draft\./, 'a draft website is outside the order');
+  assert.match(overview(view).textContent, /Not in the order\. Its website status is Draft\./, 'a draft website is outside the order');
 
   await change(find(view.container, 's-select[label="Website promotion status"]'), 'enabled');
   await check(find(view.container, 's-checkbox[label="Header"]'));
   await type(find(view.container, 's-text-field[label="Headline"]'), 'Frightfully good fun');
-  assert.match(overview(view).textContent, /Priority: You will place it after saving\. It starts at the top of the order\./);
+  assert.match(overview(view).textContent, /You will place it after saving\. It starts at the top of the order\./);
 
   await click(saveButton(view));
   await settle(100);
@@ -278,8 +278,8 @@ test('a promotion already in the order shows its position, links to change it, a
   const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
   const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(defaultDesign), priorityInfo: { position: 2, total: 5 } }, '/app/promotions/new');
   const note = overview(view);
-  assert.match(note.textContent, /Priority: position 2 of 5/);
-  const link = byText(note, 's-button', 'Change priority');
+  assert.match(note.textContent, /Position 2 of 5/);
+  const link = byText(note, 's-link', 'Change priority');
   assert.ok(link.getAttribute('href').endsWith('/app/storefront-priorities?highlight=1'), 'the link goes to the priority page with this promotion pointed out');
   assert.doesNotMatch(note.textContent, /You will place it after saving/);
 
@@ -308,7 +308,7 @@ test('the overview gathers the name, statuses, summary, priority and what is lef
   assert.match(fresh, /Amount off products/);
   assert.match(fresh, /Not saved yet/);
   assert.match(fresh, /Not visible on website/);
-  assert.match(fresh, /Priority: Not in the order/);
+  assert.match(fresh, /Not in the order/);
   assert.match(fresh, /To save: Enter a discount code/);
   await click(byText(overview(created), 's-button', 'Go to type and method'));
   assert.ok(step(created.container, 'type').hasAttribute('open'), 'the shortcut opens the step that needs attention');
@@ -322,7 +322,7 @@ test('the overview gathers the name, statuses, summary, priority and what is lef
   assert.match(live, /SAVE20/);
   assert.match(live, /Active/);
   assert.match(live, /Visible on website/);
-  assert.match(live, /Priority: position 1 of 3/);
+  assert.match(live, /Position 1 of 3/);
   assert.doesNotMatch(live, /To save:/);
   assert.equal(find(saved.container, 's-checkbox[label="Include in promotion sync"]'), null, 'there is no sync checkbox: an enabled promotion syncs');
   await saved.unmount();
