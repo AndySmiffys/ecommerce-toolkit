@@ -221,7 +221,8 @@ function CampaignColours({ value, onChange, onMatch, onOverride }: { value: Webs
 
 const promoDesigns: Array<{ id: PromotionStyle["preset"]; title: string; summary: string }> = [
   { id: "simple", title: "Simple offer", summary: "The image sits beside the wording. A balanced banner that suits most promotions." },
-  { id: "campaign", title: "Image campaign", summary: "The image fills the background behind the wording. A tall banner with a larger heading for big campaigns." },
+  { id: "campaign", title: "Image campaign", summary: "The image fills the background behind the wording and keeps its own shape, so it is not cropped. Leave free space in the artwork for the text." },
+  { id: "banner", title: "Image only", summary: "For artwork that already carries the message. The image is shown at its own shape with no text added, and links to the button destination if one is set." },
   { id: "compact", title: "Compact offer", summary: "A short banner with a smaller heading and the image beside it. Best where space is tight." },
 ];
 
@@ -240,7 +241,7 @@ function PromoDesignChoice({ value, onChange }: { value: PromotionStyle["preset"
             <s-stack direction="block" gap="small-200">
               <s-stack direction="inline" gap="small-200" alignItems="center"><s-text type="strong">{design.title}</s-text>{selected && <s-badge tone="success">Selected</s-badge>}</s-stack>
               <s-text color="subdued">{design.summary}</s-text>
-              <s-text color="subdued">{bannerHeight}px banner, {headingSize}px heading</s-text>
+              <s-text color="subdued">{design.id === "banner" || design.id === "campaign" ? "Shape follows your image" : `${bannerHeight}px banner, ${headingSize}px heading`}</s-text>
             </s-stack>
           </s-clickable>
         </div>;
@@ -258,13 +259,18 @@ function CampaignEditor({ value, onChange, onPreset, onFocal, onMatch, onBusy }:
   const titles = (ids: string[]) => ids.map(id => placements.find(p => p.id === id)!.title).join(", ");
   const showImages = selected.some(id => id === "collection" || id === "product");
   const text = (key: "headline" | "body" | "buttonText" | "countdownText") => campaignValue(value, key) ?? "";
-  const style = (key: "desktopImage" | "desktopImageId" | "mobileImage" | "mobileImageId" | "imageAlt") => campaignValue(value, "style", key) ?? "";
+  const style = (key: "desktopImage" | "desktopImageId" | "desktopImageRatio" | "mobileImage" | "mobileImageId" | "mobileImageRatio" | "imageAlt") => campaignValue(value, "style", key) ?? "";
   const customised = customisedPlacements(value);
   const firstImageBlock = selected.find(id => id === "collection" || id === "product");
   const firstStyle = firstImageBlock ? promotionBlock(value, firstImageBlock).style : undefined;
   const preset = firstStyle?.preset ?? "simple";
   // One focal point and description serve the desktop and mobile images, and every block that shows them.
-  const imageEdit = { value: { x: firstStyle?.focalX ?? 50, y: firstStyle?.focalY ?? 50, alt: style("imageAlt") }, onApply: (edit: { x: number; y: number; alt: string }) => { onChange({ style: { imageAlt: edit.alt } }); onFocal(edit.x, edit.y); } };
+  const imageEdit = (slot: "desktop" | "mobile") => ({ value: { x: firstStyle?.focalX ?? 50, y: firstStyle?.focalY ?? 50, alt: style("imageAlt") }, onApply: (edit: { x: number; y: number; alt: string; ratio?: string }) => { onChange({ style: { imageAlt: edit.alt, ...(edit.ratio ? { [`${slot}ImageRatio`]: edit.ratio } : {}) } }); onFocal(edit.x, edit.y); } });
+  const desktopRatio = Number(style("desktopImageRatio")), mobileRatio = Number(style("mobileImageRatio"));
+  const shapeNotes = [
+    desktopRatio > 0 && Math.abs(desktopRatio - 3) / 3 > 0.3 ? `The desktop image is about ${Math.round(desktopRatio * 10) / 10}:1. We recommend 1800×600 (3:1). Other shapes are still shown without cropping, but the banner will be taller or shorter than usual.` : "",
+    mobileRatio > 0 && (mobileRatio < 0.75 || mobileRatio > 1.34) ? `The mobile image is about ${Math.round(mobileRatio * 100) / 100}:1. We recommend 1080×1080 (square).` : "",
+  ].filter(Boolean);
   return <section aria-label="Campaign content and style" style={sectionStyle}>
     <s-heading>Campaign content & style</s-heading>
     <s-text color="subdued">Set the wording and images once for {titles(selected)}. Each block below can still be fine-tuned. A block you change on its own keeps its own value.</s-text>
@@ -277,9 +283,10 @@ function CampaignEditor({ value, onChange, onPreset, onFocal, onMatch, onBusy }:
     </ControlGroup>
     {showImages && <ControlGroup title="Images" description="Used by the Collection and Product blocks. Mobile uses the desktop image if left blank.">
       <PromoDesignChoice value={preset} onChange={onPreset} />
-      <PromotionImageField label="Desktop image" url={style("desktopImage")} fileId={style("desktopImageId")} edit={imageEdit} onBusy={next => setBusy(current => ({ ...current, desktop: next }))} onChange={image => onChange({ style: { desktopImage: image?.url ?? "", desktopImageId: image?.id ?? "" } })} />
-      <PromotionImageField label="Mobile image" url={style("mobileImage")} fileId={style("mobileImageId")} edit={imageEdit} onBusy={next => setBusy(current => ({ ...current, mobile: next }))} onChange={image => onChange({ style: { mobileImage: image?.url ?? "", mobileImageId: image?.id ?? "" } })} />
-      <s-text color="subdued">Click an image to set its focal point and alt text, or use the menu that appears when you hover over it to change or remove it.</s-text>
+      <PromotionImageField label="Desktop image" url={style("desktopImage")} fileId={style("desktopImageId")} edit={imageEdit("desktop")} onBusy={next => setBusy(current => ({ ...current, desktop: next }))} onChange={image => onChange({ style: { desktopImage: image?.url ?? "", desktopImageId: image?.id ?? "", desktopImageRatio: image?.ratio ?? "" } })} />
+      <PromotionImageField label="Mobile image" url={style("mobileImage")} fileId={style("mobileImageId")} edit={imageEdit("mobile")} onBusy={next => setBusy(current => ({ ...current, mobile: next }))} onChange={image => onChange({ style: { mobileImage: image?.url ?? "", mobileImageId: image?.id ?? "", mobileImageRatio: image?.ratio ?? "" } })} />
+      <s-text color="subdued">Recommended sizes: 1800×600 for desktop and 1080×1080 for mobile. Banners keep the shape of each image, so nothing is cropped. Click an image to set its focal point and alt text, or use the menu that appears when you hover over it to change or remove it.</s-text>
+      {shapeNotes.map(note => <s-banner key={note} tone="warning">{note}</s-banner>)}
     </ControlGroup>}
     {customised.length > 0 && <div role="status" style={{ ...helpStyle, padding: 10, background: "#f1f1f1", borderRadius: 8, display: "grid", gap: 8 }}>
       <span>Customised, so not following the settings above: {titles(customised)}.</span>

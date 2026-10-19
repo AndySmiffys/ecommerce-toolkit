@@ -12,6 +12,17 @@ export const promotionCss = `
 
 .pe-product-offer{border:0}.pe-product-offer.pe-full,.pe-product-offer.pe-full .pe-copy{min-height:var(--pe-height)}.pe-product-offer .pe-heading{font-size:var(--pe-heading);font-weight:600;letter-spacing:-.025em}.pe-offer-single{background:transparent;border:var(--pe-border-width) solid var(--pe-border)}.pe-offer-double{background:transparent;border:var(--pe-border-width) double var(--pe-border)}.pe-code-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:100%}.pe-code{display:grid;gap:4px;min-width:0;text-align:left}.pe-code small,.pe-timer-label{font-size:12px;font-weight:500}.pe-code strong{font-size:16px;letter-spacing:.06em;user-select:all}.pe-copy-code{background:var(--pe-copy-bg);color:var(--pe-copy-fg);display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border:0;min-height:44px;font-weight:500}.pe-button:focus-visible{outline:2px solid currentColor;outline-offset:3px}.pe-modern-countdown{display:grid;gap:10px;max-width:100%}.pe-time-units{display:flex;gap:8px}.pe-time-unit{display:grid;gap:5px;min-width:48px;padding:10px 6px;text-align:center;border:1px solid currentColor;border-color:color-mix(in srgb,currentColor 18%,transparent);border-radius:min(var(--pe-radius),8px)}.pe-time-unit strong{font-size:22px;line-height:1;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.025em}.pe-time-unit small{font-size:10px;font-weight:400}.pe-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}[hidden]{display:none!important}
 @media(max-width:600px){.pe-split{grid-template-columns:1fr}.pe-split .pe-picture{height:240px;min-height:180px}.pe-split .pe-image{max-height:240px;min-height:180px}.pe-full .pe-copy{max-width:100%}.pe-copy{padding:max(16px,calc(var(--pe-space)*.7))}.pe-heading{font-size:clamp(10px,6vw,var(--pe-heading))}.pe-header .pe-copy{flex-direction:column;gap:8px;text-align:var(--pe-align);align-items:var(--pe-items)}.pe-banner,.pe-banner .pe-copy{min-height:min(var(--pe-height),360px)}}
+/* Ratio sizing: a banner takes its shape from its image (--pe-ratio is width/height, or auto), so artwork is not cropped. */
+.pe-promo.pe-ratio{display:grid;min-height:0;aspect-ratio:var(--pe-ratio)}
+.pe-promo.pe-ratio .pe-full-image{position:static;grid-area:1/1;min-width:0}
+.pe-promo.pe-ratio .pe-picture{position:static;display:block;height:100%;min-height:0}
+.pe-promo.pe-ratio .pe-image{position:static;display:block;width:100%;height:100%;min-height:0;max-height:none;aspect-ratio:var(--pe-ratio);object-fit:cover;object-position:var(--pe-focus)}
+.pe-promo.pe-ratio.pe-full .pe-copy{grid-area:1/1;z-index:1;min-height:0;align-self:stretch}
+.pe-promo.pe-only{display:block;min-height:0}
+.pe-only .pe-only-link{display:block;color:inherit;text-decoration:none}
+.pe-only .pe-picture{position:static;display:block;height:auto;min-height:0}
+.pe-only .pe-image{position:static;display:block;width:100%;height:auto;min-height:0;max-height:none;aspect-ratio:var(--pe-ratio)}
+@media(max-width:600px){.pe-promo.pe-ratio{aspect-ratio:var(--pe-ratio-m)}.pe-promo.pe-ratio .pe-image,.pe-only .pe-image{aspect-ratio:var(--pe-ratio-m);max-height:none;min-height:0}.pe-promo.pe-ratio.pe-full .pe-copy{min-height:0}}
 `;
 // Preview-only styles. They show the surroundings of a block and never reach the storefront.
 const previewCss = `html{overflow:hidden}body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#fff;color:#1a1a1a}
@@ -68,12 +79,20 @@ export function PromotionOffer({ value, placement, endsAt, now, mobile = false, 
   const block = promotionBlock(value, placement);
   const d = block.style;
   const image = block.visibility.image ? (mobile ? d.mobileImage || d.desktopImage : d.desktopImage || d.mobileImage) : "";
-  const style = { "--pe-header-space": value.design.blocks?.header ? `${d.spacing}px` : "12px 20px", "--pe-border": d.productBorderColour, "--pe-border-width": `${d.productBorderWidth}px`, "--pe-copy-bg": d.copyCodeBackground, "--pe-copy-fg": d.copyCodeColour, "--pe-bg": block.backgroundColour, "--pe-fg": block.textColour, "--pe-button-bg": d.buttonBackground, "--pe-button-fg": d.buttonColour, "--pe-badge-bg": block.badgeColour, "--pe-badge-fg": d.badgeTextColour, "--pe-radius": `${d.radius}px`, "--pe-space": `${d.spacing}px`, "--pe-heading": `${d.headingSize}px`, "--pe-body": `${d.bodySize}px`, "--pe-height": `${d.bannerHeight}px`, "--pe-focus": `${d.focalX}% ${d.focalY}%`, "--pe-align": d.alignment, "--pe-items": d.alignment === "center" ? "center" : d.alignment === "right" ? "flex-end" : "flex-start" } as CSSProperties;
+  const desktopRatio = Number(d.desktopImageRatio) > 0 ? d.desktopImageRatio : "";
+  const mobileRatio = Number(d.mobileImageRatio) > 0 ? d.mobileImageRatio : "";
+  const style = { "--pe-header-space": value.design.blocks?.header ? `${d.spacing}px` : "12px 20px", "--pe-border": d.productBorderColour, "--pe-border-width": `${d.productBorderWidth}px`, "--pe-copy-bg": d.copyCodeBackground, "--pe-copy-fg": d.copyCodeColour, "--pe-bg": block.backgroundColour, "--pe-fg": block.textColour, "--pe-button-bg": d.buttonBackground, "--pe-button-fg": d.buttonColour, "--pe-badge-bg": block.badgeColour, "--pe-badge-fg": d.badgeTextColour, "--pe-radius": `${d.radius}px`, "--pe-space": `${d.spacing}px`, "--pe-heading": `${d.headingSize}px`, "--pe-body": `${d.bodySize}px`, "--pe-height": `${d.bannerHeight}px`, "--pe-focus": `${d.focalX}% ${d.focalY}%`, "--pe-ratio": (mobile ? mobileRatio || desktopRatio : desktopRatio) || "auto", "--pe-ratio-m": mobileRatio || desktopRatio || "auto", "--pe-align": d.alignment, "--pe-items": d.alignment === "center" ? "center" : d.alignment === "right" ? "flex-end" : "flex-start" } as CSSProperties;
 
   if (placement === "badge") return block.visibility.headline ? <span style={style} className="pe-badge">{block.headline || "PROMOTION"}</span> : null;
-  const sizes = d.imageLayout === "full" ? "100vw" : "(max-width: 600px) 100vw, 50vw";
+  const sizes = d.imageLayout === "full" || d.imageLayout === "only" ? "100vw" : "(max-width: 600px) 100vw, 50vw";
   const photo = image ? <picture className="pe-picture">{!mobile && d.mobileImage && <source media="(max-width: 600px)" srcSet={responsiveImage(d.mobileImage) || d.mobileImage} sizes={sizes} />}<img className="pe-image" src={image} srcSet={responsiveImage(image)} sizes={sizes} alt={d.imageAlt} loading="eager" {...{ fetchpriority: placement === "collection" ? "high" : "auto" }} /></picture> : null;
-  return <div style={style} className={`pe-promo ${placement === "header" ? "pe-header" : placement === "collection" ? `pe-banner ${image ? d.imageLayout === "full" ? "pe-full" : "pe-split" : ""}` : `pe-product-offer pe-offer-${d.productOfferStyle} ${image ? d.imageLayout === "full" ? "pe-full" : "pe-split" : ""}`}`}>
+  // Artwork that already carries the message: the image alone, at its own shape, linking to the button destination.
+  if (image && d.imageLayout === "only" && (placement === "collection" || placement === "product")) {
+    const href = block.buttonUrl && safeLink(block.buttonUrl) ? block.buttonUrl : "";
+    return <div style={style} className={`pe-promo ${placement === "collection" ? "pe-banner" : `pe-product-offer pe-offer-${d.productOfferStyle}`} pe-only`}>{href ? <a className="pe-only-link" href={href}>{photo}</a> : photo}</div>;
+  }
+  const layoutClass = !image ? "" : d.imageLayout === "full" ? `pe-full${desktopRatio || mobileRatio ? " pe-ratio" : ""}` : "pe-split";
+  return <div style={style} className={`pe-promo ${placement === "header" ? "pe-header" : placement === "collection" ? `pe-banner ${layoutClass}` : `pe-product-offer pe-offer-${d.productOfferStyle} ${layoutClass}`}`}>
     {(placement === "collection" || placement === "product") && image && (d.imageLayout === "full" ? <div className="pe-full-image">{photo}</div> : d.imageLayout === "half-left" ? photo : null)}
     <PromoContent value={value} placement={placement} endsAt={endsAt} now={now} offerNote={offerNote} discountCode={discountCode} />
     {(placement === "collection" || placement === "product") && image && d.imageLayout === "half-right" ? photo : null}

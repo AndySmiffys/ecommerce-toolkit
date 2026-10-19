@@ -1,15 +1,16 @@
 import type { ShopifyAdminClient } from "./discount.server";
+import { imageRatio } from "../design/design";
 
-export type PromotionImage = { id: string; url: string; alt: string | null };
+export type PromotionImage = { id: string; url: string; alt: string | null; ratio: string };
 export async function resolvePromotionImage(admin: ShopifyAdminClient, id: string): Promise<PromotionImage> {
   if (!/^gid:\/\/shopify\/MediaImage\/\d+$/.test(id)) throw new Error("Select a Shopify image file.");
-  const response = await admin.graphql(`query PromotionImage($id: ID!) { node(id: $id) { ... on MediaImage { id alt fileStatus image { url } } } }`, { variables: { id } });
+  const response = await admin.graphql(`query PromotionImage($id: ID!) { node(id: $id) { ... on MediaImage { id alt fileStatus image { url width height } } } }`, { variables: { id } });
   const result = await response.json();
   if (result.errors?.length) throw new Error(result.errors.map((e: { message: string }) => e.message).join(", "));
   const node = result.data?.node;
   if (node?.fileStatus === "FAILED") throw new Error("Shopify could not process this image.");
   if (!node?.image?.url) throw new Error("The image is still processing. Select it again from Shopify Files in a moment.");
-  return { id: node.id, url: node.image.url, alt: node.alt };
+  return { id: node.id, url: node.image.url, alt: node.alt, ratio: imageRatio(node.image.width, node.image.height) };
 }
 export async function uploadPromotionImage(admin: ShopifyAdminClient, file: File): Promise<PromotionImage> {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || !file.size || file.size > 20 * 1024 * 1024) throw new Error("Choose a JPG, PNG or WebP image up to 20 MB.");

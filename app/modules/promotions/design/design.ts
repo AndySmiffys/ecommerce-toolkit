@@ -8,13 +8,17 @@ export type PromotionStyle = {
   copyCodeBackground: string;
   copyCodeColour: string;
   copyCodeEnabled: boolean;
-  preset: "simple" | "campaign" | "compact";
+  preset: "simple" | "campaign" | "compact" | "banner";
   desktopImage: string;
   desktopImageId: string;
   mobileImage: string;
   mobileImageId: string;
+  /** Width divided by height of each image ("" when unknown). Banners size themselves from it so images are not cropped. */
+  desktopImageRatio: string;
+  mobileImageRatio: string;
   imageAlt: string;
-  imageLayout: "full" | "half-left" | "half-right";
+  /** "only" shows the image at its own shape with no text: for artwork that already carries the message. */
+  imageLayout: "full" | "half-left" | "half-right" | "only";
   focalX: number;
   focalY: number;
   /** No longer used: the dark image overlay was removed. Kept so saved designs still load. */
@@ -52,7 +56,7 @@ export type WebsiteDraft = {
 };
 const emptyCopy = (): PlacementCopy => ({ headline: "", body: "", buttonText: "" });
 export function defaultDesign(): PromotionDesign {
-  return { version: 1, productOfferStyle: "solid", productBorderColour: "#202223", productBorderWidth: 1, copyCodeBackground: "#202223", copyCodeColour: "#ffffff", copyCodeEnabled: false, preset: "simple", desktopImage: "", desktopImageId: "", mobileImage: "", mobileImageId: "", imageAlt: "", imageLayout: "half-right", focalX: 50, focalY: 50, overlay: 45, alignment: "left", bannerHeight: 280, spacing: 24, radius: 8, headingSize: 28, bodySize: 16, buttonBackground: "#202223", buttonColour: "#ffffff", badgeTextColour: "#ffffff", overrides: { header: emptyCopy(), collection: emptyCopy(), product: emptyCopy(), badge: emptyCopy() } };
+  return { version: 1, productOfferStyle: "solid", productBorderColour: "#202223", productBorderWidth: 1, copyCodeBackground: "#202223", copyCodeColour: "#ffffff", copyCodeEnabled: false, preset: "simple", desktopImage: "", desktopImageId: "", mobileImage: "", mobileImageId: "", desktopImageRatio: "", mobileImageRatio: "", imageAlt: "", imageLayout: "half-right", focalX: 50, focalY: 50, overlay: 45, alignment: "left", bannerHeight: 280, spacing: 24, radius: 8, headingSize: 28, bodySize: 16, buttonBackground: "#202223", buttonColour: "#ffffff", badgeTextColour: "#ffffff", overrides: { header: emptyCopy(), collection: emptyCopy(), product: emptyCopy(), badge: emptyCopy() } };
 }
 export const placements: Array<{ id: Placement; title: string; flag: "showHeaderBanner" | "showCollectionPage" | "showProductPage" | "showProductBadge"; description: string }> = [
   { id: "header", title: "Header", flag: "showHeaderBanner", description: "A short announcement above the site content." },
@@ -71,13 +75,14 @@ export function readDesign(value: unknown): PromotionDesign {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("The promotion design is invalid.");
   const source = input as Record<string, unknown>;
   const design = { ...defaults };
-  for (const name of ["desktopImage", "desktopImageId", "mobileImage", "mobileImageId", "imageAlt", "buttonBackground", "buttonColour", "badgeTextColour", "productBorderColour", "copyCodeBackground", "copyCodeColour"] as const) {
+  for (const name of ["desktopImage", "desktopImageId", "mobileImage", "mobileImageId", "desktopImageRatio", "mobileImageRatio", "imageAlt", "buttonBackground", "buttonColour", "badgeTextColour", "productBorderColour", "copyCodeBackground", "copyCodeColour"] as const) {
     if (source[name] !== undefined) {
       if (typeof source[name] !== "string") throw new Error("Invalid design field: " + name);
       design[name] = (source[name] as string).trim();
     }
   }
   if (design.imageAlt.length > 250) throw new Error("Image description must be 250 characters or fewer.");
+  for (const name of ["desktopImageRatio", "mobileImageRatio"] as const) if (design[name] && !(Number(design[name]) >= 0.2 && Number(design[name]) <= 10)) throw new Error("Invalid design field: " + name);
   for (const name of ["desktopImage", "mobileImage"] as const) if (!safeImage(design[name])) throw new Error("Images must use secure Shopify file URLs.");
   for (const name of ["buttonBackground", "buttonColour", "badgeTextColour", "productBorderColour", "copyCodeBackground", "copyCodeColour"] as const) if (!/^#[\da-f]{6}$/i.test(design[name])) throw new Error("Use six-digit hex colours.");
   const ranges = { productBorderWidth: [1, 12], focalX: [0, 100], focalY: [0, 100], overlay: [0, 90], bannerHeight: [160, 600], spacing: [12, 60], radius: [0, 32], headingSize: [10, 48], bodySize: [10, 24] } as const;
@@ -88,7 +93,7 @@ export function readDesign(value: unknown): PromotionDesign {
       design[name] = number;
     }
   }
-  for (const [name, options] of [["productOfferStyle", ["solid", "single", "double"]], ["preset", ["simple", "campaign", "compact"]], ["imageLayout", ["full", "half-left", "half-right"]], ["alignment", ["left", "center", "right"]]] as const) {
+  for (const [name, options] of [["productOfferStyle", ["solid", "single", "double"]], ["preset", ["simple", "campaign", "compact", "banner"]], ["imageLayout", ["full", "half-left", "half-right", "only"]], ["alignment", ["left", "center", "right"]]] as const) {
     if (source[name] !== undefined) {
       if (!(options as readonly unknown[]).includes(source[name])) throw new Error("Invalid design field: " + name);
       Object.assign(design, { [name]: source[name] });
@@ -184,8 +189,12 @@ export function promotionBlock(value: WebsiteDraft, placement: Placement): Promo
 export function setPromotionBlock(value: WebsiteDraft, placement: Placement, block: PromotionBlock): WebsiteDraft {
   return { ...value, design: { ...value.design, blocks: { ...value.design.blocks, [placement]: block } } };
 }
+/** Width divided by height as a short string, or "" when either is missing. */
+export function imageRatio(width?: number | null, height?: number | null): string {
+  return width && height && width > 0 && height > 0 ? String(Math.round((width / height) * 1000) / 1000) : "";
+}
 export function presetDesign(preset: PromotionDesign["preset"], current: PromotionDesign): PromotionDesign {
-  const styles = preset === "campaign" ? { imageLayout: "full" as const, bannerHeight: 360, headingSize: 36, spacing: 32, radius: 12 } : preset === "compact" ? { imageLayout: "half-right" as const, bannerHeight: 180, headingSize: 22, spacing: 16, radius: 6 } : { imageLayout: "half-right" as const, bannerHeight: 280, headingSize: 28, spacing: 24, radius: 8 };
+  const styles = preset === "banner" ? { imageLayout: "only" as const, bannerHeight: 280, headingSize: 28, spacing: 24, radius: 12 } : preset === "campaign" ? { imageLayout: "full" as const, bannerHeight: 360, headingSize: 36, spacing: 32, radius: 12 } : preset === "compact" ? { imageLayout: "half-right" as const, bannerHeight: 180, headingSize: 22, spacing: 16, radius: 6 } : { imageLayout: "half-right" as const, bannerHeight: 280, headingSize: 28, spacing: 24, radius: 8 };
   return { ...current, ...styles, preset };
 }
 export function contrastRatio(a: string, b: string): number {

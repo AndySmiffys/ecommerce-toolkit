@@ -281,9 +281,10 @@ test('the design preset sits with the campaign images, and the focal point is se
   assert.ok(groups[0].closest('section[aria-label="Campaign content and style"]'), 'it is in the campaign content and style section');
   assert.match(groups[0].textContent, /Collection Promo Design/);
   const cards = findAll(groups[0], 's-clickable');
-  assert.equal(cards.length, 3, 'each design is a card');
+  assert.equal(cards.length, 4, 'each design is a card');
   assert.match(cards[0].textContent, /Simple offer.*Selected/);
   assert.match(cards[1].textContent, /Image campaign.*background/);
+  assert.match(cards[2].textContent, /Image only.*already carries the message/);
   assert.equal(find(view.container, 'input[aria-label="Image overlay"]'), null, 'the dark image overlay is gone');
   assert.equal(find(view.container, 'input[aria-label="Horizontal focal point"]'), null, 'the focal point sliders are gone');
 

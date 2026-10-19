@@ -9,7 +9,7 @@ import { placements, promotionBlock, setPromotionBlock, type Placement, type Pro
 export const campaignPlacements: Placement[] = ["header", "collection", "product"];
 const imagePlacements: Placement[] = ["collection", "product"];
 export const campaignBlockKeys = ["headline", "body", "buttonText", "buttonUrl", "countdownText"] as const;
-export const campaignStyleKeys = ["desktopImage", "desktopImageId", "mobileImage", "mobileImageId", "imageAlt"] as const;
+export const campaignStyleKeys = ["desktopImage", "desktopImageId", "desktopImageRatio", "mobileImage", "mobileImageId", "mobileImageRatio", "imageAlt"] as const;
 const imageKeys: ReadonlyArray<string> = campaignStyleKeys;
 
 type BlockKey = typeof campaignBlockKeys[number];

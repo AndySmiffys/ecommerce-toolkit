@@ -67,6 +67,28 @@ test("countdown reflects real dates and expired dates", () => {
   assert.equal(countdown("2026-10-07T00:00:00Z", Date.parse("2026-10-08T00:00:00Z")), "Offer ended");
   assert.equal(countdown(null, Date.now()), "");
 });
+test("banners take their shape from the image: ratio sizing for text over an image, and an image-only mode with the message baked in", async () => {
+  const value = website();
+  Object.assign(value.design, { desktopImage: "https://cdn.shopify.com/desktop.jpg", mobileImage: "https://cdn.shopify.com/mobile.jpg", desktopImageRatio: "3", mobileImageRatio: "1", imageLayout: "full", imageAlt: "Family in costumes", buttonUrl: "" });
+  value.buttonUrl = "/collections/halloween"; value.headline = "Frightfully good fun";
+  const sized = renderToStaticMarkup(<PromotionOffer value={value} placement="collection" now={Date.now()} />);
+  assert.ok(sized.includes("pe-full pe-ratio"), "text over an image is sized by the image");
+  assert.ok(sized.includes("--pe-ratio:3") && sized.includes("--pe-ratio-m:1"), "desktop and mobile each carry their own ratio");
+  assert.ok(sized.includes("Frightfully good fun"), "the wording is still shown");
+  const unknown = renderToStaticMarkup(<PromotionOffer value={{ ...value, design: { ...value.design, desktopImageRatio: "", mobileImageRatio: "" } }} placement="collection" now={Date.now()} />);
+  assert.ok(!unknown.includes("pe-full pe-ratio"), "an image whose shape is unknown keeps the saved banner height");
+  value.design.imageLayout = "only";
+  const only = renderToStaticMarkup(<PromotionOffer value={value} placement="collection" now={Date.now()} />);
+  assert.ok(only.includes("pe-only") && only.includes('alt="Family in costumes"'), "the image alone, with its description");
+  assert.ok(!only.includes("Frightfully good fun") && !only.includes("<h2") && !only.includes("<p ") && !only.includes("class=\"pe-button"), "no text or button is added over finished artwork");
+  assert.ok(only.includes('href="/collections/halloween"'), "the image links to the button destination");
+  assert.ok(promotionCss.includes(".pe-promo.pe-only") && promotionCss.includes("aspect-ratio:var(--pe-ratio"), "the storefront CSS carries the ratio rules");
+  assert.equal(readDesign({ ...value.design, desktopImageRatio: "3", preset: "banner", imageLayout: "only" }).imageLayout, "only");
+  assert.throws(() => readDesign({ ...value.design, desktopImageRatio: "99" }), /desktopImageRatio/);
+  assert.equal(presetDesign("banner", defaultDesign()).imageLayout, "only");
+  const resolved = await resolvePromotionImage({ graphql: async () => Response.json({ data: { node: { id: "gid://shopify/MediaImage/1", alt: null, fileStatus: "READY", image: { url: "https://cdn.shopify.com/a.jpg", width: 1800, height: 600 } } } }) }, "gid://shopify/MediaImage/1");
+  assert.equal(resolved.ratio, "3", "the image's shape is taken from Shopify");
+});
 test("shared renderer escapes copy, honours colours/overrides and switches mobile images", () => {
   const value = website(); value.headline = '<script>alert("x")</script>'; value.design.overrides.header.headline = "Short headline"; value.design.desktopImage = "https://cdn.shopify.com/desktop.jpg"; value.design.mobileImage = "https://cdn.shopify.com/mobile.jpg"; value.design.imageLayout = "full"; value.design.buttonColour = "#00ff00";
   const desktop = renderToStaticMarkup(<PromotionOffer value={value} placement="collection" now={Date.now()} />);
