@@ -1,8 +1,8 @@
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { useEmbeddedAppUrl } from "../modules/navigation/embeddedAppUrl";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 
 import { authenticate } from "../shopify.server";
@@ -10,23 +10,28 @@ import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { PolarisCheckbox, PolarisSelect } from "../modules/promotions/components/PolarisControls";
 import { PromotionBulkBar } from "../modules/promotions/components/PromotionBulkBar";
 import { bulkIntents, parseBulkIds, runBulkAction, type BulkIntent } from "../modules/promotions/services/bulkPromotions.server";
-import { getDiscounts } from "../modules/promotions/services/discounts.server";
+import { discountSearch, getDiscountsPage, listCursor } from "../modules/promotions/services/discounts.server";
 import { mapDiscountsToPromotions } from "../modules/promotions/mappers/promotionMapper";
 import { attachPromotionSettings } from "../modules/promotions/services/promotionSettings.server";
 import type { PromotionRecord } from "../modules/promotions/models/promotion";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
-  const discountNodes = await getDiscounts(admin);
-  const mappedPromotions = mapDiscountsToPromotions(discountNodes);
-  const promotions = await attachPromotionSettings(
-    session.shop,
-    mappedPromotions,
-  );
+  // The search, status and page are in the address, so a page can be reloaded or shared. Shopify does the searching.
+  const params = new URL(request.url).searchParams;
+  const q = (params.get("q") ?? "").slice(0, 100);
+  const status = params.get("status") ?? "";
+  const before = listCursor(params.get("before"));
+  const after = before ? null : listCursor(params.get("after"));
+  const page = await getDiscountsPage(admin, { after, before, query: discountSearch(q, status) });
+  const promotions = await attachPromotionSettings(session.shop, mapDiscountsToPromotions(page.nodes));
 
+  // The storefront data is refreshed when the plain newest page opens, not on every search or page turn.
   let syncError: string | null = null;
-  try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `Promotions loaded, but storefront sync failed: ${error instanceof Error ? error.message : "Please retry."}`; }
-  return { promotions, syncError };
+  if (!after && !before && !q && !status) {
+    try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `Promotions loaded, but storefront sync failed: ${error instanceof Error ? error.message : "Please retry."}`; }
+  }
+  return { promotions, syncError, pageInfo: page.pageInfo, total: page.total, filters: { q, status } };
 }
 
 // Bulk changes from the list: Shopify discount status, website status, and deleting. See bulkPromotions.server.ts.
@@ -193,32 +198,46 @@ const discountTypes: { type: string; title: string; description: string; icon: D
 
 export default function PromotionsPage() {
   const appUrl = useEmbeddedAppUrl();
-  const { promotions, syncError } = useLoaderData<typeof loader>();
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const { promotions, syncError, pageInfo, total, filters } = useLoaderData<typeof loader>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
+  const table = useRef<HTMLElementTagNameMap["s-table"]>(null);
+  const [query, setQuery] = useState(filters.q);
+  const statusFilter = filters.status || "ALL";
   const shopify = useAppBridge();
   const fetcher = useFetcher<typeof action>();
   const [selected, setSelected] = useState<string[]>([]);
   const [dismissed, setDismissed] = useState<unknown>(null);
 
-  const filteredPromotions = useMemo(() => {
-    const normalisedQuery = query.trim().toLowerCase();
+  // Shopify already searched, filtered and paged the list.
+  const filteredPromotions = promotions;
+  const search = searchParams.toString();
 
-    return promotions.filter((promotion) => {
-      const general = promotion.shopify.general;
-      const matchesQuery =
-        normalisedQuery.length === 0 ||
-        general.title.toLowerCase().includes(normalisedQuery) ||
-        general.summary.toLowerCase().includes(normalisedQuery) ||
-        general.type.toLowerCase().includes(normalisedQuery) ||
-        general.method.toLowerCase().includes(normalisedQuery);
-
-      const matchesStatus =
-        statusFilter === "ALL" || general.status === statusFilter;
-
-      return matchesQuery && matchesStatus;
-    });
-  }, [promotions, query, statusFilter]);
+  // Turn to another page, or change what is searched or filtered (which starts again from the newest page).
+  function go(change: Record<string, string | null>) {
+    const next = new URLSearchParams(searchParams);
+    for (const [name, value] of Object.entries(change)) { if (value) next.set(name, value); else next.delete(name); }
+    setSearchParams(next);
+  }
+  // Typing searches after a short pause. A search is not repeated for what is already showing.
+  useEffect(() => {
+    if (query.trim() === filters.q) return;
+    const timer = setTimeout(() => go({ q: query.trim() || null, after: null, before: null }), 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+  // A new page or search starts with nothing selected, so a promotion that is no longer in view is never changed.
+  useEffect(() => { setSelected([]); }, [search]);
+  // The table's own next and previous buttons.
+  useEffect(() => {
+    const element = table.current;
+    const next = () => go({ after: pageInfo.endCursor, before: null });
+    const previous = () => go({ before: pageInfo.startCursor, after: null });
+    element?.addEventListener("nextpage", next);
+    element?.addEventListener("previouspage", previous);
+    return () => { element?.removeEventListener("nextpage", next); element?.removeEventListener("previouspage", previous); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageInfo.endCursor, pageInfo.startCursor, search]);
 
   // Only promotions that are showing can be selected, so a hidden one is never changed by mistake.
   const visibleSelected = filteredPromotions.filter(promotion => selected.includes(promotion.id));
@@ -262,7 +281,7 @@ export default function PromotionsPage() {
           )}
           {result?.syncError && <s-banner tone="warning">{result.syncError}</s-banner>}
           <s-text color="subdued">
-            Review Shopify discounts and manage their Promotion Engine settings. {promotions.length} promotion{promotions.length === 1 ? "" : "s"}
+            Review Shopify discounts and manage their Promotion Engine settings. {total !== null && total > promotions.length ? `Showing ${promotions.length} of ${total} promotions, newest first.` : `${promotions.length} promotion${promotions.length === 1 ? "" : "s"}.`}
           </s-text>
 
                     <s-section padding="none">
@@ -272,12 +291,11 @@ export default function PromotionsPage() {
                   <s-search-field label="Search promotions" labelAccessibilityVisibility="exclusive" placeholder="Search promotions" value={query} onInput={(event) => setQuery(event.currentTarget.value)} />
                 </div>
                 <div style={{ flex: "0 0 180px" }}>
-                  <PolarisSelect label="Status" labelAccessibilityVisibility="exclusive" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)}>
+                  <PolarisSelect label="Status" labelAccessibilityVisibility="exclusive" value={statusFilter} onChange={(event) => go({ status: event.currentTarget.value === "ALL" ? null : event.currentTarget.value, after: null, before: null })}>
                     <s-option value="ALL">All statuses</s-option>
-                    <s-option value="ACTIVE">Active</s-option>
-                    <s-option value="SCHEDULED">Scheduled</s-option>
-                    <s-option value="EXPIRED">Expired</s-option>
-                    <s-option value="UNKNOWN">Unknown</s-option>
+                    <s-option value="active">Active</s-option>
+                    <s-option value="scheduled">Scheduled</s-option>
+                    <s-option value="expired">Expired</s-option>
                   </PolarisSelect>
                 </div>
               </s-stack>
@@ -295,7 +313,7 @@ export default function PromotionsPage() {
                 </s-stack>
               </s-box>
             ) : (
-              <s-table>
+              <s-table ref={table} paginate hasPreviousPage={pageInfo.hasPreviousPage || undefined} hasNextPage={pageInfo.hasNextPage || undefined} loading={navigation.state === "loading" || undefined}>
                 <s-table-header-row>
                   <s-table-header><PolarisCheckbox accessibilityLabel="Select all promotions" checked={allSelected} indeterminate={visibleSelected.length > 0 && !allSelected} onChange={event => toggleAll(event.currentTarget.checked)} /></s-table-header>
                   <s-table-header>Title</s-table-header>

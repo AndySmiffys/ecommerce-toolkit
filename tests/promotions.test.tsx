@@ -15,6 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { defaultDesign, readDesign, readWebsite, websiteStorage, websiteFromSettings, validateWebsite, countdownParts, countdown, contrastRatio, presetDesign, promotionBlock, setPromotionBlock, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { buildDiscountMutation, createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
 import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
+import { discountSearch, discountsPerPage, getDiscountsByIds, getDiscountsPage, listCursor } from "../app/modules/promotions/services/discounts.server";
 import { bulkLimit, parseBulkIds, runBulkAction } from "../app/modules/promotions/services/bulkPromotions.server";
 import { resolvePromotionImage, uploadPromotionImage, withImageRatios } from "../app/modules/promotions/services/promotionAssets.server";
 import { PromotionOffer, promotionCss } from "../app/modules/promotions/components/PromotionPreview";
@@ -645,4 +646,50 @@ test("website status in bulk: Enabled needs a chosen block and no code list, ent
   assert.deepEqual(draft.done, ["gid://shopify/DiscountNode/1", "gid://shopify/DiscountNode/9"], "turning off a promotion with no website settings is already done");
   assert.equal(settings.find(item => item.id === 1)!.websiteEnabled, false);
   void noWait;
+});
+
+// ---- Paging the Promotions list ----
+test("the list search is what was typed and a status, with Shopify's search symbols removed", () => {
+  assert.equal(discountSearch("Halloween 2026", null), "Halloween 2026");
+  assert.equal(discountSearch("  Halloween   sale ", "active"), "Halloween sale status:active");
+  assert.equal(discountSearch("", "expired"), "status:expired");
+  assert.equal(discountSearch("status:active OR (title:\"x\")", null), "status active OR title x", "search symbols cannot add filters or break the query");
+  assert.equal(discountSearch("anything", "ALL"), "anything", "an unknown status is ignored");
+  assert.equal(discountSearch("x".repeat(500), null).length, 100);
+});
+test("only Shopify's own page cursors are accepted from the address bar", () => {
+  assert.equal(listCursor("eyJsYXN0X2lkIjozNzE2ODUyMjg3MTksImxhc3RfdmFsdWUiOjM3MTY4NTIyODcxOX0="), "eyJsYXN0X2lkIjozNzE2ODUyMjg3MTksImxhc3RfdmFsdWUiOjM3MTY4NTIyODcxOX0=");
+  for (const bad of [null, "", "has space", "a;b", "{\"x\":1}", "x".repeat(601)]) assert.equal(listCursor(bad), null, String(bad));
+});
+test("a page of discounts goes forward and back, is newest first, and carries the count and where the next pages start", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const nodes = [{ ...node(), id: "gid://shopify/DiscountCodeNode/9" }];
+  const admin = { graphql: async (_query: string, options?: { variables?: Record<string, unknown> }) => { requests.push(options!.variables!); return Response.json({ data: { discountNodes: { nodes, pageInfo: { hasNextPage: true, hasPreviousPage: false, startCursor: "s", endCursor: "e" } }, discountNodesCount: { count: 120, precision: "EXACT" } } }); } };
+  const first = await getDiscountsPage(admin, { query: "status:active" });
+  assert.deepEqual(requests[0], { first: discountsPerPage, after: null, query: "status:active" });
+  assert.equal(first.nodes[0].id, "gid://shopify/DiscountNode/9", "typed ids become the app's ids");
+  assert.deepEqual(first.pageInfo, { hasNextPage: true, hasPreviousPage: false, startCursor: "s", endCursor: "e" });
+  assert.equal(first.total, 120);
+  await getDiscountsPage(admin, { after: "e" });
+  assert.deepEqual(requests[1], { first: discountsPerPage, after: "e", query: null });
+  await getDiscountsPage(admin, { before: "s", after: "ignored when going back" });
+  assert.deepEqual(requests[2], { last: discountsPerPage, before: "s", query: null }, "going back asks for the page before the first one shown");
+  const empty = await getDiscountsPage({ graphql: async () => Response.json({ data: { discountNodes: { nodes: [] } } }) });
+  assert.deepEqual(empty.pageInfo, { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null });
+  assert.equal(empty.total, null);
+  await assert.rejects(getDiscountsPage({ graphql: async () => Response.json({ errors: [{ message: "Throttled" }] }) }), /Throttled/);
+});
+test("discounts are looked up by id in batches, skipping any Shopify no longer has", async () => {
+  const asked: string[][] = [];
+  const admin = { graphql: async (_query: string, options?: { variables?: Record<string, unknown> }) => {
+    const ids = options!.variables!.ids as string[];
+    asked.push(ids);
+    return Response.json({ data: { nodes: ids.map(id => id.endsWith("/7") ? null : { ...node(), id: id.replace("DiscountNode", "DiscountCodeNode") }) } });
+  } };
+  const ids = Array.from({ length: 205 }, (_, i) => `gid://shopify/DiscountNode/${i + 1}`);
+  const found = await getDiscountsByIds(admin, ids);
+  assert.deepEqual(asked.map(batch => batch.length), [100, 100, 5], "no more than 100 at a time");
+  assert.equal(found.length, 204, "a missing discount is left out");
+  assert.equal(found[0].id, "gid://shopify/DiscountNode/1");
+  assert.deepEqual(await getDiscountsByIds(admin, []), []);
 });

@@ -3,7 +3,7 @@ import db from "../../../db.server";
 import { promotionDiscountAliases, promotionDiscountId } from "../design/discountIdentity";
 import { attachPromotionSettings, getLatestPromotionSettings } from "./promotionSettings.server";
 import { getDiscount, type ShopifyAdminClient } from "./discount.server";
-import { getDiscounts } from "./discounts.server";
+import { getDiscountsByIds } from "./discounts.server";
 import { mapDiscountToPromotion, mapDiscountsToPromotions } from "../mappers/promotionMapper";
 import type { PromotionRecord } from "../models/promotion";
 import { buildPriorityList } from "../design/priorityOverview";
@@ -28,7 +28,9 @@ export async function loadPromotionPriorities(api: ShopifyAdminClient, shop: str
 
 /** Where one promotion sits in the priority order, from a single list of the shop's discounts. Null when it is not ranked. */
 export async function getPriorityPosition(api: ShopifyAdminClient, shop: string, promotionId: string, database: PrismaClient = db) {
-  const [settings, discounts] = await Promise.all([getLatestPromotionSettings(shop, database), getDiscounts(api)]);
+  const settings = await getLatestPromotionSettings(shop, database);
+  // The discounts that have saved settings, found by id: the order does not depend on how many discounts the shop has.
+  const discounts = await getDiscountsByIds(api, settings.map(row => row.shopifyDiscountId));
   const promotions = await attachPromotionSettings(shop, mapDiscountsToPromotions(discounts), database);
   const byId = new Map(promotions.map(promotion => [promotionDiscountId(promotion.id), promotion]));
   // Settings come newest first within a priority, which is how the storefront breaks ties.

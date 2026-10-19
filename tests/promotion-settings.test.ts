@@ -9,7 +9,7 @@ import { defaultDesign, readWebsite, websiteStorage, websiteFromSettings, promot
 import { promotionDiscountId } from "../app/modules/promotions/design/discountIdentity";
 import { createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
 import { getDiscount } from "../app/modules/promotions/services/discount.server";
-import { getDiscounts } from "../app/modules/promotions/services/discounts.server";
+import { getDiscountsPage } from "../app/modules/promotions/services/discounts.server";
 import { buildUpdateDiscountMutation } from "../app/modules/promotions/services/updatePromotion.server";
 import { attachPromotionSettings, priorityForSave, updatePromotionWebsiteSettings, getStorefrontPromotionSettings } from "../app/modules/promotions/services/promotionSettings.server";
 import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promotionMapper";
@@ -59,7 +59,7 @@ test("all create discount types retain every website field when reopened and lis
     assert.equal(loaded?.id, savedId);
     const [detail] = await attachPromotionSettings(shop, [mapDiscountToPromotion(loaded!)], database);
     assert.deepEqual(websiteFromSettings(detail.settings), design);
-    const listed = await getDiscounts({ graphql: async () => Response.json({ data: { discountNodes: { nodes: [rawNode] } } }) });
+    const listed = (await getDiscountsPage({ graphql: async () => Response.json({ data: { discountNodes: { nodes: [rawNode] } } }) })).nodes;
     const [listPromotion] = await attachPromotionSettings(shop, listed.map(mapDiscountToPromotion), database);
     assert.deepEqual(websiteFromSettings(listPromotion.settings), design);
     // The mapper is safe even when fed a raw Shopify response directly.
@@ -192,8 +192,12 @@ test("a promotion's position comes from the shop's ranked promotions only", asyn
   await ranked(701, 10); await ranked(702, 30); await ranked(703, 20); await ranked(704, 40); await ranked(705, 50);
   await updatePromotionWebsiteSettings(shop, "gid://shopify/DiscountNode/706", { ...websiteStorage({ ...website(), websiteEnabled: false }), priority: 60 }, database);
   const status = (id: number, value: string) => { const base = node(`gid://shopify/DiscountNode/${id}`); return { ...base, discount: { ...base.discount, status: value } }; };
-  const api = { graphql: async () => Response.json({ data: { discountNodes: { nodes: [status(701, "ACTIVE"), status(702, "SCHEDULED"), status(703, "ACTIVE"), status(704, "EXPIRED"), status(705, "ACTIVE"), status(706, "ACTIVE")] } } }) };
+  const all = [status(701, "ACTIVE"), status(702, "SCHEDULED"), status(703, "ACTIVE"), status(704, "EXPIRED"), status(705, "ACTIVE"), status(706, "ACTIVE"), status(707, "ACTIVE")];
+  const asked: string[][] = [];
+  // Shopify answers for the ids it is asked about. The shop has a seventh discount with no saved settings.
+  const api = { graphql: async (_query: string, options?: { variables?: Record<string, unknown> }) => { const ids = options!.variables!.ids as string[]; asked.push(ids); return Response.json({ data: { nodes: all.filter(item => ids.includes(item.id)) } }); } };
   assert.deepEqual(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/705", database), { position: 1, total: 4 });
+  assert.deepEqual([...asked[0]].sort(), [701, 702, 703, 704, 705, 706].map(id => `gid://shopify/DiscountNode/${id}`), "only the promotions with saved settings are looked up, however many discounts the shop has");
   assert.deepEqual(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/702", database), { position: 2, total: 4 });
   assert.deepEqual(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/701", database), { position: 4, total: 4 });
   assert.equal(await getPriorityPosition(api, shop, "gid://shopify/DiscountNode/704", database), null, "an ended promotion has no position");

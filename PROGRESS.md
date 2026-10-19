@@ -34,6 +34,7 @@ For the architecture and the rules to follow when changing the code, see `CLAUDE
 - **Header block is always square.** The preview shows each block in a realistic mock storefront and can be enlarged.
 
 ### Promotions list
+- **Paging and search:** the list shows 50 discounts a page, newest first, with Shopify doing the search (free text across fields) and the status filter. The table's own Previous and Next buttons turn the page, and the search, status and page are in the address, so a page can be reloaded or shared. The storefront data is refreshed when the plain newest page opens, not on every search or page turn. Selection is cleared when the page or search changes.
 - **Bulk actions:** tick promotions (or select all shown) and Activate or Deactivate the Shopify discounts, Enable on website or set the website to Draft, or Delete. Deleting removes the Shopify discount and the app's saved design and code batches, then republishes the storefront data. Delete and Deactivate ask first (Deactivate replaces the discount's end date with now). Up to 50 at a time; each result is reported on its own, and a failed promotion stays selected. Service: `bulkPromotions.server.ts`.
 
 ### Priority
@@ -73,7 +74,6 @@ None of the following has been seen in a real browser by the assistant, only tes
 
 ## Known limitations
 
-- The Promotions list loads the first 50 discounts from Shopify (no paging yet), so older discounts beyond that are not listed or selectable.
 
 - Arbitrary third-party themes are not guaranteed to work; badge selectors are configurable.
 - Checkout stays authoritative for geography, minimums and eligibility.
