@@ -60,7 +60,7 @@ None of the following has been seen in a real browser by the assistant, only tes
 - Production deployment and field performance.
 
 ### Housekeeping
-- **Vulnerabilities:** after `npm audit fix` and React Router 7.18.4, `npm audit` reports 45 (all high, none critical; 4 in production). The production four are the Prisma CLI chain (`deepmerge-ts` stack exhaustion when merging config), fixable only by the Prisma 6 to 7 major upgrade, which also needs `@shopify/shopify-app-session-storage-prisma` 6.x. The rest are dev tooling (codegen, ESLint, graphql-config). Not yet addressed.
+- **Vulnerabilities:** `npm audit --omit=dev` reports 0. The Prisma CLI chain (`deepmerge-ts` stack exhaustion) is cleared by an `overrides` entry forcing `deepmerge-ts` 8.0.2, so the app stays on Prisma 6. A Prisma 7 upgrade was ruled out: `@shopify/shopify-app-session-storage-prisma` (latest 11.0.1) only supports Prisma ^6.19, and Prisma 7 is now the previous release (latest is 8.0 RC). Revisit when Shopify's package supports a newer Prisma, and remove the override then. 41 high-severity advisories remain in dev tooling only (codegen, ESLint, graphql-config).
 - **Config drift:** two app configs with different app IDs (`shopify.app.toml` and `shopify.app.smiffys-promotion-engine.toml`), webhook API versions 2026-07 and 2026-10, and `app/shopify.server.ts` on July 2026. Always deploy with `--config smiffys-promotion-engine`.
 - The Shopify CLI may remove `include_config_on_deploy = true` from the real config when it deploys. Restore it if it does.
 
