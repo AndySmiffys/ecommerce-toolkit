@@ -11,7 +11,7 @@ A Shopify embedded app (React Router 7 + Prisma/SQLite, forked from the Shopify 
 - `npm run dev` — `shopify app dev` (tunnel required; storefront testing does not work with `--use-localhost` because the app proxy is called server-side by Shopify). `shopify.web.toml` predev runs `sync:promotion-ui` + `prisma generate`, and dev runs `prisma migrate deploy`.
 - `npm run build` / `npm run typecheck` (`react-router typegen && tsc --noEmit`) / `npm run lint`
 - `npm test` — runs `scripts/test-promotions.mjs`: esbuild bundles the `.ts/.tsx` tests (with a `?raw` import loader) to a temp dir, then runs everything under `node --test`. The list of test files is **hardcoded in that script** — add new test files there or they won't run. To run one test file, bundle it the same way or run a `.cjs` test directly, e.g. `node --test tests/priority-manager.test.cjs`.
-- `npm run deploy` — `shopify app deploy`; use `--config smiffys-promotion-engine` for the real app config (`shopify.app.smiffys-promotion-engine.toml`; `shopify.app.toml` is the template default).
+- `npm run deploy` — `shopify app deploy`. `shopify.app.toml` is the one app config (client ID `c8717906a421013fbf5c47e976637862`); it is the default, so no `--config` flag is needed. Its webhook `api_version` must match `ApiVersion` in `app/shopify.server.ts` (July 2026; the installed `@shopify/shopify-api` supports no newer).
 - `npm run setup` — `prisma generate && prisma migrate deploy`.
 
 ## Architecture
@@ -53,7 +53,7 @@ Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`;
 ### Environment and deployment
 - Andy's setup: Windows, Shopify CLI 4.9.2, Node v24.18.0. Update flow: `git pull --ff-only origin feature/free-shipping-support`, `npm ci`, `npm run setup`, `shopify app dev`. After committed updates, give Andy the local pull/restart command.
 - Production: `npm run setup`, `npm run build`, `npm start`. Theme extension/app config deploys separately via `shopify app deploy`; git updates never activate theme blocks or deploy production.
-- `shopify.app.toml` and `shopify.app.smiffys-promotion-engine.toml` point at **different app IDs**, so confirm the intended config before deploying. Webhook API versions differ (2026-07 vs 2026-10); `app/shopify.server.ts` uses July 2026.
+- There is one app config, `shopify.app.toml` (client ID `c8717906a421013fbf5c47e976637862`). Earlier there were two files with different app IDs; the other was a template leftover and was removed. The CLI may rewrite `shopify.app.toml` when deploying; check `git diff` afterwards.
 - `docs/promotion-designs.md` has an obsolete `--use-localhost` instruction in its free-shipping section; follow `docs/storefront-setup.md` (public tunnel).
 
 ### Key behaviours and decisions

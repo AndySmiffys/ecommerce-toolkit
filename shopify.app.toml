@@ -1,41 +1,18 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "1c8b4c771825fb6042cd30e0d5d3fcdf"
-name = "Smiffys Promotion Engine"
+client_id = "c8717906a421013fbf5c47e976637862"
 application_url = "https://example.com"
 embedded = true
+name = "Smiffys Promotion Engine"
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_shipping,read_customers,read_discounts,write_discounts,read_products,write_products,read_files,write_files,read_online_store_pages,write_app_proxy"
-optional_scopes = [ ]
-use_legacy_install_flow = false
 
-[product.metafields.app.demo_info]
-type = "single_line_text_field"
-name = "Demo Source Info"
-description = "Tracks products created by the Shopify app template for development"
-
-  [product.metafields.app.demo_info.access]
-  admin = "merchant_read_write"
-
-[metaobjects.app.example]
-name = "Example"
-description = "An example metaobject definition created by this template"
-
-  [metaobjects.app.example.access]
-  admin = "merchant_read_write"
-
-[metaobjects.app.example.fields.title]
-name = "Title"
-type = "single_line_text_field"
-required = true
-
-[metaobjects.app.example.fields.description]
-name = "Description"
-type = "multi_line_text_field"
+[auth]
+redirect_urls = [ "https://example.com/api/auth" ]
 
 [webhooks]
+# Keep in step with ApiVersion in app/shopify.server.ts (the installed @shopify/shopify-api supports up to July 2026).
 api_version = "2026-07"
 
   [[webhooks.subscriptions]]
@@ -49,9 +26,6 @@ api_version = "2026-07"
   [[webhooks.subscriptions]]
   uri = "/webhooks/discounts/changed"
   topics = [ "discounts/update", "discounts/delete", "discounts/redeemcode_added", "discounts/redeemcode_removed" ]
-
-[auth]
-redirect_urls = [ ]
 
 [build]
 include_config_on_deploy = true

@@ -61,7 +61,7 @@ None of the following has been seen in a real browser by the assistant, only tes
 
 ### Housekeeping
 - **Vulnerabilities:** `npm audit --omit=dev` reports 0. The Prisma CLI chain (`deepmerge-ts` stack exhaustion) is cleared by an `overrides` entry forcing `deepmerge-ts` 8.0.2, so the app stays on Prisma 6. A Prisma 7 upgrade was ruled out: `@shopify/shopify-app-session-storage-prisma` (latest 11.0.1) only supports Prisma ^6.19, and Prisma 7 is now the previous release (latest is 8.0 RC). Revisit when Shopify's package supports a newer Prisma, and remove the override then. 41 high-severity advisories remain in dev tooling only (codegen, ESLint, graphql-config).
-- **Config drift:** two app configs with different app IDs (`shopify.app.toml` and `shopify.app.smiffys-promotion-engine.toml`), webhook API versions 2026-07 and 2026-10, and `app/shopify.server.ts` on July 2026. Always deploy with `--config smiffys-promotion-engine`.
+- **Config:** one app config, `shopify.app.toml`, for the app with client ID `c8717906a421013fbf5c47e976637862` (confirmed by Andy). The old second file (a different app ID) was removed. Webhook API version is 2026-07, matching `app/shopify.server.ts`. Run `shopify app deploy` to apply it: it adds the `app/uninstalled` and `app/scopes_update` subscriptions the live app was missing and moves the webhooks from 2026-10 to 2026-07.
 - The Shopify CLI may remove `include_config_on_deploy = true` from the real config when it deploys. Restore it if it does.
 
 ### Platform
@@ -78,7 +78,7 @@ None of the following has been seen in a real browser by the assistant, only tes
 
 ## Deployment
 
-- The app was deployed with `shopify app deploy --config smiffys-promotion-engine` after adding the `read_online_store_pages` scope, and Pages and Blogs now list in the link picker.
+- The app was deployed with `shopify app deploy` after adding the `read_online_store_pages` scope, and Pages and Blogs now list in the link picker.
 - A git push never deploys to Shopify or activates theme blocks. Redeploy the extension for theme changes, and re-add blocks per theme.
 - Existing stores republish the storefront snapshot automatically the next time the app opens after the shared CSS changes.
 
