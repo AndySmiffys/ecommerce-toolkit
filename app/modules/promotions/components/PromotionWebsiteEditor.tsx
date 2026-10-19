@@ -243,17 +243,17 @@ function PromoDesignChoice({ value, onChange }: { value: PromotionStyle["preset"
   return <div role="group" aria-labelledby={id} data-promo-design="" style={{ display: "grid", gap: 8 }}>
     <s-text type="strong" id={id}>Collection Promo Design</s-text>
     <s-text color="subdued">Sets the image layout, banner height, heading size, spacing and corners for the Collection and Product blocks. It keeps their wording and images, and replaces any fine-tuning of those settings.</s-text>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(180px,100%),1fr))", gap: 8, minWidth: 0 }}>
       {promoDesigns.map(design => {
         const selected = design.id === value;
         const { bannerHeight, headingSize } = presetDesign(design.id, defaultDesign());
-        return <s-clickable key={design.id} accessibilityLabel={`${design.title}${selected ? ", selected" : ""}. ${design.summary}`} onClick={() => { if (!selected) onChange(design.id); }} border="none" borderRadius="base" padding="none">
-          <div style={{ border: selected ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: selected ? "#f7f7f7" : "#fff", height: "100%", textAlign: "left" }}>
+        return <div key={design.id} style={{ display: "grid", minWidth: 0 }}><s-clickable accessibilityLabel={`${design.title}${selected ? ", selected" : ""}. ${design.summary}`} onClick={() => { if (!selected) onChange(design.id); }} inlineSize="100%" blockSize="100%" border="none" borderRadius="base" padding="none">
+          <div style={{ border: selected ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: selected ? "#f7f7f7" : "#fff", textAlign: "left", overflowWrap: "anywhere" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><s-text type="strong">{design.title}</s-text>{selected && <s-badge tone="success">Selected</s-badge>}</span>
             <s-text color="subdued">{design.summary}</s-text>
             <s-text color="subdued">{bannerHeight}px banner, {headingSize}px heading</s-text>
           </div>
-        </s-clickable>;
+        </s-clickable></div>;
       })}
     </div>
   </div>;
