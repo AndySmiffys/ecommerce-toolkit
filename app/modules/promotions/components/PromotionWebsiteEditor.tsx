@@ -5,7 +5,7 @@ import { PromotionImageField } from "./PromotionImageField";
 import { LinkDestinationField } from "./LinkDestinationField";
 import { applyPalette, colourElements, customisedPaletteBlocks, hasImage, isAutomaticText, isButtonText, matchPalette, neutralColour, paletteValues, readColour, settleSurfaces, switchProductAppearance, textColourFor, white, writeColour, type ColourKey, type PaletteRole, type PaletteValues } from "../design/campaignPalette";
 import { applyCampaignPatch, campaignValue, customisedPlacements, matchCampaign, selectedCampaignPlacements, type CampaignPatch } from "../design/sharedCampaign";
-import { contrastRatio, copyLimits, placements, presetDesign, promotionBlock, setPromotionBlock, validateWebsite, type BlockVisibility, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "../design/design";
+import { contrastRatio, copyLimits, defaultDesign, placements, presetDesign, promotionBlock, setPromotionBlock, validateWebsite, type BlockVisibility, type Placement, type PromotionBlock, type PromotionStyle, type WebsiteDraft } from "../design/design";
 
 const sectionStyle = { border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", padding: 16, display: "grid", gap: 14 };
 const helpStyle = { color: "#616161", fontSize: 12, lineHeight: 1.5 };
@@ -231,6 +231,34 @@ function CampaignColours({ value, onChange, onMatch, onOverride }: { value: Webs
   </section>;
 }
 
+const promoDesigns: Array<{ id: PromotionStyle["preset"]; title: string; summary: string }> = [
+  { id: "simple", title: "Simple offer", summary: "The image sits beside the wording. A balanced banner that suits most promotions." },
+  { id: "campaign", title: "Image campaign", summary: "The image fills the background behind the wording. A tall banner with a larger heading for big campaigns." },
+  { id: "compact", title: "Compact offer", summary: "A short banner with a smaller heading and the image beside it. Best where space is tight." },
+];
+
+/** The preset as selectable cards, matching the block cards above, so each layout and what it does is visible. */
+function PromoDesignChoice({ value, onChange }: { value: PromotionStyle["preset"]; onChange: (preset: PromotionStyle["preset"]) => void }) {
+  const id = useId();
+  return <div role="group" aria-labelledby={id} data-promo-design="" style={{ display: "grid", gap: 8 }}>
+    <s-text type="strong" id={id}>Collection Promo Design</s-text>
+    <s-text color="subdued">Sets the image layout, banner height, heading size, spacing and corners for the Collection and Product blocks. It keeps their wording and images, and replaces any fine-tuning of those settings.</s-text>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8 }}>
+      {promoDesigns.map(design => {
+        const selected = design.id === value;
+        const { bannerHeight, headingSize } = presetDesign(design.id, defaultDesign());
+        return <s-clickable key={design.id} accessibilityLabel={`${design.title}${selected ? ", selected" : ""}. ${design.summary}`} onClick={() => { if (!selected) onChange(design.id); }} border="none" borderRadius="base" padding="none">
+          <div style={{ border: selected ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: selected ? "#f7f7f7" : "#fff", height: "100%", textAlign: "left" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><s-text type="strong">{design.title}</s-text>{selected && <s-badge tone="success">Selected</s-badge>}</span>
+            <s-text color="subdued">{design.summary}</s-text>
+            <s-text color="subdued">{bannerHeight}px banner, {headingSize}px heading</s-text>
+          </div>
+        </s-clickable>;
+      })}
+    </div>
+  </div>;
+}
+
 function CampaignEditor({ value, onChange, onPreset, onMatch, onBusy }: { value: WebsiteDraft; onChange: (patch: CampaignPatch) => void; onPreset: (preset: PromotionStyle["preset"]) => void; onMatch: (placement: Placement) => void; onBusy: (busy: boolean) => void }) {
   const [busy, setBusy] = useState({ desktop: false, mobile: false });
   const busyRef = useRef(onBusy); busyRef.current = onBusy;
@@ -255,7 +283,7 @@ function CampaignEditor({ value, onChange, onPreset, onMatch, onBusy }: { value:
       <TextField label="Countdown label" value={text("countdownText")} maxLength={copyLimits.countdownText} details="Needs an end date in Schedule." onChange={next => onChange({ countdownText: next })} />
     </ControlGroup>
     {showImages && <ControlGroup title="Images" description="Used by the Collection and Product blocks. Mobile uses the desktop image if left blank.">
-      <PolarisSelect label="Design preset" details="Sets the image layout, height, heading size, spacing and corners for the Collection and Product blocks. It keeps their wording and images." value={preset} onChange={event => onPreset(event.currentTarget.value as PromotionStyle["preset"])}><s-option value="simple">Simple offer</s-option><s-option value="campaign">Image campaign</s-option><s-option value="compact">Compact offer</s-option></PolarisSelect>
+      <PromoDesignChoice value={preset} onChange={onPreset} />
       <PromotionImageField label="Desktop image" url={style("desktopImage")} fileId={style("desktopImageId")} onBusy={next => setBusy(current => ({ ...current, desktop: next }))} onChange={image => onChange({ style: { desktopImage: image?.url ?? "", desktopImageId: image?.id ?? "" } })} />
       <PromotionImageField label="Mobile image" url={style("mobileImage")} fileId={style("mobileImageId")} onBusy={next => setBusy(current => ({ ...current, mobile: next }))} onChange={image => onChange({ style: { mobileImage: image?.url ?? "", mobileImageId: image?.id ?? "" } })} />
       <TextField label="Image description (alt text)" value={style("imageAlt")} maxLength={250} details="Describe the image for shoppers using screen readers." onChange={next => onChange({ style: { imageAlt: next } })} />

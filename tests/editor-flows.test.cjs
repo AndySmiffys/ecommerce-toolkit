@@ -276,13 +276,19 @@ test('the design preset sits with the campaign images, and the focal point is se
   const { PromotionEditor, placeholderDraft, defaultDesign } = await loaded();
   const design = { ...defaultDesign(), desktopImage: 'https://cdn.example.com/hero.jpg', imageLayout: 'half-right', focalX: 50, focalY: 50 };
   const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialWebsite: site(() => design, { showCollectionPage: true, showProductPage: true }) }, '/app/promotions/new');
-  const presets = findAll(view.container, 's-select[label="Design preset"]');
-  assert.equal(presets.length, 1, 'one preset control, not one per block');
-  assert.ok(presets[0].closest('section[aria-label="Campaign content and style"]'), 'it is in the campaign content and style section');
+  const groups = findAll(view.container, '[data-promo-design]');
+  assert.equal(groups.length, 1, 'one preset control, not one per block');
+  assert.ok(groups[0].closest('section[aria-label="Campaign content and style"]'), 'it is in the campaign content and style section');
+  assert.match(groups[0].textContent, /Collection Promo Design/);
+  const cards = findAll(groups[0], 's-clickable');
+  assert.equal(cards.length, 3, 'each design is a card');
+  assert.match(cards[0].textContent, /Simple offer.*Selected/);
+  assert.match(cards[1].textContent, /Image campaign.*background/);
   assert.equal(find(view.container, 'input[aria-label="Image overlay"]'), null, 'the dark image overlay is gone');
   assert.equal(find(view.container, 'input[aria-label="Horizontal focal point"]'), null, 'the focal point sliders are gone');
 
-  await change(presets[0], 'campaign');
+  await click(cards[1]);
+  assert.match(findAll(view.container, '[data-promo-design] s-clickable')[1].textContent, /Selected/);
   await click(saveButton(view));
   await settle(100);
   const [request] = view.requests.filter(item => item.intent === 'updatePromotion');
