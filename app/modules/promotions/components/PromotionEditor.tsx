@@ -256,6 +256,7 @@ top: "20px",
 maxHeight: "calc(100vh - 40px)",
 overflowY: "auto",
 scrollbarGutter: "stable",
+padding: "3px",
 alignSelf: "start",
 }}
 >
