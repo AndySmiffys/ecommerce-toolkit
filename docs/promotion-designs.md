@@ -96,7 +96,7 @@ Shopify's discount queries can return `DiscountCodeNode` or `DiscountAutomaticNo
 
 Website settings reads also recognise older typed-ID keys within the same shop and discount method. If both forms were previously saved, the most recently updated settings are used. New edits write the canonical key. No database migration is required for this compatibility lookup; designs already stored under either format can be recovered without re-entering them.
 
-Persistence tests create each of the eight supported code/automatic discount types, save every website and design attribute to SQLite, then reload through the detail and listing services using realistic Shopify IDs. They cover images and file IDs, shared and placement text, colours, borders, copy-code controls, layout, countdown, publication flags and priority, as well as legacy records and shop isolation.
+Persistence tests create each of the eight supported code/automatic discount types, save every website and design attribute to PostgreSQL, then reload through the detail and listing services using realistic Shopify IDs. They cover images and file IDs, shared and placement text, colours, borders, copy-code controls, layout, countdown, publication flags and priority, as well as legacy records and shop isolation.
 
 
 ## Independent block settings and element visibility

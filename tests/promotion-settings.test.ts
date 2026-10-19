@@ -1,10 +1,7 @@
 import { getPriorityPosition, loadPromotionPriorities, savePromotionPriorities } from "../app/modules/promotions/services/promotionPriorities.server";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { PrismaClient } from "@prisma/client";
+import { withDatabase } from "./helpers/database";
 import { defaultDesign, readWebsite, websiteStorage, websiteFromSettings, promotionBlock, setPromotionBlock, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { promotionDiscountId } from "../app/modules/promotions/design/discountIdentity";
 import { createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
@@ -35,17 +32,6 @@ function draft(): CreateDiscountDraft {
 function node(id: string, method: "code" | "automatic" = "code"): ShopifyDiscountNode {
   return { id, events: { nodes: [] }, discount: { __typename: method === "code" ? "DiscountCodeBasic" : "DiscountAutomaticBasic", title: "Test offer", status: "ACTIVE", startsAt: "2026-10-01T00:00:00Z", endsAt: "2026-10-31T23:59:00Z", discountClasses: ["ORDER"], codes: method === "code" ? { nodes: [{ code: "TEST20" }] } : undefined, context: { __typename: "DiscountBuyerSelectionAll", all: "ALL" }, customerGets: { value: { __typename: "DiscountPercentage", percentage: .2 }, items: { __typename: "AllDiscountItems", allItems: true } } } };
 }
-async function withDatabase(run: (database: PrismaClient) => Promise<void>) {
-  const directory = mkdtempSync(join(tmpdir(), "promotion-settings-"));
-  const database = new PrismaClient({ datasources: { db: { url: `file:${join(directory, "settings.sqlite")}` } } });
-  try {
-    for (const path of ["prisma/migrations/20260722120204_add_promotion_settings/migration.sql", "prisma/migrations/20261008093000_promotion_design/migration.sql"]) {
-      for (const statement of readFileSync(path, "utf8").split(";").filter(s => s.trim())) await database.$executeRawUnsafe(statement);
-    }
-    await run(database);
-  } finally { await database.$disconnect(); rmSync(directory, { recursive: true, force: true }); }
-}
-
 test("all create discount types retain every website field when reopened and listed with Shopify typed IDs", async () => withDatabase(async database => {
   let sequence = 100;
   for (const method of ["code", "automatic"] as const) for (const discountType of ["product", "order", "bxgy", "shipping"] as const) {
@@ -98,7 +84,7 @@ test("reopened code and automatic discounts still build valid native updates", a
 });
 
 
-test("independent block controls survive SQLite save, reopen and a second edit", async () => withDatabase(async database => {
+test("independent block controls survive a database save, reopen and a second edit", async () => withDatabase(async database => {
   let value = website();
   for (const placement of ["header", "collection", "product", "badge"] as const) {
     const block = promotionBlock(value, placement);

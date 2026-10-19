@@ -1,9 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { PrismaClient } from "@prisma/client";
 import { generateDiscountCodes, addDiscountCodeChunk, codeGraphql } from "../app/modules/promotions/services/discountCodes.server";
 import { createPromotionCodeBatch, advancePromotionCodeBatch, getPromotionCodeBatch } from "../app/modules/promotions/services/promotionCodeBatches.server";
 import { buildDiscountMutation, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
@@ -11,19 +7,11 @@ import { validateCodeOptions, normalizeSharedCode, codesCsv } from "../app/modul
 import { defaultDesign, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { getDiscountCode, type ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
 import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
+import { withDatabase } from "./helpers/database";
 
 const shop = "test.myshopify.com";
 const discount = (): CreateDiscountDraft => ({ codeMode: "bulk", codeCount: "10000", codePrefix: "HALLOWEEN-", codeSuffix: "-2026", codeListTitle: "Halloween codes", discountType: "order", method: "code", discountCode: "", automaticTitle: "", valueType: "percentage", discountValue: "20", appliesTo: "collections", selectedProducts: [], selectedCollections: [], buyRequirement: "quantity", buyQuantity: "1", buyAmount: "", buyAppliesTo: "products", buySelection: [], getQuantity: "1", getAppliesTo: "products", getSelection: [], rewardType: "free", rewardValue: "", maxUsesPerOrder: false, usesPerOrder: "1", minimumRequirement: "none", minimumPurchaseAmount: "", minimumQuantity: "", limitTotalUses: true, totalUsageLimit: "1", limitOncePerCustomer: false, combineProductDiscounts: false, combineOrderDiscounts: false, combineShippingDiscounts: false, productCombinationMode: "best", selectedCombinationTags: [], startsAt: "2026-10-08T12:00:00Z", endsAt: null, eligibility: "all", selectedEligibility: [], countries: [], maximumShippingPrice: "" });
 const website = (): WebsiteDraft => ({ websiteEnabled: false, showProductPage: false, showCollectionPage: false, showProductBadge: false, showCountdown: false, showHeaderBanner: false, headline: "", body: "", badgeText: "", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#202223", badgeColour: "#d72c0d", priority: 0, design: defaultDesign() });
-async function withDatabase(run: (database: PrismaClient) => Promise<void>) {
-  const directory = mkdtempSync(join(tmpdir(), "promotion-codes-"));
-  const database = new PrismaClient({ datasources: { db: { url: `file:${join(directory, "codes.sqlite")}` } } });
-  try {
-    const migration = readFileSync("prisma/migrations/20261008153000_promotion_code_batches/migration.sql", "utf8");
-    for (const statement of migration.split(";").filter(s => s.trim())) await database.$executeRawUnsafe(statement);
-    await run(database);
-  } finally { await database.$disconnect(); rmSync(directory, { recursive: true, force: true }); }
-}
 function shopifySimulator() {
   const codes = new Set<string>();
   const chunks: string[][] = [];
