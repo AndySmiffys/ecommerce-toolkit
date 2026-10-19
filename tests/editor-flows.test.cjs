@@ -294,8 +294,18 @@ test('the design preset sits with the campaign images, and the focal point is se
   const [request] = view.requests.filter(item => item.intent === 'updatePromotion');
   for (const id of ['collection', 'product']) assert.equal(request.payload.website.design.blocks[id].style.imageLayout, 'full', `${id} takes the preset's layout`);
 
-  const open = byText(view.container, 's-button', 'Set focal point');
-  await click(open);
+  assert.equal(find(view.container, 'input[aria-label="Image overlay"]'), null);
+  const blocks = findAll(view.container, 'details[data-promotion-block]');
+  assert.ok(blocks.length >= 2);
+  for (const block of blocks) {
+    assert.equal(findAll(block, 's-clickable[accessibilityLabel*="image"]').length, 0, 'no image boxes in the fine-tune sections');
+    assert.equal(find(block, 's-text-field[label="Image description (alt text)"]'), null, 'no alt text in the fine-tune sections');
+    assert.ok(!byText(block, 's-button', 'Set focal point'), 'no focal point in the fine-tune sections');
+  }
+  const desktop = find(view.container, 's-clickable[accessibilityLabel="Edit desktop image: focal point and alt text"]');
+  assert.ok(desktop, 'once an image is chosen, clicking it edits it');
+  assert.ok(byText(view.container, 's-button', 'Change image') && byText(view.container, 's-button', 'Edit alt text') && byText(view.container, 's-button', 'Remove image'), 'the image menu offers change, alt text and remove');
+  await click(desktop);
   await settle(50);
   const surface = find(document.body, '[role="button"][aria-label^="Focal point"]');
   assert.ok(surface, 'the modal shows the image to click');
@@ -303,9 +313,18 @@ test('the design preset sits with the campaign images, and the focal point is se
   for (const key of ['ArrowRight', 'ArrowRight', 'ArrowDown']) surface.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true }));
   await settle(50);
   assert.match(find(document.body, '[role="button"][aria-label^="Focal point"]').getAttribute('aria-label'), /52% across and 51% down/);
+  await type(find(document.body, 's-text-field[label="Image description (alt text)"]'), 'A family in costumes');
   await click(byText(document.body, 's-button', 'Apply'));
   await settle(50);
-  assert.match(view.container.textContent, /Currently 52% across and 51% down/);
+  await click(saveButton(view));
+  await settle(100);
+  const saved = view.requests.filter(item => item.intent === 'updatePromotion').pop();
+  for (const id of ['collection', 'product']) {
+    const style = saved.payload.website.design.blocks[id].style;
+    assert.equal(style.focalX, 52, `${id} takes the focal point`);
+    assert.equal(style.focalY, 51);
+    assert.equal(style.imageAlt, 'A family in costumes', `${id} takes the alt text`);
+  }
   await view.unmount();
 });
 
