@@ -111,12 +111,6 @@ Using npm:
 npm run build
 ```
 
-Using pnpm:
-
-```shell
-pnpm run build
-```
-
 ## Hosting
 
 When you're ready to set up your app in production, you can follow [our deployment documentation](https://shopify.dev/docs/apps/launch/deployment) to host it externally. From there, you have a few options:
