@@ -59,7 +59,7 @@ const wait = (ms = 30) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function loadEditor() {
   const result = await build({
-    stdin: { contents: "export { PromotionEditor } from './app/modules/promotions/components/PromotionEditor'; export { placeholderDraft } from './app/modules/promotions/design/stepValidation'; export { defaultDesign } from './app/modules/promotions/design/design';", resolveDir: process.cwd(), loader: 'ts', sourcefile: 'entry.ts' },
+    stdin: { contents: "export { PromotionEditor } from './app/modules/promotions/components/PromotionEditor'; export { PromotionBulkBar } from './app/modules/promotions/components/PromotionBulkBar'; export { placeholderDraft } from './app/modules/promotions/design/stepValidation'; export { defaultDesign } from './app/modules/promotions/design/design';", resolveDir: process.cwd(), loader: 'ts', sourcefile: 'entry.ts' },
     bundle: true, platform: 'node', format: 'cjs', packages: 'external', jsx: 'automatic', write: false, plugins: [rawPlugin],
   });
   const compiled = new Module(__filename); compiled.paths = module.paths;

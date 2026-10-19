@@ -451,3 +451,37 @@ test('a generated code list keeps the website status locked to Draft', async () 
   assert.match(select().getAttribute('details'), /Code lists stay in Draft/);
   await view.unmount();
 });
+
+test('the list bulk bar changes statuses at once, and asks before deleting or deactivating', async () => {
+  const { PromotionBulkBar } = await loaded();
+  const actions = [];
+  const view = await mount(PromotionBulkBar, { titles: ['Halloween', 'Spring', 'Free delivery'], busy: false, onAction: intent => actions.push(intent), onClear: () => actions.push('clear') }, '/app/promotions/new');
+  try {
+    assert.match(view.container.textContent, /3 selected/);
+    for (const label of ['Activate', 'Enable on website', 'Set website to Draft']) await click(byText(view.container, 's-button', label));
+    assert.deepEqual(actions, ['activate', 'website-enable', 'website-draft'], 'these run straight away');
+    await click(byText(view.container, 's-button', 'Delete'));
+    await settle(50);
+    const modal = find(view.container, 's-modal');
+    assert.equal(modal.getAttribute('heading'), 'Delete 3 promotions?');
+    assert.match(modal.textContent, /permanently deletes the discount in Shopify/);
+    assert.match(modal.textContent, /Halloween/);
+    assert.match(modal.textContent, /Free delivery/);
+    assert.equal(actions.length, 3, 'nothing is deleted until it is confirmed');
+    await click(byText(modal, 's-button', 'Cancel'));
+    await settle(50);
+    assert.equal(actions.length, 3, 'cancelling deletes nothing');
+    await click(byText(view.container, 's-button', 'Delete'));
+    await settle(50);
+    await click(byText(find(view.container, 's-modal'), 's-button', 'Delete 3 promotions'));
+    assert.equal(actions.at(-1), 'delete');
+    await click(byText(view.container, 's-button', 'Deactivate'));
+    await settle(50);
+    assert.equal(find(view.container, 's-modal').getAttribute('heading'), 'Deactivate 3 discounts?');
+    assert.match(find(view.container, 's-modal').textContent, /replaces its end date with now/);
+    await click(byText(find(view.container, 's-modal'), 's-button', 'Deactivate 3 discounts'));
+    assert.equal(actions.at(-1), 'deactivate');
+    await click(byText(view.container, 's-button', 'Clear selection'));
+    assert.equal(actions.at(-1), 'clear');
+  } finally { await view.unmount(); }
+});

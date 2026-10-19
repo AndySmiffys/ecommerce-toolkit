@@ -1,12 +1,15 @@
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { useEmbeddedAppUrl } from "../modules/navigation/embeddedAppUrl";
-import { useMemo, useState } from "react";
-import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 
 import { authenticate } from "../shopify.server";
 import { getStatusTone } from "../modules/promotions/design/statusTone";
-import { PolarisSelect } from "../modules/promotions/components/PolarisControls";
+import { PolarisCheckbox, PolarisSelect } from "../modules/promotions/components/PolarisControls";
+import { PromotionBulkBar } from "../modules/promotions/components/PromotionBulkBar";
+import { bulkIntents, parseBulkIds, runBulkAction, type BulkIntent } from "../modules/promotions/services/bulkPromotions.server";
 import { getDiscounts } from "../modules/promotions/services/discounts.server";
 import { mapDiscountsToPromotions } from "../modules/promotions/mappers/promotionMapper";
 import { attachPromotionSettings } from "../modules/promotions/services/promotionSettings.server";
@@ -24,6 +27,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let syncError: string | null = null;
   try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `Promotions loaded, but storefront sync failed: ${error instanceof Error ? error.message : "Please retry."}`; }
   return { promotions, syncError };
+}
+
+// Bulk changes from the list: Shopify discount status, website status, and deleting. See bulkPromotions.server.ts.
+export async function action({ request }: ActionFunctionArgs) {
+  const { admin, session } = await authenticate.admin(request);
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
+  if (!(bulkIntents as readonly string[]).includes(intent)) return { intent, error: "That action is not available.", done: [] as string[], failed: [] as Array<{ id: string; message: string }>, syncError: null as string | null };
+  let ids: string[];
+  try { ids = parseBulkIds(form.get("ids")); }
+  catch (error) { return { intent, error: error instanceof Error ? error.message : "Select at least one promotion.", done: [] as string[], failed: [] as Array<{ id: string; message: string }>, syncError: null as string | null }; }
+  const outcome = await runBulkAction(admin, session.shop, intent as BulkIntent, ids);
+  let syncError: string | null = null;
+  // The storefront data follows whatever changed.
+  if (outcome.done.length) { try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `The change was made, but storefront sync failed: ${error instanceof Error ? error.message : "Please reopen the app to retry."}`; } }
+  return { intent, error: null as string | null, ...outcome, syncError };
 }
 
 function getPromotionValue(promotion: PromotionRecord): string {
@@ -177,6 +196,10 @@ export default function PromotionsPage() {
   const { promotions, syncError } = useLoaderData<typeof loader>();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const shopify = useAppBridge();
+  const fetcher = useFetcher<typeof action>();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [dismissed, setDismissed] = useState<unknown>(null);
 
   const filteredPromotions = useMemo(() => {
     const normalisedQuery = query.trim().toLowerCase();
@@ -197,6 +220,29 @@ export default function PromotionsPage() {
     });
   }, [promotions, query, statusFilter]);
 
+  // Only promotions that are showing can be selected, so a hidden one is never changed by mistake.
+  const visibleSelected = filteredPromotions.filter(promotion => selected.includes(promotion.id));
+  const allSelected = filteredPromotions.length > 0 && visibleSelected.length === filteredPromotions.length;
+  const titleOf = (id: string) => promotions.find(promotion => promotion.id === id)?.shopify.general.title ?? "A promotion";
+  const working = fetcher.state !== "idle";
+  const result = fetcher.data && fetcher.data !== dismissed ? fetcher.data : null;
+  function toggle(id: string, on: boolean) { setDismissed(fetcher.data); setSelected(current => on ? [...new Set([...current, id])] : current.filter(item => item !== id)); }
+  function toggleAll(on: boolean) { setDismissed(fetcher.data); setSelected(current => on ? [...new Set([...current, ...filteredPromotions.map(promotion => promotion.id)])] : current.filter(id => !filteredPromotions.some(promotion => promotion.id === id))); }
+  function run(intent: BulkIntent) {
+    if (working) return;
+    setDismissed(null);
+    fetcher.submit({ intent, ids: JSON.stringify(visibleSelected.map(promotion => promotion.id)) }, { method: "post" });
+  }
+  // When a change finishes: confirm it, and stop selecting what was changed. A promotion that failed stays selected.
+  useEffect(() => {
+    const data = fetcher.data;
+    if (fetcher.state !== "idle" || !data || !data.done.length) return;
+    setSelected(current => current.filter(id => !data.done.includes(id)));
+    const count = data.done.length;
+    const what = data.intent === "delete" ? "deleted" : data.intent === "activate" ? "activated" : data.intent === "deactivate" ? "deactivated" : data.intent === "website-enable" ? "enabled on the website" : "set to Draft on the website";
+    shopify.toast.show(`${count} promotion${count === 1 ? "" : "s"} ${what}`);
+  }, [fetcher.data, fetcher.state, shopify]);
+
   return (
     <s-page heading="Promotions" inlineSize="large">
       <s-button slot="primary-action" variant="primary" commandFor="create-discount-modal" command="--show">
@@ -208,6 +254,13 @@ export default function PromotionsPage() {
       <div style={{ width: "100%" }}>
         <s-stack direction="block" gap="large">
           {syncError && <s-banner tone="warning">{syncError}</s-banner>}
+          {result?.error && <s-banner tone="critical" heading="Nothing was changed">{result.error}</s-banner>}
+          {result && result.failed.length > 0 && (
+            <s-banner tone="critical" heading={`${result.failed.length} promotion${result.failed.length === 1 ? "" : "s"} could not be changed`}>
+              <s-unordered-list>{result.failed.map(item => <s-list-item key={item.id}>{titleOf(item.id)}: {item.message}</s-list-item>)}</s-unordered-list>
+            </s-banner>
+          )}
+          {result?.syncError && <s-banner tone="warning">{result.syncError}</s-banner>}
           <s-text color="subdued">
             Review Shopify discounts and manage their Promotion Engine settings. {promotions.length} promotion{promotions.length === 1 ? "" : "s"}
           </s-text>
@@ -230,6 +283,10 @@ export default function PromotionsPage() {
               </s-stack>
             </s-box>
 
+            {visibleSelected.length > 0 && (
+              <PromotionBulkBar titles={visibleSelected.map(promotion => promotion.shopify.general.title)} busy={working} onAction={run} onClear={() => { setDismissed(fetcher.data); setSelected([]); }} />
+            )}
+
             {filteredPromotions.length === 0 ? (
               <s-box padding="large">
                 <s-stack direction="block" gap="small-300" alignItems="center">
@@ -240,6 +297,7 @@ export default function PromotionsPage() {
             ) : (
               <s-table>
                 <s-table-header-row>
+                  <s-table-header><PolarisCheckbox accessibilityLabel="Select all promotions" checked={allSelected} indeterminate={visibleSelected.length > 0 && !allSelected} onChange={event => toggleAll(event.currentTarget.checked)} /></s-table-header>
                   <s-table-header>Title</s-table-header>
                   <s-table-header>Status</s-table-header>
                   <s-table-header>Method</s-table-header>
@@ -257,6 +315,7 @@ export default function PromotionsPage() {
                     const summaryLines = getSummaryLines(general.summary);
                     return (
                       <s-table-row key={promotion.id}>
+                        <s-table-cell><PolarisCheckbox accessibilityLabel={`Select ${general.title}`} checked={selected.includes(promotion.id)} onChange={event => toggle(promotion.id, event.currentTarget.checked)} /></s-table-cell>
                         <s-table-cell>
                           <s-stack direction="inline" gap="base" alignItems="center">
                             <DiscountTypeIcon type={getPromotionIconType(promotion)} size={20} />

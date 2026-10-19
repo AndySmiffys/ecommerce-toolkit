@@ -15,6 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { defaultDesign, readDesign, readWebsite, websiteStorage, websiteFromSettings, validateWebsite, countdownParts, countdown, contrastRatio, presetDesign, promotionBlock, setPromotionBlock, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { buildDiscountMutation, createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
 import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
+import { bulkLimit, parseBulkIds, runBulkAction } from "../app/modules/promotions/services/bulkPromotions.server";
 import { resolvePromotionImage, uploadPromotionImage, withImageRatios } from "../app/modules/promotions/services/promotionAssets.server";
 import { PromotionOffer, promotionCss } from "../app/modules/promotions/components/PromotionPreview";
 import { matchesStorefront, type StorefrontContext } from "../app/modules/promotions/services/storefrontEligibility.server";
@@ -542,4 +543,106 @@ test("the priority list ranks only promotions that can appear, highest priority 
   targeted.shopify.products = { ...targeted.shopify.products, allProducts: false, collections: [], products: [{ id: "gid://shopify/Product/1", title: "Test" }] };
   const [row] = buildPriorityList([targeted]).rows;
   assert.match(row.warning!, /targets collections/);
+});
+
+// ---- Bulk actions on the Promotions list ----
+type FakeRow = { id: number; shop: string; shopifyDiscountId: string; priority: number; websiteEnabled: boolean; showHeaderBanner: boolean; showCollectionPage: boolean; showProductPage: boolean; showProductBadge: boolean; updatedAt: Date };
+const row = (id: number, discountNumber: number, change: Partial<FakeRow> = {}): FakeRow => ({ id, shop: "a.myshopify.com", shopifyDiscountId: `gid://shopify/DiscountNode/${discountNumber}`, priority: 0, websiteEnabled: false, showHeaderBanner: true, showCollectionPage: false, showProductPage: false, showProductBadge: false, updatedAt: new Date(id), ...change });
+/** An in-memory stand-in for the tables the bulk actions touch. */
+function fakeDatabase(settings: FakeRow[], batches: Array<{ shop: string; shopifyDiscountId: string | null }> = []) {
+  const wanted = (where: { shop?: string; shopifyDiscountId?: string | { in: string[] } }, item: { shop: string; shopifyDiscountId: string | null }) =>
+    (where.shop === undefined || item.shop === where.shop) && (where.shopifyDiscountId === undefined || (typeof where.shopifyDiscountId === "string" ? item.shopifyDiscountId === where.shopifyDiscountId : where.shopifyDiscountId.in.includes(item.shopifyDiscountId!)));
+  const database = {
+    promotionSettings: {
+      findMany: async ({ where }: { where: never }) => settings.filter(item => wanted(where, item)),
+      deleteMany: async ({ where }: { where: never }) => { const gone = settings.filter(item => wanted(where, item)); for (const item of gone) settings.splice(settings.indexOf(item), 1); return { count: gone.length }; },
+      updateMany: async ({ where, data }: { where: never; data: Partial<FakeRow> }) => { const hit = settings.filter(item => wanted(where, item)); for (const item of hit) Object.assign(item, data); return { count: hit.length }; },
+    },
+    promotionCodeBatch: {
+      deleteMany: async ({ where }: { where: never }) => { const gone = batches.filter(item => wanted(where, item)); for (const item of gone) batches.splice(batches.indexOf(item), 1); return { count: gone.length }; },
+      findFirst: async ({ where }: { where: never }) => batches.find(item => wanted(where, item)) ?? null,
+    },
+  };
+  return { database: database as never, settings, batches };
+}
+/** A stand-in for Shopify: which discounts exist and what kind they are, which mutations it was asked for, and which ones it refuses. */
+function fakeShopify(kinds: Record<string, string>, refuse: Record<string, string> = {}, codes: Record<string, number> = {}) {
+  const calls: Array<{ name: string; id: string }> = [];
+  let throttle = 0;
+  const admin = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
+    const id = String(options?.variables?.id);
+    const number = id.split("/").pop()!;
+    if (query.includes("PromotionKind")) return Response.json({ data: { discountNode: kinds[number] ? { discount: { __typename: kinds[number] } } : null } });
+    if (query.includes("GetDiscount")) return Response.json({ data: { discountNode: kinds[number] ? { id, events: { nodes: [] }, discount: { __typename: kinds[number], title: "x", status: "ACTIVE", startsAt: "2026-10-01T00:00:00Z", endsAt: null, codesCount: { count: codes[number] ?? 1 }, codes: { nodes: [{ code: "A" }] } } } : null } });
+    const name = /(discount\w+)\(id/.exec(query)![1];
+    if (throttle > 0) { throttle--; return Response.json({ errors: [{ message: "Throttled", extensions: { code: "THROTTLED" } }] }); }
+    calls.push({ name, id });
+    return Response.json({ data: { [name]: { userErrors: refuse[number] ? [{ field: ["id"], message: refuse[number] }] : [] } } });
+  } };
+  return { admin, calls, throttleNext: (times: number) => { throttle = times; } };
+}
+const noWait = async () => {};
+
+test("bulk requests are checked: only discount ids, up to the limit, none repeated", () => {
+  assert.deepEqual(parseBulkIds(JSON.stringify(["gid://shopify/DiscountCodeNode/1", "gid://shopify/DiscountNode/1", "gid://shopify/DiscountAutomaticNode/2"])), ["gid://shopify/DiscountNode/1", "gid://shopify/DiscountNode/2"], "typed ids become the app's ids, and a repeat is dropped");
+  for (const bad of ["", "[]", "not json", JSON.stringify(["gid://shopify/Product/1"]), JSON.stringify([5]), JSON.stringify({ id: "gid://shopify/DiscountNode/1" }), JSON.stringify(["gid://shopify/DiscountNode/1; drop"])]) assert.throws(() => parseBulkIds(bad), /Select|not valid/, bad);
+  assert.throws(() => parseBulkIds(JSON.stringify(Array.from({ length: bulkLimit + 1 }, (_, i) => `gid://shopify/DiscountNode/${i + 1}`))), /up to 50/);
+});
+test("deleting removes the Shopify discount and what the app saved, keeps both when Shopify refuses, and tidies a discount that is already gone", async () => {
+  const { database, settings, batches } = fakeDatabase([row(1, 1), row(2, 2), row(3, 3), row(4, 4), row(5, 1, { shop: "b.myshopify.com" })], [{ shop: "a.myshopify.com", shopifyDiscountId: "gid://shopify/DiscountNode/1" }, { shop: "a.myshopify.com", shopifyDiscountId: "gid://shopify/DiscountNode/3" }]);
+  const shopify = fakeShopify({ "1": "DiscountCodeBasic", "2": "DiscountAutomaticBxgy", "3": "DiscountCodeFreeShipping" }, { "3": "Discount is in use" });
+  const result = await runBulkAction(shopify.admin, "a.myshopify.com", "delete", parseBulkIds(JSON.stringify(["gid://shopify/DiscountNode/1", "gid://shopify/DiscountNode/2", "gid://shopify/DiscountNode/3", "gid://shopify/DiscountNode/4"])), database);
+  assert.deepEqual(shopify.calls, [
+    { name: "discountCodeDelete", id: "gid://shopify/DiscountCodeNode/1" },
+    { name: "discountAutomaticDelete", id: "gid://shopify/DiscountAutomaticNode/2" },
+    { name: "discountCodeDelete", id: "gid://shopify/DiscountCodeNode/3" },
+  ], "each kind is deleted with its own mutation and typed id; a missing discount is not sent");
+  assert.deepEqual(result.done, ["gid://shopify/DiscountNode/1", "gid://shopify/DiscountNode/2", "gid://shopify/DiscountNode/4"]);
+  assert.deepEqual(result.failed, [{ id: "gid://shopify/DiscountNode/3", message: "Discount is in use" }]);
+  assert.deepEqual(settings.map(item => `${item.shop}:${item.shopifyDiscountId.split("/").pop()}`), ["a.myshopify.com:3", "b.myshopify.com:1"], "only the deleted promotions' designs go, and never another shop's");
+  assert.deepEqual(batches.map(item => item.shopifyDiscountId), ["gid://shopify/DiscountNode/3"], "code batches go with their discount");
+});
+test("activating and deactivating call Shopify for each discount and report a discount that no longer exists", async () => {
+  const { database } = fakeDatabase([]);
+  const shopify = fakeShopify({ "1": "DiscountCodeBasic", "2": "DiscountAutomaticBasic" });
+  const ids = ["gid://shopify/DiscountNode/1", "gid://shopify/DiscountNode/2", "gid://shopify/DiscountNode/9"];
+  const activated = await runBulkAction(shopify.admin, "a.myshopify.com", "activate", ids, database);
+  assert.deepEqual(shopify.calls.map(call => call.name), ["discountCodeActivate", "discountAutomaticActivate"]);
+  assert.equal(activated.done.length, 2);
+  assert.match(activated.failed[0].message, /no longer exists/);
+  await runBulkAction(shopify.admin, "a.myshopify.com", "deactivate", ids.slice(0, 2), database);
+  assert.deepEqual(shopify.calls.slice(2).map(call => call.name), ["discountCodeDeactivate", "discountAutomaticDeactivate"]);
+});
+test("a request Shopify throttles is retried after a wait, then carried on", async () => {
+  const { database } = fakeDatabase([]);
+  const shopify = fakeShopify({ "1": "DiscountCodeBasic" });
+  shopify.throttleNext(2);
+  const waits: number[] = [];
+  const { bulkDiscountAction } = await import("../app/modules/promotions/services/bulkPromotions.server");
+  const result = await bulkDiscountAction(shopify.admin, "a.myshopify.com", "activate", ["gid://shopify/DiscountNode/1"], database, async ms => { waits.push(ms); });
+  assert.deepEqual(result.done, ["gid://shopify/DiscountNode/1"]);
+  assert.deepEqual(waits, [1500, 3000]);
+});
+test("website status in bulk: Enabled needs a chosen block and no code list, enters at the top of the order, and Draft just turns it off", async () => {
+  const { database, settings } = fakeDatabase([
+    row(1, 1, { priority: 5, websiteEnabled: true }),
+    row(2, 2),
+    row(3, 3, { showHeaderBanner: false }),
+    row(4, 4),
+    row(5, 5, { websiteEnabled: true, priority: 3 }),
+  ]);
+  const shopify = fakeShopify({ "2": "DiscountCodeBasic", "3": "DiscountCodeBasic", "4": "DiscountCodeBasic", "5": "DiscountCodeBasic" }, {}, { "4": 20 });
+  const enable = await runBulkAction(shopify.admin, "a.myshopify.com", "website-enable", ["gid://shopify/DiscountNode/2", "gid://shopify/DiscountNode/3", "gid://shopify/DiscountNode/4", "gid://shopify/DiscountNode/5", "gid://shopify/DiscountNode/9"], database);
+  assert.deepEqual(enable.done, ["gid://shopify/DiscountNode/2", "gid://shopify/DiscountNode/5"]);
+  assert.match(enable.failed.find(item => item.id.endsWith("/3"))!.message, /No website block is selected/);
+  assert.match(enable.failed.find(item => item.id.endsWith("/4"))!.message, /individual codes stays in Draft/);
+  assert.match(enable.failed.find(item => item.id.endsWith("/9"))!.message, /no website blocks yet/);
+  assert.equal(settings.find(item => item.id === 2)!.websiteEnabled, true);
+  assert.equal(settings.find(item => item.id === 2)!.priority, 6, "a promotion entering the order starts above every saved priority");
+  assert.equal(settings.find(item => item.id === 5)!.priority, 3, "one that was already enabled keeps its place");
+  assert.equal(settings.find(item => item.id === 4)!.websiteEnabled, false);
+  const draft = await runBulkAction(shopify.admin, "a.myshopify.com", "website-draft", ["gid://shopify/DiscountNode/1", "gid://shopify/DiscountNode/9"], database);
+  assert.deepEqual(draft.done, ["gid://shopify/DiscountNode/1", "gid://shopify/DiscountNode/9"], "turning off a promotion with no website settings is already done");
+  assert.equal(settings.find(item => item.id === 1)!.websiteEnabled, false);
+  void noWait;
 });

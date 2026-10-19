@@ -23,10 +23,11 @@ export function PolarisSelect({ onChange, disabled, ...props }: Omit<ComponentPr
   useEffect(() => afterDefinition("s-select", () => { if (ref.current) { ref.current.disabled = Boolean(disabled); if (props.value !== undefined) ref.current.value = props.value; } }));
   return <s-select {...props} disabled={disabled || undefined} ref={ref} />;
 }
-export function PolarisCheckbox({ onChange, checked, disabled, ...props }: Omit<ComponentProps<"s-checkbox">, "ref">) {
+export function PolarisCheckbox({ onChange, checked, disabled, indeterminate, ...props }: Omit<ComponentProps<"s-checkbox">, "ref">) {
   const ref = useRef<HTMLElementTagNameMap["s-checkbox"]>(null);
   useNativeChange<"s-checkbox">(ref, onChange);
-  useEffect(() => afterDefinition("s-checkbox", () => { if (ref.current) { ref.current.disabled = Boolean(disabled); ref.current.checked = Boolean(checked); } }));
+  // `indeterminate` (some, but not all, selected) is a property of the element, not an attribute.
+  useEffect(() => afterDefinition("s-checkbox", () => { if (ref.current) { ref.current.disabled = Boolean(disabled); ref.current.checked = Boolean(checked); ref.current.indeterminate = Boolean(indeterminate); } }));
   return <s-checkbox {...props} checked={checked || undefined} disabled={disabled || undefined} ref={ref} />;
 }
 

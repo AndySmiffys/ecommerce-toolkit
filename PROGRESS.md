@@ -33,6 +33,9 @@ For the architecture and the rules to follow when changing the code, see `CLAUDE
 - **One link destination picker** for collections, products, pages, blogs or a web address.
 - **Header block is always square.** The preview shows each block in a realistic mock storefront and can be enlarged.
 
+### Promotions list
+- **Bulk actions:** tick promotions (or select all shown) and Activate or Deactivate the Shopify discounts, Enable on website or set the website to Draft, or Delete. Deleting removes the Shopify discount and the app's saved design and code batches, then republishes the storefront data. Delete and Deactivate ask first (Deactivate replaces the discount's end date with now). Up to 50 at a time; each result is reported on its own, and a failed promotion stays selected. Service: `bulkPromotions.server.ts`.
+
 ### Priority
 - One drag-and-drop order for the whole storefront, with Move up and Move down for keyboard and touch. It lists only Active and Scheduled promotions that can appear on the website, and explains the rest.
 - A promotion that joins the order starts at the top, and the merchant is taken to place it. The editor never writes priority; it is stored in the existing `priority` number.
@@ -69,6 +72,8 @@ None of the following has been seen in a real browser by the assistant, only tes
 - **Polaris 2.0 (release candidate):** prepared but switched off. The app's `polarisUrl` (one constant in `app/shopify.server.ts`, used by `shopifyApp()` and `AppProvider`) is set to the current `polaris.js`. The packages needed for Polaris 2 are in place (`@shopify/shopify-app-react-router` 3.0.2, Node 22+, `@shopify/polaris-types` 2.0.0-rc.3). When enabled with `polaris-2.0-rc.js`, a store without the new admin design showed a restyled page header (plain breadcrumb link, white pill buttons), and the edit page threw `saveBar.hide is not a function` from the App Bridge save bar. Switching back to `polaris.js` fixed both, so the Polaris 2 script (rc.3) is the cause and the package upgrade is fine. Before enabling it, test on a dev store with the new admin design (`shopify store create dev --feature-preview new_admin_design`) and one without it, find out why the save bar fails under Polaris 2 (it may need a newer release candidate or a change to how `PromotionSaveBar` is mounted), and check hand-written colours (the greys in the editor styles) and the Inter stylesheet in `app/root.tsx`. Built for Shopify apps have until 1 May 2027.
 
 ## Known limitations
+
+- The Promotions list loads the first 50 discounts from Shopify (no paging yet), so older discounts beyond that are not listed or selectable.
 
 - Arbitrary third-party themes are not guaranteed to work; badge selectors are configurable.
 - Checkout stays authoritative for geography, minimums and eligibility.
