@@ -13,6 +13,37 @@
     }
   };
   const request = url => new Promise((resolve, reject) => { queue.push({ url, resolve, reject }); drain(); });
+  // Product badges are decided in the browser from data Shopify puts in the page (see the Promotion Engine loader
+  // embed), so a collection of product cards makes no requests to the app. Without that data they ask the app.
+  let badgeData;
+  const badges = () => {
+    if (badgeData !== undefined) return badgeData;
+    badgeData = null;
+    const script = document.getElementById('promotion-engine-badges');
+    if (script) try {
+      const data = JSON.parse(script.textContent);
+      if (data && data.v === 1 && Array.isArray(data.promos)) badgeData = data;
+    } catch { badgeData = null; }
+    return badgeData;
+  };
+  // Product IDs are sorted, stored as differences in base 36 and joined with commas (see compactIds.ts).
+  const decodeIds = encoded => {
+    const ids = new Set();
+    let total = 0;
+    if (encoded) for (const part of encoded.split(',')) ids.add(total += parseInt(part, 36));
+    return ids;
+  };
+  const badgeFor = productId => {
+    const data = badges();
+    const now = Date.now() / 1000;
+    for (const promo of data.promos) {
+      if (promo.s > now || (promo.e && promo.e <= now)) continue;
+      if (promo.a) return promo;
+      promo.set = promo.set || decodeIds(promo.i);
+      if (promo.set.has(Number(productId))) return promo;
+    }
+    return null;
+  };
   class PromotionEngine extends HTMLElement {
     connectedCallback() {
       // An async asset can register this element before the parser reaches its
@@ -30,6 +61,7 @@
         initialStyle.remove();
         this.querySelector('[data-pe-ready]')?.remove();
       }
+      if (this.dataset.placement === 'badge' && badges()) { this.showBadge(); return; }
       const native = this.dataset.serverRendered === 'true';
       this.hidden = !native;
       this.renderedVariantId = this.dataset.variantId;
@@ -67,16 +99,25 @@
       this.media = matchMedia('(max-width:600px)');
       this.refresh = () => this.load();
       this.visible = () => { if (!document.hidden) this.load(); };
-      window.addEventListener('focus', this.refresh);
-      document.addEventListener('visibilitychange', this.visible);
+      // Shopify rendered this block from published data: nothing here needs the app, so it asks for nothing.
+      // The page keeps asking only when no published data exists (live mode), and a product block whose offer
+      // depends on the chosen variant asks when the variant changes.
+      const live = this.dataset.snapshotState !== 'ready';
+      const variantAware = live || this.dataset.variantScoped === 'true';
+      if (live) {
+        window.addEventListener('focus', this.refresh);
+        document.addEventListener('visibilitychange', this.visible);
+      }
       this.variantChanged = event => {
         if (this.dataset.placement !== 'product' || !this.ownsEvent(event)) return;
         const id = event.detail?.variant?.id ?? event.detail?.variantId;
         if (id) { this.dataset.variantId = String(id); this.load(); }
       };
-      this.media.addEventListener('change', this.refresh);
-      document.addEventListener('variant:change', this.variantChanged);
-      document.addEventListener('variant-change', this.variantChanged);
+      if (live) this.media.addEventListener('change', this.refresh);
+      if (variantAware) {
+        document.addEventListener('variant:change', this.variantChanged);
+        document.addEventListener('variant-change', this.variantChanged);
+      }
       this.formChanged = event => {
         if (this.dataset.placement !== 'product' || !this.ownsEvent(event)) return;
         const form = event.target.closest?.('form');
@@ -87,12 +128,30 @@
           if (this.isConnected && input?.value) { this.dataset.variantId = input.value; this.load(); }
         }, 150);
       };
-      document.addEventListener('change', this.formChanged);
+      if (variantAware) document.addEventListener('change', this.formChanged);
       this.hydrate();
       this.hydrateTimer = setTimeout(this.hydrate, 0);
       this.scheduleExpiry(this.dataset.endsAt ? Number(this.dataset.endsAt) * 1000 : 0);
-      this.timer = setInterval(this.refresh, 60000);
-      this.load();
+      if (live) {
+        // A background tab has no one to show a fresh offer to.
+        this.timer = setInterval(() => { if (!document.hidden) this.load(); }, 60000);
+        this.load();
+      }
+    }
+    showBadge() {
+      const data = badges();
+      const promo = badgeFor(this.dataset.productId);
+      this.cleanupUI?.();
+      if (!promo) { this.shadowRoot.replaceChildren(); this.hidden = true; return; }
+      const style = document.createElement('style');
+      style.textContent = ':host{display:block;font-family:inherit;position:relative;min-width:0}:host([hidden]){display:none}' + (data.css || '');
+      const content = document.createElement('div');
+      content.innerHTML = promo.h;
+      this.shadowRoot.replaceChildren(style, content);
+      this.dataset.promotionId = promo.k;
+      this.dataset.priority = String(promo.p);
+      this.hidden = false;
+      this.scheduleExpiry(promo.e ? promo.e * 1000 : 0);
     }
     ownsEvent(event) {
       const productId = event.detail?.productId ?? event.detail?.product?.id;

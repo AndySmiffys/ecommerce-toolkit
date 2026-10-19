@@ -160,7 +160,7 @@ test('customer segments are chosen in the picker and shown on the step', async (
     respond: intent => intent === 'searchEligibility' ? { eligibilityResources: [{ id: 'gid://shopify/Segment/1', name: 'VIP customers', secondary: '12 customers' }, { id: 'gid://shopify/Segment/2', name: 'Newsletter', secondary: null }] } : {},
   });
   await change(find(step(view.container, 'who'), 's-select[label="Eligibility"]'), 'segments');
-  assert.match(view.container.textContent, /Only logged-in customers who belong to a selected segment/);
+  assert.match(view.container.textContent, /Promotions for specific customers or segments are not shown on the website yet/);
   assert.equal(saveButton(view).disabled, true, 'an audience with nobody in it cannot be saved');
 
   await click(byText(step(view.container, 'who'), 's-button', 'Browse'));

@@ -197,3 +197,71 @@ test('loader never creates a header, even with historical header settings or aft
     assert.equal(f.window.document.querySelector('promotion-engine[data-placement="header"]'), null);
   } finally { f.dom.window.close(); }
 });
+
+const proxyCalls = f => f.calls.filter(url => url.pathname === '/apps/promotion-engine');
+// Product ids 42 and 100 packed as base-36 differences ("16" is 42, "1m" is 58 more).
+const badgeJson = promos => `<script type="application/json" id="promotion-engine-badges">${JSON.stringify({ v: 1, css: '.pe-badge{display:inline-block}', promos })}</script>`;
+const sale = { k: '7', p: 5, s: 0, e: 0, a: 0, i: '16,1m', h: '<span class="pe-badge">Sale</span>', r: 'render' };
+test('Badges are decided from the data in the page, so product cards make no request to the app', async () => {
+  const f = fixture(`${badgeJson([sale])}<div class="card-wrapper" data-product-id="42"><div class="card__inner"><a href="/products/hat">Hat</a></div></div><div class="card-wrapper" data-product-id="43"><div class="card__inner"><a href="/products/cap">Cap</a></div></div><div class="card-wrapper" data-product-id="100"><div class="card__inner"><a href="/products/bag">Bag</a></div></div>`);
+  try {
+    await wait(40);
+    const badges = [...f.window.document.querySelectorAll('[data-pe-auto="badge"]')];
+    assert.equal(badges.length, 3);
+    const shown = badges.filter(badge => !badge.hidden);
+    assert.deepEqual(shown.map(badge => badge.dataset.productId).sort(), ['100', '42'], 'only the listed products get the badge');
+    assert.match(shown[0].shadowRoot.textContent, /Sale/);
+    assert.equal(shown[0].dataset.promotionId, '7');
+    assert.equal(proxyCalls(f).length, 0, 'no request reached the app');
+  } finally { f.dom.window.close(); }
+});
+test('Badge data picks the highest-ranked offer that is running and applies to every product when asked', async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const f = fixture(`${badgeJson([
+    { ...sale, k: 'ended', p: 9, e: now - 60, h: '<span class="pe-badge">Ended</span>' },
+    { ...sale, k: 'future', p: 8, s: now + 3600, h: '<span class="pe-badge">Future</span>' },
+    { ...sale, k: 'few', p: 7, i: '16', h: '<span class="pe-badge">Few</span>' },
+    { ...sale, k: 'every', p: 1, a: 1, i: '', h: '<span class="pe-badge">Everything</span>' },
+  ])}<div class="card-wrapper" data-product-id="42"><div class="card__inner"><a href="/products/hat">Hat</a></div></div><div class="card-wrapper" data-product-id="43"><div class="card__inner"><a href="/products/cap">Cap</a></div></div>`);
+  try {
+    await wait(40);
+    const text = id => f.window.document.querySelector(`[data-pe-auto="badge"][data-product-id="${id}"]`).shadowRoot.textContent;
+    assert.match(text('42'), /Few/, 'skips the ended and future offers, then the first that lists the product wins');
+    assert.match(text('43'), /Everything/, 'an offer on every product covers the rest');
+    assert.equal(proxyCalls(f).length, 0);
+  } finally { f.dom.window.close(); }
+});
+test('Without badge data in the page, badges still ask the app as before', async () => {
+  const f = fixture('<div class="card-wrapper"><div class="card__inner"><a href="/products/hat">Hat</a></div></div>');
+  try {
+    await wait(40);
+    assert.ok(proxyCalls(f).length >= 1);
+  } finally { f.dom.window.close(); }
+});
+test('A block Shopify rendered from published data asks the app for nothing: not on load, focus, a returning tab or a timer', async () => {
+  const f = fixture('<promotion-engine data-placement="header" data-snapshot-state="ready" data-server-rendered="true" data-promotion-id="7" data-render-key="k" data-revision="r"><div data-pe-initial><span>Header offer</span></div><template data-pe-style><style></style></template><span hidden data-pe-ready></span></promotion-engine><promotion-engine data-placement="collection" data-snapshot-state="ready" hidden></promotion-engine>');
+  try {
+    await wait(30);
+    const header = f.window.document.querySelector('promotion-engine[data-placement="header"]');
+    assert.match(header.shadowRoot.textContent, /Header offer/);
+    f.window.dispatchEvent(new f.window.Event('focus'));
+    f.window.document.dispatchEvent(new f.window.Event('visibilitychange'));
+    await wait(30);
+    assert.equal(proxyCalls(f).length, 0, 'no request');
+    assert.equal(header.timer, undefined, 'no timer');
+    assert.equal(f.window.document.querySelector('promotion-engine[data-placement="collection"]').hidden, true, 'nothing to show stays hidden without asking');
+  } finally { f.dom.window.close(); }
+});
+test('A product offer that depends on the chosen variant still asks when the variant changes, and others do not', async () => {
+  const markup = scoped => `<promotion-engine data-placement="product" data-product-id="7" data-variant-id="8" data-snapshot-state="ready" ${scoped ? 'data-variant-scoped="true"' : ''} hidden></promotion-engine>`;
+  for (const scoped of [true, false]) {
+    const f = fixture(markup(scoped));
+    try {
+      await wait(30);
+      assert.equal(proxyCalls(f).length, 0, 'nothing is requested on load');
+      f.window.document.dispatchEvent(new f.window.CustomEvent('variant:change', { detail: { productId: '7', variant: { id: 9 } } }));
+      await wait(30);
+      assert.equal(proxyCalls(f).length, scoped ? 1 : 0, scoped ? 'a variant-scoped offer asks for the new variant' : 'an offer on the whole product does not');
+    } finally { f.dom.window.close(); }
+  }
+});

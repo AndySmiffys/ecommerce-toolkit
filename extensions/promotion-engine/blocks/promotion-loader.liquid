@@ -1,3 +1,10 @@
+{%- comment -%}Badge data for the product cards on this page. Shopify serves it with the page, so no request goes to the app. Each promotion's data is its own metafield; this joins them.{%- endcomment -%}
+{%- assign badge_index = app.metafields.promotion_engine.badge_index.value -%}
+{%- unless request.page_type == 'cart' or request.page_type contains 'customers' -%}
+  {%- if block.settings.badges_enabled and badge_index != blank -%}
+<script type="application/json" id="promotion-engine-badges">{"v":1,"css":{{ badge_index.css | json }},"promos":[{%- for key in badge_index.keys -%}{%- assign shard_key = 'badge_' | append: key -%}{{ app.metafields.promotion_engine[shard_key].value }}{%- unless forloop.last -%},{%- endunless -%}{%- endfor -%}]}</script>
+  {%- endif -%}
+{%- endunless -%}
 <script src="{{ 'promotion-ui.js' | asset_url }}" defer></script>
 <script src="{{ 'promotion-placements.js' | asset_url }}" defer></script>
 <promotion-engine-embed

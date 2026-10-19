@@ -4,26 +4,33 @@
 {%- assign variant_id = current_product.selected_or_first_available_variant.id | append: '' -%}
 {%- assign collection_id = current_collection.id | append: '' -%}
 {%- assign selected = nil -%}
-{%- if snapshot.version == 2 -%}
+{%- assign variant_scoped = false -%}
+{%- if snapshot.version == 3 -%}
   {%- for promo in snapshot.promotions -%}
     {%- if promo.starts > now or promo.ends != 0 and promo.ends <= now -%}{%- continue -%}{%- endif -%}
     {%- if promo.html[placement] == blank -%}{%- continue -%}{%- endif -%}
     {%- assign qualifies = false -%}
     {%- if placement == 'header' or promo.all -%}
       {%- assign qualifies = true -%}
-    {%- elsif placement == 'collection' -%}
-      {%- if collection_id != blank and promo.collections contains collection_id -%}{%- assign qualifies = true -%}{%- endif -%}
-    {%- elsif product_id != blank -%}
-      {%- if promo.products contains product_id -%}{%- assign qualifies = true -%}{%- endif -%}
-      {%- for item in current_product.collections -%}
-        {%- assign item_id = item.id | append: '' -%}
-        {%- if promo.collections contains item_id -%}{%- assign qualifies = true -%}{%- break -%}{%- endif -%}
-      {%- endfor -%}
-      {%- for variant in promo.variants -%}
-        {%- if variant.product == product_id -%}
-          {%- if placement == 'badge' or variant.id == variant_id -%}{%- assign qualifies = true -%}{%- break -%}{%- endif -%}
-        {%- endif -%}
-      {%- endfor -%}
+    {%- else -%}
+      {%- comment -%}Each promotion's long product, variant and collection lists live in their own metafield, read only on pages that need them.{%- endcomment -%}
+      {%- assign scope_key = 'scope_' | append: promo.key -%}
+      {%- assign scope = metafields[scope_key].value -%}
+      {%- if placement == 'collection' -%}
+        {%- if collection_id != blank and scope.collections contains collection_id -%}{%- assign qualifies = true -%}{%- endif -%}
+      {%- elsif product_id != blank -%}
+        {%- if scope.products contains product_id -%}{%- assign qualifies = true -%}{%- endif -%}
+        {%- for item in current_product.collections -%}
+          {%- assign item_id = item.id | append: '' -%}
+          {%- if scope.collections contains item_id -%}{%- assign qualifies = true -%}{%- break -%}{%- endif -%}
+        {%- endfor -%}
+        {%- for variant in scope.variants -%}
+          {%- if variant.product == product_id -%}
+            {%- assign variant_scoped = true -%}
+            {%- if placement == 'badge' or variant.id == variant_id -%}{%- assign qualifies = true -%}{%- break -%}{%- endif -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
     {%- endif -%}
     {%- if qualifies -%}{%- assign selected = promo -%}{%- break -%}{%- endif -%}
   {%- endfor -%}
@@ -31,10 +38,11 @@
 {% if selected %}<style>{{ snapshot.inlineCss }}</style>{% endif %}
 <promotion-engine
   {% unless selected %}hidden{% endunless %}
+  {% if variant_scoped %}data-variant-scoped="true"{% endif %}
   {% if selected %}data-server-rendered="true" data-render-key="{{ selected.renderKeys[placement] | escape }}" data-revision="{{ snapshot.revision | escape }}" data-promotion-id="{{ selected.id | escape }}" data-priority="{{ selected.priority }}" data-ends-at="{{ selected.ends }}"{% endif %}
   {% if placement == 'collection' %}class="pe-collection-banner"{% endif %}
   style="{% if selected %}display:block;{% endif %}box-sizing:border-box;width:100%;min-width:0;{% if maximum_width %}max-width:{{ maximum_width }}px;margin-inline:auto;{% endif %}padding-block:{{ block.settings.spacing | default: 0 }}px"
-  data-snapshot-state="{% if snapshot.version == 2 %}ready{% else %}missing{% endif %}"
+  data-snapshot-state="{% if snapshot.version == 3 %}ready{% else %}missing{% endif %}"
   data-placement="{{ placement | escape }}"
   {% if width_mode %}data-width-mode="{{ width_mode | escape }}"{% endif %}
   data-product-id="{{ product_id }}"

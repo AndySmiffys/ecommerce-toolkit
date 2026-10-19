@@ -1,7 +1,8 @@
 <script src="{{ 'promotion-ui.js' | asset_url }}" defer></script>
 {% assign current_product = closest.product | default: product %}
 {% assign storefront_snapshot = app.metafields.promotion_engine.storefront.value %}
-{% render 'server-promotion', snapshot: storefront_snapshot, placement: 'product', current_product: current_product, block: block %}
+{% assign storefront_metafields = app.metafields.promotion_engine %}
+{% render 'server-promotion', snapshot: storefront_snapshot, metafields: storefront_metafields, placement: 'product', current_product: current_product, block: block %}
 {% schema %}
 {
   "name": "Product promotion",

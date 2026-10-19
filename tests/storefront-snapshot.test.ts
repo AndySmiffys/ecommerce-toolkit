@@ -4,9 +4,11 @@ import { readFileSync } from "node:fs";
 import { Liquid } from "liquidjs";
 import { JSDOM } from "jsdom";
 import { promotionInlineCss, promotionCss } from "../app/modules/promotions/components/PromotionPreview";
-import { publicSnapshotEntry, syncStorefrontSnapshot } from "../app/modules/promotions/services/storefrontSnapshot.server";
+import { companionMetafields, publicSnapshotEntry, splitSnapshot, syncStorefrontSnapshot } from "../app/modules/promotions/services/storefrontSnapshot.server";
 import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promotionMapper";
 import { defaultDesign } from "../app/modules/promotions/design/design";
+import { encodeIds, decodeIds } from "../app/modules/promotions/design/compactIds";
+import { completeDiscountScope } from "../app/modules/promotions/services/discountScope.server";
 import type { ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
 import type { getLatestPromotionSettings } from "../app/modules/promotions/services/promotionSettings.server";
 const now = Date.parse("2026-10-09T12:00:00Z");
@@ -16,13 +18,17 @@ function promotion(id = 1) {
   Object.assign(result.settings, { websiteEnabled: true, headline: `Offer ${id}`, showHeaderBanner: true, showCollectionPage: true, showProductPage: true, showProductBadge: true, showCountdown: true, designJson: JSON.stringify({ ...defaultDesign(), desktopImage: 'https://cdn.shopify.com/s/files/1/123/banner.webp?v=1', mobileImage: 'https://cdn.shopify.com/s/files/1/123/mobile.webp?v=2', imageLayout: 'full' }) });
   return { result, node };
 }
+// The per-promotion lists as the theme sees them: app.metafields.promotion_engine.scope_<id>.value
+const scopeMetafields = (scopes: Record<string, unknown>) => Object.fromEntries(Object.entries(scopes).map(([id, value]) => [`scope_${id}`, { value }]));
 const liquid = new Liquid({ root: 'extensions/promotion-engine/snippets', extname: '.liquid' });
 liquid.registerFilter('asset_url', (value: string) => '/assets/' + value);
 const snippet = readFileSync('extensions/promotion-engine/snippets/server-promotion.liquid', 'utf8');
 // Shopify's now filter and server time are fixed for eligibility boundary tests.
 liquid.registerFilter('date', (value: string, format: string) => format === '%s' ? (value === 'now' ? now / 1000 : Date.parse(value) / 1000) : value);
 async function render(promotions: ReturnType<typeof publicSnapshotEntry>[], placement = 'collection', extra = {}) {
-  return liquid.parseAndRender(snippet, { snapshot: { version: 2, revision: 'revision', css: promotionCss, inlineCss: promotionInlineCss, promotions }, placement, block: { settings: { spacing: 0 } }, current_collection: { id: 42 }, ...extra });
+  // Published as Shopify gets it: the small snapshot plus the product lists in their own metafield.
+  const split = splitSnapshot(promotions as NonNullable<ReturnType<typeof publicSnapshotEntry>>[], 'revision');
+  return liquid.parseAndRender(snippet, { snapshot: { version: 3, revision: 'revision', css: promotionCss, inlineCss: promotionInlineCss, promotions: split.promotions }, metafields: scopeMetafields(split.scopes), placement, block: { settings: { spacing: 0 } }, current_collection: { id: 42 }, ...extra });
 }
 test('Liquid renders the priority winner initially and hides empty, expired, future and nonqualifying placements without a reserved gap', async () => {
   const high = publicSnapshotEntry(promotion(1).result, now)!;
@@ -142,10 +148,11 @@ test('a live empty response removes an initial offer, while an updated code repl
 });
 test('actual app blocks pass snapshot into their isolated snippet and render banner HTML before any script runs', async () => {
   const entry = publicSnapshotEntry(promotion().result, now)!;
-  const snapshot = { version: 2, revision: 'saved', inlineCss: promotionInlineCss, css: promotionCss, promotions: [entry] };
+  const split = splitSnapshot([entry], 'saved');
+  const snapshot = { version: 3, revision: 'saved', inlineCss: promotionInlineCss, css: promotionCss, promotions: split.promotions };
   for (const name of ['collection-promotion', 'product-promotion', 'header-promotion', 'promotion']) {
     const block = readFileSync(`extensions/promotion-engine/blocks/${name}.liquid`, 'utf8').split('{% schema %}')[0];
-    const html = await liquid.parseAndRender(block, { app: { metafields: { promotion_engine: { storefront: { value: snapshot } } } }, collection: { id: 42 }, product: { id: 7, selected_or_first_available_variant: { id: 8 } }, block: { settings: { placement: 'collection' } } });
+    const html = await liquid.parseAndRender(block, { app: { metafields: { promotion_engine: { storefront: { value: snapshot }, ...scopeMetafields(split.scopes) } } }, collection: { id: 42 }, product: { id: 7, selected_or_first_available_variant: { id: 8 } }, block: { settings: { placement: 'collection' } } });
     const dom = new JSDOM(html);
     try {
       const host = dom.window.document.querySelector('promotion-engine') as HTMLElement;
@@ -198,4 +205,179 @@ test('an early custom element upgrade leaves the initial light DOM visible until
     assert.equal(calls, 1);
     host.remove();
   } finally { window.close(); }
+});
+
+// A discount on specific products: the node as Shopify returns it, with `count` of them in the first page.
+function productScoped(count: number, hasNextPage = false) {
+  const { node } = promotion(1);
+  node.discount.discountClasses = ["PRODUCT"];
+  const nodes = Array.from({ length: count }, (_, i) => ({ id: `gid://shopify/Product/${1000000000000 + i * 7}`, title: `Product ${i}` }));
+  node.discount.customerGets!.items = { __typename: "DiscountProducts", products: { pageInfo: { hasNextPage, endCursor: hasNextPage ? "cursor-1" : null }, nodes }, productVariants: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } as never;
+  return { node, result: mapDiscountToPromotion(node) };
+}
+const noNextPage = { hasNextPage: false, endCursor: null };
+test('product ID lists are packed small and unpacked exactly, including ids beyond 32 bits and duplicates', () => {
+  const ids = [8123456789012, 8123456789013, 42, 8123456789012, 15000000000000];
+  assert.deepEqual(decodeIds(encodeIds(ids)), [42, 8123456789012, 8123456789013, 15000000000000]);
+  assert.equal(encodeIds([]), '');
+  assert.deepEqual(decodeIds(''), []);
+  const many = Array.from({ length: 7000 }, (_, i) => 7000000000000 + i * 1234567);
+  assert.equal(decodeIds(encodeIds(many)).length, 7000);
+  assert.ok(encodeIds(many).length < JSON.stringify(many.map(String)).length / 2, 'well under half the plain size');
+});
+test('a discount on thousands of products reaches the storefront in full instead of falling back to the live server', async () => {
+  const { node } = productScoped(250, true);
+  const pages = [[250, true], [250, true], [130, false]] as const;
+  let requested = 0;
+  const api = { graphql: async (_query: string, options?: { variables?: Record<string, unknown> }) => {
+    const [size, more] = pages[requested++];
+    assert.equal(options!.variables!.productsAfter, `cursor-${requested}`);
+    const nodes = Array.from({ length: size }, (_, i) => ({ id: `gid://shopify/Product/${2000000000000 + requested * 1000 + i}`, title: 'More' }));
+    return Response.json({ data: { discountNode: { discount: { customerGets: { items: { products: { pageInfo: { hasNextPage: more, endCursor: `cursor-${requested + 1}` }, nodes }, productVariants: { pageInfo: noNextPage, nodes: [] } } } } } } });
+  } };
+  assert.deepEqual(await completeDiscountScope(api, node), { complete: true });
+  assert.equal(requested, 3);
+  assert.equal(mapDiscountToPromotion(node).shopify.products.products.length, 250 + 250 + 250 + 130);
+});
+test('a scope page Shopify cannot return leaves the offer on the live path rather than showing it to the wrong products', async () => {
+  const { node } = productScoped(250, true);
+  const failing = { graphql: async () => Response.json({ errors: [{ message: 'Throttled' }] }) };
+  assert.deepEqual(await completeDiscountScope(failing, node), { complete: false });
+  const { result } = productScoped(250, true);
+  Object.assign(result.settings, { websiteEnabled: true, showProductPage: true, showCollectionPage: true, showHeaderBanner: true, showProductBadge: true });
+  const entry = publicSnapshotEntry(result, now, false)!;
+  assert.ok(entry.html.header, 'the header does not depend on product scope');
+  assert.ok(!entry.html.product && !entry.html.badge && !entry.html.collection, 'scoped placements wait for a complete list');
+});
+test('the published pieces: a small snapshot, the long lists on their own, and compact badge data', () => {
+  const { result } = productScoped(1200);
+  Object.assign(result.settings, { websiteEnabled: true, showProductPage: true, showProductBadge: true, showCollectionPage: true, showHeaderBanner: true });
+  const entry = publicSnapshotEntry(result, now)!;
+  assert.ok(entry.html.product && entry.html.badge, 'a long list is not a reason to skip a placement');
+  const everything = promotion(2).result;
+  Object.assign(everything.settings, { websiteEnabled: true, showProductBadge: true });
+  const collections = promotion(3);
+  collections.node.discount.discountClasses = ["PRODUCT"];
+  collections.node.discount.customerGets!.items = { __typename: "DiscountCollections", collections: { pageInfo: noNextPage, nodes: [{ id: 'gid://shopify/Collection/5', title: 'Hats', productsCount: { count: 3 } }] } } as never;
+  const byCollection = mapDiscountToPromotion(collections.node);
+  Object.assign(byCollection.settings, { websiteEnabled: true, showProductBadge: true });
+  const split = splitSnapshot([entry, publicSnapshotEntry(everything, now)!, publicSnapshotEntry(byCollection, now)!], 'rev');
+  assert.ok(split.promotions.every(promo => !('products' in promo) && !('collections' in promo) && !('variants' in promo)), 'the snapshot every page reads carries no long lists');
+  assert.equal(split.scopes['1'].products!.length, 1200);
+  assert.ok(!('2' in split.scopes), 'an offer on every product needs no list');
+  assert.deepEqual(split.badgeIndex.keys, ['1', '2'], 'badges follow specific products or all products, not collections');
+  assert.deepEqual(Object.keys(split.badgeShards), ['1', '2']);
+  const shards = Object.values(split.badgeShards).map(shard => JSON.parse(shard));
+  assert.equal(decodeIds(shards[0].i).length, 1200);
+  assert.equal(shards[1].a, 1);
+  assert.match(split.badgeIndex.css, /\.pe-badge/);
+});
+test('Liquid finds a product in a long list and marks product offers that depend on the chosen variant', async () => {
+  const { result } = productScoped(1200);
+  Object.assign(result.settings, { websiteEnabled: true, showProductPage: true });
+  const entry = publicSnapshotEntry(result, now)!;
+  const listed = entry.products[900];
+  const markup = await render([entry], 'product', { current_product: { id: Number(listed), collections: [], selected_or_first_available_variant: { id: 8 } } });
+  assert.match(markup, /data-pe-initial/);
+  assert.ok(!markup.includes('data-variant-scoped'));
+  assert.match(await render([entry], 'product', { current_product: { id: 5, collections: [], selected_or_first_available_variant: { id: 8 } } }), /<promotion-engine\s+hidden/);
+  const byVariant = { ...entry, products: [], variants: [{ id: '8', product: '7' }] };
+  const hidden = await render([byVariant], 'product', { current_product: { id: 7, collections: [], selected_or_first_available_variant: { id: 9 } } });
+  assert.match(hidden, /<promotion-engine\s+hidden/);
+  assert.match(hidden, /data-variant-scoped="true"/, 'a hidden offer can still appear when the variant changes');
+});
+test('publishing writes the snapshot, the product lists and the badge data together, and skips the write when nothing changed', async () => {
+  const { result, node } = promotion();
+  result.endsAt = null; node.discount.endsAt = null; node.discount.discountClasses = ["PRODUCT"];
+  const setProducts = (...ids: string[]) => { node.discount.customerGets!.items = { __typename: "DiscountProducts", products: { pageInfo: noNextPage, nodes: ids.map(id => ({ id: `gid://shopify/Product/${id}`, title: id })) }, productVariants: { pageInfo: noNextPage, nodes: [] } } as never; };
+  setProducts('77');
+  const rows = [{ ...result.settings, id: 1, shop: 'test.myshopify.com', shopifyDiscountId: result.id, createdAt: new Date(0), updatedAt: new Date(0), lastSyncedAt: null }] as Awaited<ReturnType<typeof getLatestPromotionSettings>>;
+  const current: Record<string, string> = {};
+  const writes: Array<Array<{ key: string; type: string; value: string; compareDigest?: string | null }>> = [];
+  const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
+    if (query.includes('PromotionInstallation')) return Response.json({ data: { currentAppInstallation: { id: 'gid://shopify/AppInstallation/1', metafield: { value: current.storefront ?? '', compareDigest: 'd' }, companions: { nodes: Object.entries(current).filter(([name]) => name !== 'storefront').map(([name, value]) => ({ key: name, value })) } } } });
+    if (query.includes('GetDiscount')) return Response.json({ data: { discountNode: node } });
+    const metafields = options!.variables!.metafields as typeof writes[number];
+    writes.push(metafields);
+    for (const field of metafields) current[field.key] = field.value;
+    return Response.json({ data: { metafieldsSet: { userErrors: [] } } });
+  } };
+  await syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows);
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].map(field => `${field.key}:${field.type}`), ['storefront:json', 'scope_1:json', 'badge_1:multi_line_text_field', 'badge_index:json']);
+  assert.equal(writes[0][0].compareDigest, 'd');
+  assert.equal(JSON.parse(writes[0][0].value).version, 3);
+  assert.deepEqual(JSON.parse(writes[0][1].value), { products: ['77'] });
+  assert.equal(JSON.parse(writes[0][2].value).i, encodeIds(['77']));
+  assert.deepEqual(JSON.parse(writes[0][3].value).keys, ['1']);
+  assert.ok(!writes[0][2].value.includes('<'), 'safe to place in a script tag');
+  await syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows);
+  assert.equal(writes.length, 1, 'nothing changed, so nothing is written');
+  setProducts('77', '78');
+  await syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows);
+  assert.equal(writes.length, 2, 'a change to the product list alone is published');
+  assert.deepEqual(writes[1].map(field => field.key), ['scope_1', 'badge_1'], 'only what changed is written, and the unchanged snapshot is left alone');
+});
+test('lists of promotions that are gone are removed, and many promotions are written in batches with the snapshot last', async () => {
+  const ids = Array.from({ length: 13 }, (_, i) => i + 1);
+  const nodes = new Map(ids.map(id => {
+    const { node } = promotion(id);
+    node.discount.endsAt = null;
+    node.discount.discountClasses = ["PRODUCT"];
+    node.discount.customerGets!.items = { __typename: "DiscountProducts", products: { pageInfo: noNextPage, nodes: [{ id: `gid://shopify/Product/${id}00`, title: 'Hat' }] }, productVariants: { pageInfo: noNextPage, nodes: [] } } as never;
+    return [`gid://shopify/DiscountNode/${id}`, node];
+  }));
+  const rows = ids.map(id => ({ ...promotion(id).result.settings, id, shop: 'test.myshopify.com', shopifyDiscountId: `gid://shopify/DiscountNode/${id}`, createdAt: new Date(0), updatedAt: new Date(0), lastSyncedAt: null })) as Awaited<ReturnType<typeof getLatestPromotionSettings>>;
+  const calls: Array<{ kind: string; keys: string[] }> = [];
+  const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
+    if (query.includes('PromotionInstallation')) return Response.json({ data: { currentAppInstallation: { id: 'gid://shopify/AppInstallation/1', metafield: { value: '', compareDigest: 'd' }, companions: { nodes: [{ key: 'scope_99', value: 'old' }, { key: 'badge_99', value: 'old' }, { key: 'unrelated', value: 'keep' }] } } } });
+    if (query.includes('GetDiscount')) return Response.json({ data: { discountNode: nodes.get(String(options!.variables!.id)) } });
+    if (query.includes('PromotionStale')) { calls.push({ kind: 'delete', keys: (options!.variables!.metafields as Array<{ key: string }>).map(field => field.key) }); return Response.json({ data: { metafieldsDelete: { userErrors: [] } } }); }
+    calls.push({ kind: 'set', keys: (options!.variables!.metafields as Array<{ key: string }>).map(field => field.key) });
+    return Response.json({ data: { metafieldsSet: { userErrors: [] } } });
+  } };
+  await syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows);
+  const sets = calls.filter(call => call.kind === 'set');
+  assert.deepEqual(sets.map(call => call.keys.length), [25, 2, 1], '27 per-promotion metafields in batches of 25, then the snapshot');
+  assert.deepEqual(sets[2].keys, ['storefront'], 'the snapshot goes last, so it only points at lists that exist');
+  assert.deepEqual(calls.at(-1), { kind: 'delete', keys: ['scope_99', 'badge_99'] }, 'stale lists go; unrelated metafields stay');
+});
+test('a promotion with too many products to publish is named in the error instead of failing silently', () => {
+  const { result } = productScoped(8000);
+  Object.assign(result.settings, { websiteEnabled: true, showProductPage: true });
+  const entry = publicSnapshotEntry(result, now)!;
+  assert.throws(() => companionMetafields(splitSnapshot([entry], 'rev'), new Map([['1', 'Mega sale']])), /“Mega sale” lists too many products/);
+});
+
+test('end to end: the loader embed joins each promotion\'s badge data into the page and the card script shows badges from it without asking the app', async () => {
+  const { result: listed } = productScoped(3);
+  Object.assign(listed.settings, { websiteEnabled: true, showProductBadge: true, priority: 9 });
+  const everything = promotion(2).result;
+  Object.assign(everything.settings, { websiteEnabled: true, showProductBadge: true, priority: 1 });
+  const split = splitSnapshot([publicSnapshotEntry(listed, now)!, publicSnapshotEntry(everything, now)!], 'rev');
+  const shards = Object.fromEntries(Object.entries(split.badgeShards).map(([id, value]) => [`badge_${id}`, { value }]));
+  const loader = readFileSync('extensions/promotion-engine/blocks/promotion-loader.liquid', 'utf8').split('{% schema %}')[0];
+  const context = (pageType: string) => ({ app: { metafields: { promotion_engine: { badge_index: { value: split.badgeIndex }, ...shards } } }, block: { settings: { badges_enabled: true } }, request: { page_type: pageType }, routes: { root_url: '/' }, collection: { id: 1 } });
+  const html = await liquid.parseAndRender(loader, context('collection'));
+  const page = new JSDOM(`<body>${html}<div class="card-wrapper" data-product-id="1000000000007"><div class="card__inner"><a href="/products/listed">Listed</a></div></div><div class="card-wrapper" data-product-id="5"><div class="card__inner"><a href="/products/other">Other</a></div></div></body>`, { url: 'https://shop.example/collections/all', runScripts: 'outside-only' });
+  try {
+    const data = JSON.parse(page.window.document.getElementById('promotion-engine-badges')!.textContent!);
+    assert.equal(data.promos.length, 2, 'both promotions are in the one script');
+    assert.match(data.css, /\.pe-badge/);
+    const requests: string[] = [];
+    Object.assign(page.window, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), fetch: async (url: string) => { requests.push(String(url)); return { ok: true, json: async () => ({}) }; } });
+    page.window.eval(readFileSync('extensions/promotion-engine/assets/promotion-engine.js', 'utf8'));
+    page.window.eval(readFileSync('extensions/promotion-engine/assets/promotion-placements.js', 'utf8'));
+    const embed = page.window.document.createElement('promotion-engine-embed');
+    Object.assign(embed.dataset, { badgesEnabled: 'true', root: '/' });
+    page.window.document.body.append(embed);
+    await new Promise(done => setTimeout(done, 60));
+    const badge = (id: string) => page.window.document.querySelector(`[data-pe-auto="badge"][data-product-id="${id}"]`) as HTMLElement;
+    assert.equal(badge('1000000000007').hidden, false);
+    assert.equal(badge('1000000000007').dataset.promotionId, '1', 'the specific-products offer ranks first for a product it lists');
+    assert.equal(badge('5').dataset.promotionId, '2', 'every other product gets the offer on all products');
+    assert.deepEqual(requests.filter(url => url.includes('/apps/')), [], 'no request reached the app');
+  } finally { page.window.close(); }
+  assert.ok(!(await liquid.parseAndRender(loader, context('cart'))).includes('promotion-engine-badges'), 'the cart has no product cards');
+  assert.ok(!(await liquid.parseAndRender(loader, context('customers/account'))).includes('promotion-engine-badges'));
 });

@@ -5,7 +5,8 @@
 {% assign maximum_width = block.settings.max_width %}
 {% if placement == 'collection' and block.settings.collection_full_width != false %}{% assign maximum_width = nil %}{% endif %}
 {% assign storefront_snapshot = app.metafields.promotion_engine.storefront.value %}
-{% render 'server-promotion', snapshot: storefront_snapshot, maximum_width: maximum_width, placement: placement, current_product: preview_product, current_collection: preview_collection, block: block %}
+{% assign storefront_metafields = app.metafields.promotion_engine %}
+{% render 'server-promotion', snapshot: storefront_snapshot, metafields: storefront_metafields, maximum_width: maximum_width, placement: placement, current_product: preview_product, current_collection: preview_collection, block: block %}
 {% schema %}
 {
   "name": "Promotion Engine",

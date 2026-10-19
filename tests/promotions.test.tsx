@@ -472,15 +472,15 @@ test("shipping permission errors do not crash the editor or invent country optio
 });
 
 
-test("segment and customer restrictions warn about logged-out visibility and clear for all customers", () => {
+test("segment and customer restrictions warn that the promotion is not shown on the website yet and clear for all customers", () => {
   const context: StorefrontVisibilityContext = { eligibility: "segments", eligibilityCount: 1, startsAt: null, endsAt: null, codeList: false, productTarget: null };
   const notices = storefrontVisibilityNotices(website(), context, Date.now());
   const rendered = renderToStaticMarkup(<PromotionVisibilityNotice notices={notices} />);
   assert.match(rendered, /tone="warning"/);
-  assert.match(rendered, /Only logged-in customers who belong to a selected segment/);
-  assert.match(rendered, /hidden from visitors who are not logged in/);
+  assert.match(rendered, /not shown on the website yet/);
+  assert.match(rendered, /applies the discount at checkout/);
   const customers = storefrontVisibilityNotices(website(), { ...context, eligibility: "customers" }, Date.now());
-  assert.match(customers[0].message, /Only the selected customers/);
+  assert.match(customers[0].message, /specific customers or segments are not shown/);
   assert.equal(storefrontVisibilityNotices(website(), { ...context, eligibility: "all" }, Date.now()).length, 0);
 });
 
@@ -492,8 +492,9 @@ test("visibility guidance follows draft changes, schedule boundaries and placeme
   assert.deepEqual(notices.map(notice => notice.id), ["draft", "scheduled", "collection", "products"]);
   assert.match(notices.find(notice => notice.id === "collection")!.message, /will not appear/);
   const changed = storefrontVisibilityNotices(website(), { ...context, startsAt: null, productTarget: "collections" }, now);
-  assert.deepEqual(changed.map(notice => notice.id), ["products"]);
-  assert.match(changed[0].message, /qualifying collections/);
+  assert.deepEqual(changed.map(notice => notice.id), ["badge-collections", "products"]);
+  assert.match(changed[0].message, /specific products/, "badges cannot follow a collection discount, and the merchant is told");
+  assert.match(changed[1].message, /qualifying collections/);
   const ended = storefrontVisibilityNotices(website(), { ...context, startsAt: null, endsAt: "2026-10-09T12:00:00Z", productTarget: null }, now);
   assert.equal(ended[0].id, "ended");
   assert.equal(storefrontVisibilityNotices(website(), { ...context, startsAt: null, endsAt: null, productTarget: null }, now).length, 0);

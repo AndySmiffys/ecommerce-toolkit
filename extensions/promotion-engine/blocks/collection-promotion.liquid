@@ -1,7 +1,8 @@
 <script src="{{ 'promotion-ui.js' | asset_url }}" defer></script>
 {% assign current_collection = collection | default: closest.collection %}
 {% assign storefront_snapshot = app.metafields.promotion_engine.storefront.value %}
-{% render 'server-promotion', snapshot: storefront_snapshot, placement: 'collection', current_collection: current_collection, width_mode: block.settings.width_mode, block: block %}
+{% assign storefront_metafields = app.metafields.promotion_engine %}
+{% render 'server-promotion', snapshot: storefront_snapshot, metafields: storefront_metafields, placement: 'collection', current_collection: current_collection, width_mode: block.settings.width_mode, block: block %}
 {% schema %}
 {
   "name": "Collection promotion",
