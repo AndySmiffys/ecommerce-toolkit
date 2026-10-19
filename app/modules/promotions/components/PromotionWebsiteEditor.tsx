@@ -247,13 +247,15 @@ function PromoDesignChoice({ value, onChange }: { value: PromotionStyle["preset"
       {promoDesigns.map(design => {
         const selected = design.id === value;
         const { bannerHeight, headingSize } = presetDesign(design.id, defaultDesign());
-        return <div key={design.id} style={{ display: "grid", minWidth: 0 }}><s-clickable accessibilityLabel={`${design.title}${selected ? ", selected" : ""}. ${design.summary}`} onClick={() => { if (!selected) onChange(design.id); }} inlineSize="100%" blockSize="100%" border="none" borderRadius="base" padding="none">
-          <div style={{ border: selected ? "1px solid #8a8a8a" : "1px solid #e3e3e3", borderRadius: 8, padding: 12, display: "grid", gap: 6, background: selected ? "#f7f7f7" : "#fff", textAlign: "left", overflowWrap: "anywhere" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><s-text type="strong">{design.title}</s-text>{selected && <s-badge tone="success">Selected</s-badge>}</span>
-            <s-text color="subdued">{design.summary}</s-text>
-            <s-text color="subdued">{bannerHeight}px banner, {headingSize}px heading</s-text>
-          </div>
-        </s-clickable></div>;
+        return <div key={design.id} style={{ display: "grid", minWidth: 0 }}>
+          <s-clickable accessibilityLabel={`${design.title}${selected ? ", selected" : ""}. ${design.summary}`} onClick={() => { if (!selected) onChange(design.id); }} inlineSize="100%" blockSize="100%" border={selected ? "base strong" : "base base"} background={selected ? "subdued" : "base"} borderRadius="base" padding="base">
+            <s-stack direction="block" gap="small-200">
+              <s-stack direction="inline" gap="small-200" alignItems="center"><s-text type="strong">{design.title}</s-text>{selected && <s-badge tone="success">Selected</s-badge>}</s-stack>
+              <s-text color="subdued">{design.summary}</s-text>
+              <s-text color="subdued">{bannerHeight}px banner, {headingSize}px heading</s-text>
+            </s-stack>
+          </s-clickable>
+        </div>;
       })}
     </div>
   </div>;
