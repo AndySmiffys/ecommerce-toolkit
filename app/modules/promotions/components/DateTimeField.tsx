@@ -5,7 +5,7 @@ const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2,
 const minutes = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
 
 /** Shopify's native date field. React 18 does not bind its events, so they are wired directly. */
-function DateField({ label, value, error, onChange }: { label: string; value: string; error?: string; onChange: (value: string) => void }) {
+export function DateField({ label, value, error, onChange }: { label: string; value: string; error?: string; onChange: (value: string) => void }) {
   const ref = useRef<HTMLElementTagNameMap["s-date-field"]>(null);
   const latest = useRef(onChange); latest.current = onChange;
   useEffect(() => {

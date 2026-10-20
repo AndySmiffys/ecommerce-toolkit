@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useRevalidator } from "react-router";
-import { authenticate } from "../shopify.server";
+import { authenticate, unauthenticated } from "../shopify.server";
+import { filterFromParams } from "../modules/promotions/design/orderReport";
 import { periodDays } from "../modules/promotions/design/reports";
+import { driveOrderSync, loadOrderReport, orderSyncIsDue } from "../modules/promotions/services/orderReport.server";
 import { deleteReportGroup, isSnapshotRunning, loadDiscountCounts, loadReport, moveReportGroup, saveReportGroup, snapshotIsStale, takeSnapshot } from "../modules/promotions/services/reports.server";
 import { ReportsPage } from "../modules/promotions/components/ReportsPage";
 
@@ -16,7 +18,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!isSnapshotRunning(session.shop) && await snapshotIsStale(session.shop, staleAfterHours)) {
     void takeSnapshot(admin, session.shop).catch(error => console.error("The report reading failed:", error instanceof Error ? error.message : error));
   }
-  return { data: await loadReport(session.shop, periodDays(period)), counts: await loadDiscountCounts(admin), period, refreshing: isSnapshotRunning(session.shop) };
+  // Orders are read the same way: in the background, with the page showing what is stored meanwhile.
+  if (await orderSyncIsDue(session.shop, staleAfterHours)) void driveOrderSync(async () => (await unauthenticated.admin(session.shop)).admin, session.shop);
+  const orders = await loadOrderReport(session.shop, filterFromParams(new URL(request.url).searchParams));
+  return { data: await loadReport(session.shop, periodDays(period)), orders, counts: await loadDiscountCounts(admin), period, refreshing: isSnapshotRunning(session.shop) || orders.syncing };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -26,6 +31,7 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     if (intent === "refresh") {
       void takeSnapshot(admin, session.shop).catch(error => console.error("The report reading failed:", error instanceof Error ? error.message : error));
+      void driveOrderSync(async () => (await unauthenticated.admin(session.shop)).admin, session.shop);
     } else if (intent === "saveGroup") {
       await saveReportGroup(session.shop, { id: form.get("id") || undefined, name: form.get("name"), matchOn: form.get("matchOn"), matchType: form.get("matchType"), pattern: form.get("pattern") });
     } else if (intent === "deleteGroup") {
@@ -40,7 +46,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Reports() {
-  const { data, counts, period, refreshing } = useLoaderData<typeof loader>();
+  const { data, orders, counts, period, refreshing } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   // While the figures are being read, check back every few seconds so they appear as soon as they are ready.
   useEffect(() => {
@@ -48,5 +54,5 @@ export default function Reports() {
     const timer = setTimeout(() => revalidator.revalidate(), 6000);
     return () => clearTimeout(timer);
   }, [refreshing, data.takenAt, revalidator]);
-  return <ReportsPage data={data} counts={counts} period={period} refreshing={refreshing} />;
+  return <ReportsPage data={data} orders={orders} counts={counts} period={period} refreshing={refreshing} />;
 }

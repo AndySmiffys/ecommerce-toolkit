@@ -126,3 +126,36 @@ model ReportSnapshot {
 
   @@index([shop, takenAt])
 }
+
+// What orders paid and saved, one row per day and per discount (a code, or an automatic discount's title), for the
+// Reports page. Two special keys per day: "*all" holds every order and "*discounted" the orders that used any discount,
+// each counted once. Amounts are in the shop's currency, in minor units (pence).
+model ReportOrderDay {
+  id            Int    @id @default(autoincrement())
+  shop          String
+  day           String
+  key           String
+  kind          String
+  label         String
+  orders        Int    @default(0)
+  valueCents    Int    @default(0)
+  refundCents   Int    @default(0)
+  discountCents Int    @default(0)
+
+  @@unique([shop, day, key])
+  @@index([shop, day])
+}
+
+// Where reading orders has got to for a shop. A bulk read from Shopify runs in the background; operationId is the one
+// in progress, and syncedThrough is the last day whose totals are stored.
+model ReportOrderSync {
+  shop          String    @id
+  operationId   String?
+  fromDay       String?
+  startedAt     DateTime?
+  syncedThrough String?
+  syncedAt      DateTime?
+  currency      String    @default("GBP")
+  error         String?
+  updatedAt     DateTime  @updatedAt
+}

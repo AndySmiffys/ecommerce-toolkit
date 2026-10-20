@@ -143,7 +143,7 @@ export type ReportData = {
   days: number | null;
 };
 
-export async function listReportGroups(shop: string, database: Database = db): Promise<GroupDef[]> {
+export async function listReportGroups(shop: string, database: Pick<PrismaClient, "reportGroup"> = db): Promise<GroupDef[]> {
   const rows = await database.reportGroup.findMany({ where: { shop }, orderBy: [{ position: "asc" }, { id: "asc" }] });
   return rows.map(row => ({ id: row.id, name: row.name, matchOn: row.matchOn as GroupDef["matchOn"], matchType: row.matchType as GroupDef["matchType"], pattern: row.pattern }));
 }

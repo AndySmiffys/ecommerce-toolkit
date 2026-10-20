@@ -1,6 +1,7 @@
 import db from "../../../db.server";
 import { unauthenticated } from "../../../shopify.server";
 import { snapshotIsStale, takeSnapshot } from "./reports.server";
+import { driveOrderSync, orderSyncIsDue } from "./orderReport.server";
 
 /**
  * Takes the usage snapshot for every shop that has the app installed and has none from the last day. The Reports page
@@ -11,6 +12,7 @@ export async function takeDueSnapshots(): Promise<void> {
   const shops = await db.session.findMany({ where: { isOnline: false }, select: { shop: true }, distinct: ["shop"] });
   for (const { shop } of shops) {
     try {
+      if (await orderSyncIsDue(shop, 23)) void driveOrderSync(async () => (await unauthenticated.admin(shop)).admin, shop);
       if (!(await snapshotIsStale(shop, 23))) continue;
       const { admin } = await unauthenticated.admin(shop);
       await takeSnapshot(admin, shop);

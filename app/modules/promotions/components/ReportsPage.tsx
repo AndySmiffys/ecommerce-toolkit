@@ -3,7 +3,9 @@ import { useFetcher, useNavigate } from "react-router";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
 import { matchOnLabels, matchOptions, matchTypeLabels, matchTypes, maxGroups, otherKey, reportPeriods, type GroupDef, type MatchOn, type MatchType, type ReportLine } from "../design/reports";
 import type { DiscountCounts, ReportData } from "../services/reports.server";
+import type { OrderReportData } from "../services/orderReport.server";
 import { ModalOverlay } from "./ModalOverlay";
+import { OrderDrilldown } from "./ReportOrders";
 import { PolarisSelect } from "./PolarisControls";
 
 const number = new Intl.NumberFormat("en-GB");
@@ -13,7 +15,7 @@ const whenDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(
 type Draft = { id: string; name: string; matchOn: MatchOn; matchType: MatchType; pattern: string };
 const blankDraft: Draft = { id: "", name: "", matchOn: "either", matchType: "starts_with", pattern: "" };
 
-export function ReportsPage({ data, counts, period, refreshing }: { data: ReportData; counts: DiscountCounts | null; period: string; refreshing: boolean }) {
+export function ReportsPage({ data, orders, counts, period, refreshing }: { data: ReportData; orders: OrderReportData; counts: DiscountCounts | null; period: string; refreshing: boolean }) {
   const appUrl = useEmbeddedAppUrl();
   const navigate = useNavigate();
   const fetcher = useFetcher<{ ok: boolean; error: string | null; intent?: string }>();
@@ -82,12 +84,13 @@ export function ReportsPage({ data, counts, period, refreshing }: { data: Report
     <s-button slot="primary-action" type="button" variant="primary" disabled={refreshing || busy || undefined} onClick={() => send({ intent: "refresh" })}>{refreshing ? "Reading discounts…" : "Refresh figures"}</s-button>
     <s-stack direction="block" gap="base">
       {error && <s-banner tone="critical" dismissible onDismiss={() => setError(null)}>{error}</s-banner>}
-      {refreshing && <s-banner tone="info">Reading how often every discount has been used. This page updates by itself when it is done.</s-banner>}
+      {refreshing && <s-banner tone="info">Reading your discounts and orders from Shopify. This page updates by itself when it is done.</s-banner>}
       {!data.complete && <s-banner tone="warning" heading="These figures may be incomplete">There are more used discounts than one reading can cover, so some are missing from the totals.</s-banner>}
       {!report && !refreshing && <s-banner tone="info">There are no figures yet. Choose Refresh figures to read them from Shopify.</s-banner>}
       {report && compared && !data.comparedWith && <s-banner tone="info" heading="Not enough history for this period yet">
         Figures have been kept since {whenDate(data.historyStart)}, so this period cannot be measured yet. Until then the totals shown are for all time. The app takes a reading every day.
       </s-banner>}
+      <OrderDrilldown data={orders} />
       {counts && <s-section heading="All discounts in your store">
         <s-stack direction="block" gap="small-300">
           <s-heading>{number.format(counts.all)}{counts.capped ? "+" : ""} discounts</s-heading>
@@ -96,7 +99,7 @@ export function ReportsPage({ data, counts, period, refreshing }: { data: Report
           </s-text>
         </s-stack>
       </s-section>}
-      {report && <s-section heading="Redemptions">
+      {report && <s-section heading="Redemptions, lifetime">
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="base" alignItems="end" justifyContent="space-between">
             <s-stack direction="block" gap="small-300">
