@@ -159,3 +159,38 @@ model ReportOrderSync {
   error         String?
   updatedAt     DateTime  @updatedAt
 }
+
+// A short record of every discount in the shop, kept so the Promotions list can filter by who created each one and
+// page quickly when other apps (such as Dotdigital) make thousands. Shopify stays the source of truth: only what the
+// list needs to filter is kept (title, first code, dates, creating app), and the list reads the full discount from
+// Shopify for each page. `other` is true when another app created it.
+model DiscountIndex {
+  shop      String
+  discountId String
+  numericId BigInt
+  kind      String
+  title     String
+  code      String
+  createdBy String
+  other     Boolean
+  startsAt  DateTime?
+  endsAt    DateTime?
+  updatedAt DateTime  @updatedAt
+
+  @@id([shop, discountId])
+  @@index([shop, other, numericId])
+  @@index([shop, createdBy])
+}
+
+// Where building the discount index has got to for a shop. A first scan reads every discount in pages, so it keeps its
+// place (scanCursor) and carries on after a restart; afterwards only what changed since refreshedAt is read.
+model DiscountIndexState {
+  shop        String    @id
+  scanCursor  String?
+  scanDone    Boolean   @default(false)
+  scanStarted DateTime?
+  refreshedAt DateTime?
+  count       Int       @default(0)
+  error       String?
+  updatedAt   DateTime  @updatedAt
+}

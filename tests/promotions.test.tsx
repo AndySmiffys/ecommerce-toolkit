@@ -565,6 +565,8 @@ function fakeDatabase(settings: FakeRow[], batches: Array<{ shop: string; shopif
       deleteMany: async ({ where }: { where: never }) => { const gone = batches.filter(item => wanted(where, item)); for (const item of gone) batches.splice(batches.indexOf(item), 1); return { count: gone.length }; },
       findFirst: async ({ where }: { where: never }) => batches.find(item => wanted(where, item)) ?? null,
     },
+    // The index of who created each discount: nothing here was made by another app.
+    discountIndex: { findMany: async () => [] },
   };
   return { database: database as never, settings, batches };
 }

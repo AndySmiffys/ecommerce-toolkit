@@ -3,6 +3,7 @@ import db from "../../../db.server";
 import { promotionDiscountAliases, promotionDiscountId } from "../design/discountIdentity";
 import { getDiscount, type ShopifyAdminClient } from "./discount.server";
 import { getPromotionCodeBatch } from "./promotionCodeBatches.server";
+import { madeByOtherApps } from "./discountIndex.server";
 import { priorityForSave } from "./promotionSettings.server";
 
 /** Most promotions one action may change. Each one is a request to Shopify, made one after another. */
@@ -24,7 +25,7 @@ export function parseBulkIds(raw: unknown): string[] {
 }
 
 type Kind = "code" | "automatic";
-type Database = Pick<PrismaClient, "promotionSettings" | "promotionCodeBatch">;
+type Database = Pick<PrismaClient, "promotionSettings" | "promotionCodeBatch" | "discountIndex">;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const mutation = (name: string, result: string) => `mutation PromotionBulk($id: ID!) { ${name}(id: $id) { ${result} userErrors { field message code } } }`;
@@ -70,7 +71,10 @@ const typedId = (id: string, kind: Kind) => `gid://shopify/${kind === "code" ? "
  */
 export async function bulkDiscountAction(admin: ShopifyAdminClient, shop: string, action: "activate" | "deactivate" | "delete", ids: string[], database: Database = db, wait: (ms: number) => Promise<unknown> = sleep): Promise<BulkOutcome> {
   const outcome: BulkOutcome = { done: [], failed: [] };
+  // A discount another app made (such as a Dotdigital code) is never changed from here: that app may rely on it.
+  const others = await madeByOtherApps(shop, ids, database);
   for (const id of ids) {
+    if (others[id]) { outcome.failed.push({ id, message: `${others[id]} made this discount, so it is left alone. Change it in Shopify or in that app.` }); continue; }
     try {
       const kind = await discountKind(admin, id, wait);
       if (kind) await request(admin, operations[kind][action], typedId(id, kind), wait);
