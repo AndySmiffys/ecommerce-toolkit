@@ -4,7 +4,7 @@
 //
 //   node infra/aws/aws.mjs network [--execute]       shared network (once)
 //   node infra/aws/aws.mjs environment <test|live> [--execute]
-//   node infra/aws/aws.mjs secret <test|live>        type the Shopify client secret (hidden), stored in Secrets Manager
+//   node infra/aws/aws.mjs secret <test|live> [--clipboard]   the Shopify client secret (typed hidden, or from the clipboard), stored in Secrets Manager
 //   node infra/aws/aws.mjs build <test|live>         zip the committed code, build the image in AWS, print its tag
 //   node infra/aws/aws.mjs release <test|live> <tag> [--execute]   run that image (creates or updates the App Runner service)
 //   node infra/aws/aws.mjs domain <test|live> [--execute]          custom domain, certificate and DNS records
@@ -168,15 +168,22 @@ async function main() {
   } else if (command === "secret") {
     const stack = stackStatus(stackName(environment));
     if (!stack) throw new Error(`Create the ${environment} environment first.`);
-    const secret = (await askHidden(`Shopify client secret for the ${environment} app (typing is hidden): `)).trim();
-    if (secret.length < 16) throw new Error("That does not look like a Shopify client secret.");
+    // --clipboard reads the secret from the clipboard (copy it first), which avoids pasting into a hidden prompt, and
+    // empties the clipboard afterwards. Only its length and first letters are shown, never the secret itself.
+    const fromClipboard = process.argv.includes("--clipboard");
+    const secret = (fromClipboard
+      ? spawnSync("powershell", ["-NoProfile", "-Command", "Get-Clipboard -Raw"], { encoding: "utf8" }).stdout ?? ""
+      : await askHidden(`Shopify client secret for the ${environment} app (typing is hidden): `)).trim();
+    say(`Received ${secret.length} characters${secret ? `, starting "${secret.slice(0, 6)}"` : ""}.`);
+    if (secret.length < 16 || /\s/.test(secret)) throw new Error(`That does not look like a Shopify client secret (it has ${secret.length} characters${/\s/.test(secret) ? " and contains spaces" : ""}). Copy the Client secret from the app's Settings in the Dev Dashboard, then run: node infra/aws/aws.mjs secret ${environment} --clipboard`);
     const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-secret-"));
     try {
       const file = join(directory, "secret.json");
       writeFileSync(file, JSON.stringify({ SecretId: stackOutputs(stack).ShopifySecretArn, SecretString: secret }), { mode: 0o600 });
       aws(["secretsmanager", "put-secret-value", "--cli-input-json", `file://${file}`], { json: false });
     } finally { rmSync(directory, { recursive: true, force: true }); }
-    say("Stored in AWS Secrets Manager. It is not written anywhere else.");
+    if (fromClipboard) spawnSync("powershell", ["-NoProfile", "-Command", "Set-Clipboard -Value $null"]);
+    say("Stored in AWS Secrets Manager. It is not written anywhere else." + (fromClipboard ? " The clipboard has been emptied." : ""));
   } else if (command === "build") {
     const outputs = stackOutputs(stackStatus(stackName(environment)));
     if (!outputs.SourceBucket) throw new Error(`Create the ${environment} environment first.`);
