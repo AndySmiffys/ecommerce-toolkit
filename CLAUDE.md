@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A Shopify embedded app (React Router 7 + Prisma/SQLite, forked from the Shopify React Router app template) that lets merchants attach storefront marketing content (header banners, product-page offers, collection banners, product-card badges) to native Shopify discounts. The `README.md` is largely the untouched template README; the real setup/behaviour docs are `docs/storefront-setup.md` and `docs/promotion-designs.md`.
+A Shopify embedded app (React Router 7 + Prisma/PostgreSQL, forked from the Shopify React Router app template) that lets merchants attach storefront marketing content (header banners, product-page offers, collection banners, product-card badges) to native Shopify discounts. The `README.md` is largely the untouched template README; the real setup/behaviour docs are `docs/storefront-setup.md` and `docs/promotion-designs.md`.
 
 ## Commands
 
@@ -36,7 +36,7 @@ All promotion code lives in `app/modules/promotions/`:
 
 **Duplicated file:** `app/modules/promotions/design/promotion-ui.js` is the source and is copied to `extensions/promotion-engine/assets/promotion-ui.js` by `scripts/sync-promotion-ui.mjs` (run automatically on dev/build/deploy). Edit the `app/` copy, never the extension copy.
 
-Routing is file-based (`@react-router/fs-routes`, `app/routes.ts`); admin pages are `app.*` routes behind `authenticate.admin`. Prisma uses SQLite (`file:dev.sqlite`) in `prisma/`; add migrations with `npx prisma migrate dev`.
+Routing is file-based (`@react-router/fs-routes`, `app/routes.ts`); admin pages are `app.*` routes behind `authenticate.admin`. Prisma uses PostgreSQL through `DATABASE_URL` (see `docs/database.md`; copy `.env.example` to `.env`); add migrations with `npx prisma migrate dev`. `npm test` starts a temporary PostgreSQL itself (`embedded-postgres`, no Docker) and the database tests each get a schema of their own (`tests/helpers/database.ts`).
 
 ## UI conventions
 
