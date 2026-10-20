@@ -81,6 +81,8 @@ test('Liquid schemas remain valid and expose placement controls', () => {
     const source = readFileSync(base + `blocks/${name}.liquid`, 'utf8');
     const schema = JSON.parse(source.match(/{% schema %}([\s\S]*?){% endschema %}/)[1]);
     assert.equal(schema.javascript, 'promotion-engine.js');
+    // Shopify rejects a theme block whose name is longer than 25 characters, and only says so when the app is deployed.
+    assert.ok(schema.name.length <= 25, `${name}: the block name "${schema.name}" is ${schema.name.length} characters (the limit is 25)`);
     const ids = schema.settings.filter(setting => setting.id).map(setting => setting.id);
     assert.equal(new Set(ids).size, ids.length);
     assert.ok(!ids.includes('proxy_path'));
