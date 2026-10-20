@@ -15,6 +15,25 @@ export function moveTo<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
+// The list is laid out like Shopify's own index tables: a shaded header row, then plain rows with a divider between.
+// It stays a list of draggable rows because there is no native sortable table.
+const listStyles = `
+.pm-head, .pm-row { display: grid; grid-template-columns: 24px 36px minmax(0, 2.4fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 12px; align-items: center; padding: 10px 16px; }
+.pm-head { background: #f7f7f7; color: #616161; font-size: 13px; font-weight: 550; border-top: 1px solid #e3e3e3; border-bottom: 1px solid #e3e3e3; }
+.pm-row { border-bottom: 1px solid #ebebeb; background: #fff; cursor: grab; }
+.pm-row:hover { background: #fafafa; }
+.pm-row[data-target] { background: #f1f8f5; }
+.pm-row[data-over] { box-shadow: inset 0 2px 0 #202223; }
+.pm-handle { display: inline-flex; color: #8a8a8a; }
+.pm-rank { font-weight: 600; text-align: center; }
+@media (max-width: 760px) {
+  .pm-head { display: none; }
+  .pm-row { grid-template-columns: 24px 28px minmax(0, 1fr) auto; }
+  .pm-row .pm-extra { grid-column: 3 / span 2; }
+  .pm-row .pm-moves { grid-column: 4; grid-row: 1; }
+}
+`;
+
 /**
  * One drag-and-drop order for the whole storefront: the promotion nearest the top is shown when
  * several qualify for the same place. Saving gives the list the priorities N down to 1.
@@ -68,48 +87,54 @@ export function PromotionPriorityManager({ rows, hidden, errors, highlight, refr
     <s-stack direction="block" gap="base">
       {target && introduced && !dirty && <s-banner tone="info" heading={`Set where ${target.title} ranks`}>It starts at the top of the order. Drag it to a new place, or use Move up and Move down, then save.</s-banner>}
       {errors.length > 0 && <s-banner tone="warning"><s-unordered-list>{errors.map(error => <s-list-item key={error}>{error}</s-list-item>)}</s-unordered-list></s-banner>}
-      <s-section heading="Priority order">
-        <s-stack direction="block" gap="base">
-          <s-paragraph>Promotions are ranked from the top. When more than one promotion qualifies for the same place on the storefront (the header, a collection page, a product page or a product card), the one nearest the top is shown. Customer eligibility and dates are checked first.</s-paragraph>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <s-text color="subdued">Drag a promotion by its handle, or use Move up and Move down. Only Active and Scheduled promotions that can appear on the website are listed.</s-text>
-            <s-button type="button" variant="secondary" disabled={refreshing || saving || dirty || undefined} onClick={onRefresh}>{refreshing ? "Refreshing…" : "Refresh list"}</s-button>
-          </div>
-          <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)" }}>{announcement}</div>
-          {!order.length
-            ? <s-banner tone="info">No promotions are in the order yet. A promotion joins it when it is Active or Scheduled, enabled for the website and has a block selected.</s-banner>
-            : <div role="list" aria-label="Priority order" style={{ display: "grid", gap: 8 }}>
+      <style>{listStyles}</style>
+      <s-section padding="none">
+        <s-box padding="base">
+          <s-stack direction="block" gap="base">
+            <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
+              <s-heading>Priority order</s-heading>
+              <s-button type="button" variant="secondary" disabled={refreshing || saving || dirty || undefined} onClick={onRefresh}>{refreshing ? "Refreshing…" : "Refresh list"}</s-button>
+            </s-stack>
+            <s-text color="subdued">Promotions are ranked from the top. When more than one qualifies for the same place on the storefront (the header, a collection page, a product page or a product card), the one nearest the top is shown. Customer eligibility and dates are checked first. Drag a promotion by its handle, or use Move up and Move down. Only Active and Scheduled promotions that can appear on the website are listed.</s-text>
+          </s-stack>
+        </s-box>
+        <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)" }}>{announcement}</div>
+        {!order.length
+          ? <s-box padding="base"><s-banner tone="info">No promotions are in the order yet. A promotion joins it when it is Active or Scheduled, enabled for the website and has a block selected.</s-banner></s-box>
+          : <>
+            <div className="pm-head" aria-hidden="true"><span /><span>Rank</span><span>Promotion</span><span>Status</span><span>Shows in</span><span /></div>
+            <div role="list" aria-label="Priority order">
               {order.map((id, index) => {
                 const row = byId[id];
                 const isTarget = row.routeId === highlight;
-                return <div key={id} role="listitem" ref={isTarget ? highlighted : undefined} aria-current={isTarget ? "true" : undefined}
+                return <div key={id} role="listitem" className="pm-row" data-target={isTarget || undefined} data-over={(over === id && dragging !== id) || undefined} ref={isTarget ? highlighted : undefined} aria-current={isTarget ? "true" : undefined}
                   draggable onDragStart={event => { setDragging(id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", id); }}
                   onDragOver={event => { if (dragging) { event.preventDefault(); setOver(id); } }}
                   onDrop={event => { event.preventDefault(); if (dragging) move(order.indexOf(dragging), index); setDragging(null); setOver(null); }}
                   onDragEnd={() => { setDragging(null); setOver(null); }}
-                  style={{ display: "grid", gridTemplateColumns: "auto auto minmax(0, 1fr) auto", gap: 12, alignItems: "center", padding: "12px 14px", border: over === id && dragging !== id ? "2px solid #202223" : "1px solid #e3e3e3", borderRadius: 12, background: isTarget ? "#f1f8f5" : "#fff", opacity: dragging === id ? 0.5 : 1, cursor: "grab" }}>
-                  <span aria-hidden="true" style={{ display: "inline-flex" }}><s-icon type="drag-handle" /></span>
-                  <span style={{ minWidth: 28, textAlign: "center", fontWeight: 600 }} aria-label={`Position ${index + 1}`}>{index + 1}</span>
+                  style={{ opacity: dragging === id ? 0.5 : 1 }}>
+                  <span aria-hidden="true" className="pm-handle"><s-icon type="drag-handle" /></span>
+                  <span className="pm-rank" aria-label={`Position ${index + 1}`}>{index + 1}</span>
                   <s-stack direction="block" gap="small-300">
-                    <s-stack direction="inline" gap="small-200" alignItems="center">
-                      <Link to={appUrl(`/app/promotions/${row.routeId}`)}>{row.title}</Link>
-                      <s-badge tone={row.status === "Active" ? "success" : "info"}>{row.status}</s-badge>
-                      {row.restricted && <s-badge tone="warning">Customer restricted</s-badge>}
-                    </s-stack>
-                    <s-stack direction="inline" gap="small-200" alignItems="center">
-                      {row.blocks.map(block => <s-badge key={block}>{block}</s-badge>)}
-                    </s-stack>
+                    <Link to={appUrl(`/app/promotions/${row.routeId}`)}>{row.title}</Link>
                     <s-text color="subdued">{row.audience} · {row.schedule}</s-text>
                     {row.warning && <s-text color="subdued">{row.warning}</s-text>}
                   </s-stack>
-                  <s-stack direction="inline" gap="small-200">
+                  <div className="pm-extra"><s-stack direction="inline" gap="small-200" alignItems="center">
+                    <s-badge tone={row.status === "Active" ? "success" : "info"}>{row.status}</s-badge>
+                    {row.restricted && <s-badge tone="warning">Customer restricted</s-badge>}
+                  </s-stack></div>
+                  <div className="pm-extra"><s-stack direction="inline" gap="small-200" alignItems="center">
+                    {row.blocks.map(block => <s-badge key={block}>{block}</s-badge>)}
+                  </s-stack></div>
+                  <div className="pm-moves"><s-stack direction="inline" gap="small-200">
                     <s-button type="button" variant="tertiary" icon="arrow-up" accessibilityLabel={`Move ${row.title} up`} disabled={index === 0 || saving || undefined} onClick={() => move(index, index - 1)} />
                     <s-button type="button" variant="tertiary" icon="arrow-down" accessibilityLabel={`Move ${row.title} down`} disabled={index === order.length - 1 || saving || undefined} onClick={() => move(index, index + 1)} />
-                  </s-stack>
+                  </s-stack></div>
                 </div>;
               })}
-            </div>}
-        </s-stack>
+            </div>
+          </>}
       </s-section>
       {hidden.length > 0 && <s-section heading={`Not in the order (${hidden.length})`}>
         <s-stack direction="block" gap="small">

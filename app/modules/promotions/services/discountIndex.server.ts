@@ -183,6 +183,11 @@ export async function listFromIndex(shop: string, filter: IndexFilter, database:
   };
 }
 
+/** How many of the merchant's own promotions (not other apps') are running now, for the figure at the top of the list. */
+export async function countActivePromotions(shop: string, database: Pick<PrismaClient, "discountIndex"> = db, now = new Date()): Promise<number> {
+  return database.discountIndex.count({ where: where(shop, { source: "", app: "", status: "active", text: "", after: null, before: null }, now) });
+}
+
 /** Who created each of these discounts, where the index knows. */
 export async function creatorsOf(shop: string, ids: string[], database: Pick<PrismaClient, "discountIndex"> = db): Promise<Record<string, string>> {
   if (!ids.length) return {};

@@ -7,11 +7,15 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 
 import { authenticate, unauthenticated } from "../shopify.server";
 import { isOtherApp, sourceFromParam } from "../modules/promotions/design/discountSource";
-import { buildIndex, creatorsOf, deleteSourceRule, forgetDiscounts, indexIsDue, indexState, isIndexing, listFromIndex, listSourceRules, otherApps, saveSourceRule } from "../modules/promotions/services/discountIndex.server";
+import { buildIndex, countActivePromotions, creatorsOf, deleteSourceRule, forgetDiscounts, indexIsDue, indexState, isIndexing, listFromIndex, listSourceRules, otherApps, saveSourceRule } from "../modules/promotions/services/discountIndex.server";
 import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { PolarisCheckbox, PolarisSelect } from "../modules/promotions/components/PolarisControls";
 import { PromotionBulkBar } from "../modules/promotions/components/PromotionBulkBar";
 import { SourceRulesModal } from "../modules/promotions/components/SourceRulesModal";
+import { MetricStrip } from "../modules/promotions/components/MetricStrip";
+import { daysAgo, emptyFilter, today } from "../modules/promotions/design/orderReport";
+import { loadOrderReport } from "../modules/promotions/services/orderReport.server";
+import { formatMoney } from "../modules/promotions/design/formatMoney";
 import { bulkIntents, parseBulkIds, runBulkAction, type BulkIntent } from "../modules/promotions/services/bulkPromotions.server";
 import { discountSearch, getDiscountsByIds, getDiscountsPage, listCursor, type DiscountsPage } from "../modules/promotions/services/discounts.server";
 import { mapDiscountsToPromotions } from "../modules/promotions/mappers/promotionMapper";
@@ -52,6 +56,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const creators = await creatorsOf(session.shop, page.nodes.map(node => node.id));
   const apps = index.ready ? await otherApps(session.shop) : [];
   const rules = await listSourceRules(session.shop);
+  // The figures across the top: what is running, and what discounts did in the last 30 days.
+  const returns = await loadOrderReport(session.shop, emptyFilter(daysAgo(30), today()));
+  const activeCount = index.ready ? await countActivePromotions(session.shop) : null;
+  const stats = { activeCount, orders: returns.syncedAt ? returns.report.selected.orders : null, valueCents: returns.syncedAt ? returns.report.selected.valueCents : null, discountCents: returns.syncedAt ? returns.report.selected.discountCents : null, share: returns.syncedAt ? returns.report.discountedShare : null, currency: returns.currency };
   const promotions = await attachPromotionSettings(session.shop, mapDiscountsToPromotions(page.nodes));
 
   // The storefront data is refreshed when the plain newest page opens, not on every search or page turn.
@@ -59,7 +67,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!after && !before && !q && !status && source === "") {
     try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `Promotions loaded, but storefront sync failed: ${error instanceof Error ? error.message : "Please retry."}`; }
   }
-  return { promotions, syncError, pageInfo: page.pageInfo, total: page.total, filters: { q, status, source, app }, creators, apps, rules, indexing: !index.ready, indexError: index.error };
+  return { promotions, syncError, pageInfo: page.pageInfo, total: page.total, filters: { q, status, source, app }, creators, apps, rules, stats, indexing: !index.ready, indexError: index.error };
 }
 
 // Bulk changes from the list: Shopify discount status, website status, and deleting. See bulkPromotions.server.ts.
@@ -151,9 +159,13 @@ function getSummaryLines(summary: string): string[] {
     .filter(Boolean);
 }
 
-function formatDate(value: string | null): string {
+function sentenceCase(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : value;
+}
+
+function formatDate(value: string | null, empty = "No end date"): string {
   if (!value) {
-    return "No end date";
+    return empty;
   }
 
   return new Intl.DateTimeFormat("en-GB", {
@@ -236,7 +248,7 @@ const discountTypes: { type: string; title: string; description: string; icon: D
 
 export default function PromotionsPage() {
   const appUrl = useEmbeddedAppUrl();
-  const { promotions, syncError, pageInfo, total, filters, creators, apps, rules, indexing, indexError } = useLoaderData<typeof loader>();
+  const { promotions, syncError, pageInfo, total, filters, creators, apps, rules, stats, indexing, indexError } = useLoaderData<typeof loader>();
   const [rulesOpen, setRulesOpen] = useState(false);
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -308,22 +320,56 @@ export default function PromotionsPage() {
     shopify.toast.show(`${count} promotion${count === 1 ? "" : "s"} ${what}`);
   }, [fetcher.data, fetcher.state, shopify]);
 
+  // One bar for search and filters, in the table's own filter area like Shopify's Products page.
+  const filterBar = (
+    <s-stack direction="inline" gap="base" alignItems="center">
+      <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+        <s-search-field label="Search promotions" labelAccessibilityVisibility="exclusive" placeholder="Search and filter" value={query} onInput={(event) => setQuery(event.currentTarget.value)} />
+      </div>
+      <div style={{ flex: "0 0 180px" }}>
+        <PolarisSelect label="Source" labelAccessibilityVisibility="exclusive" value={filters.source || "mine"} onChange={(event) => go({ source: event.currentTarget.value === "mine" ? null : event.currentTarget.value, app: null, after: null, before: null })}>
+          <s-option value="mine">Promotions</s-option>
+          <s-option value="other">Other apps</s-option>
+          <s-option value="all">All discounts</s-option>
+        </PolarisSelect>
+      </div>
+      {filters.source === "other" && apps.length > 0 && <div style={{ flex: "0 0 200px" }}>
+        <PolarisSelect label="App" labelAccessibilityVisibility="exclusive" value={filters.app || "ALL"} onChange={(event) => go({ app: event.currentTarget.value === "ALL" ? null : event.currentTarget.value, after: null, before: null })}>
+          <s-option value="ALL">All other apps</s-option>
+          {apps.map(item => <s-option key={item.name} value={item.name}>{`${item.name} (${item.count})`}</s-option>)}
+        </PolarisSelect>
+      </div>}
+      <div style={{ flex: "0 0 160px" }}>
+        <PolarisSelect label="Status" labelAccessibilityVisibility="exclusive" value={statusFilter} onChange={(event) => go({ status: event.currentTarget.value === "ALL" ? null : event.currentTarget.value, after: null, before: null })}>
+          <s-option value="ALL">All statuses</s-option>
+          <s-option value="active">Active</s-option>
+          <s-option value="scheduled">Scheduled</s-option>
+          <s-option value="expired">Expired</s-option>
+        </PolarisSelect>
+      </div>
+    </s-stack>
+  );
+
   return (
     <s-page heading="Promotions" inlineSize="large">
       <s-button slot="primary-action" variant="primary" commandFor="create-discount-modal" command="--show">
         Create discount
       </s-button>
-      <s-button slot="secondary-actions" type="button" onClick={() => setRulesOpen(true)}>
-        Hide by pattern
-      </s-button>
       <s-button slot="secondary-actions" href="shopify:admin/discounts" target="_blank">
         Open Shopify discounts
       </s-button>
+      <s-button slot="secondary-actions" commandFor="promotions-more-actions">
+        More actions
+      </s-button>
+      <s-menu id="promotions-more-actions" accessibilityLabel="More actions">
+        <s-button icon="hide" onClick={() => setRulesOpen(true)}>Hide by pattern</s-button>
+        <s-button icon="list-numbered" href={appUrl("/app/storefront-priorities")}>Storefront priority</s-button>
+        <s-button icon="chart-vertical" href={appUrl("/app/reports")}>Reports</s-button>
+      </s-menu>
       <div style={{ width: "100%" }}>
-        <s-stack direction="block" gap="large">
+        <s-stack direction="block" gap="base">
           {syncError && <s-banner tone="warning">{syncError}</s-banner>}
           {indexing && <s-banner tone="info" heading="Preparing the source filter">{indexError ? `Reading your discounts failed: ${indexError} It will be tried again.` : "The app is reading your discounts so it can keep discounts made by other apps out of the way. Until it finishes, every discount is shown. This page updates by itself."}</s-banner>}
-          {!indexing && filters.source === "" && <s-text color="subdued">Discounts made by other apps, such as Dotdigital, are hidden. Choose Other apps or All discounts in the Source filter to see them.</s-text>}
           {result?.error && <s-banner tone="critical" heading="Nothing was changed">{result.error}</s-banner>}
           {result && result.failed.length > 0 && (
             <s-banner tone="critical" heading={`${result.failed.length} promotion${result.failed.length === 1 ? "" : "s"} could not be changed`}>
@@ -331,96 +377,78 @@ export default function PromotionsPage() {
             </s-banner>
           )}
           {result?.syncError && <s-banner tone="warning">{result.syncError}</s-banner>}
-          <s-text color="subdued">
-            Review Shopify discounts and manage their storefront settings. {total !== null && total > promotions.length ? `Showing ${promotions.length} of ${total} promotions, newest first.` : `${promotions.length} promotion${promotions.length === 1 ? "" : "s"}.`}
-          </s-text>
 
-                    <s-section padding="none">
-            <s-box padding="base">
-              <s-stack direction="inline" gap="base" alignItems="center">
-                <div style={{ flex: "1 1 260px", minWidth: 0 }}>
-                  <s-search-field label="Search promotions" labelAccessibilityVisibility="exclusive" placeholder="Search promotions" value={query} onInput={(event) => setQuery(event.currentTarget.value)} />
-                </div>
-                <div style={{ flex: "0 0 200px" }}>
-                  <PolarisSelect label="Source" labelAccessibilityVisibility="exclusive" value={filters.source || "mine"} onChange={(event) => go({ source: event.currentTarget.value === "mine" ? null : event.currentTarget.value, app: null, after: null, before: null })}>
-                    <s-option value="mine">Promotions</s-option>
-                    <s-option value="other">Other apps</s-option>
-                    <s-option value="all">All discounts</s-option>
-                  </PolarisSelect>
-                </div>
-                {filters.source === "other" && apps.length > 0 && <div style={{ flex: "0 0 220px" }}>
-                  <PolarisSelect label="App" labelAccessibilityVisibility="exclusive" value={filters.app || "ALL"} onChange={(event) => go({ app: event.currentTarget.value === "ALL" ? null : event.currentTarget.value, after: null, before: null })}>
-                    <s-option value="ALL">All other apps</s-option>
-                    {apps.map(item => <s-option key={item.name} value={item.name}>{`${item.name} (${item.count})`}</s-option>)}
-                  </PolarisSelect>
-                </div>}
-                <div style={{ flex: "0 0 180px" }}>
-                  <PolarisSelect label="Status" labelAccessibilityVisibility="exclusive" value={statusFilter} onChange={(event) => go({ status: event.currentTarget.value === "ALL" ? null : event.currentTarget.value, after: null, before: null })}>
-                    <s-option value="ALL">All statuses</s-option>
-                    <s-option value="active">Active</s-option>
-                    <s-option value="scheduled">Scheduled</s-option>
-                    <s-option value="expired">Expired</s-option>
-                  </PolarisSelect>
-                </div>
-              </s-stack>
-            </s-box>
+          <MetricStrip caption="Last 30 days" metrics={[
+            { label: "Active promotions", value: stats.activeCount === null ? "–" : String(stats.activeCount) },
+            { label: "Orders with a discount", value: stats.orders === null ? "–" : String(stats.orders), note: stats.share === null ? undefined : `${(stats.share * 100).toFixed(1)}% of orders` },
+            { label: "Order value", value: stats.valueCents === null ? "–" : formatMoney(stats.valueCents, stats.currency) },
+            { label: "Discount given away", value: stats.discountCents === null ? "–" : formatMoney(stats.discountCents, stats.currency) },
+          ]} />
 
+          <s-section padding="none">
             {visibleSelected.length > 0 && (
               <PromotionBulkBar titles={visibleSelected.map(promotion => promotion.shopify.general.title)} busy={working} onAction={run} onClear={() => { setDismissed(fetcher.data); setSelected([]); }} />
             )}
 
             {filteredPromotions.length === 0 ? (
-              <s-box padding="large">
-                <s-stack direction="block" gap="small-300" alignItems="center">
-                  <s-text type="strong">No promotions found</s-text>
-                  <s-text color="subdued">Try changing the search or status filter.</s-text>
-                </s-stack>
-              </s-box>
+              <>
+                <s-box padding="base">{filterBar}</s-box>
+                <s-box padding="large">
+                  <s-stack direction="block" gap="small-300" alignItems="center">
+                    <s-text type="strong">No promotions found</s-text>
+                    <s-text color="subdued">Try changing the search or the filters.</s-text>
+                  </s-stack>
+                </s-box>
+              </>
             ) : (
               <s-table ref={table} paginate hasPreviousPage={pageInfo.hasPreviousPage || undefined} hasNextPage={pageInfo.hasNextPage || undefined} loading={navigation.state === "loading" || undefined}>
+                <s-box slot="filters">{filterBar}</s-box>
                 <s-table-header-row>
-                  <s-table-header><PolarisCheckbox accessibilityLabel="Select all promotions" checked={allSelected} indeterminate={visibleSelected.length > 0 && !allSelected} onChange={event => toggleAll(event.currentTarget.checked)} /></s-table-header>
-                  <s-table-header>Title</s-table-header>
-                  <s-table-header>Status</s-table-header>
-                  <s-table-header>Created by</s-table-header>
-                  <s-table-header>Method</s-table-header>
-                  <s-table-header>Eligibility</s-table-header>
+                  <s-table-header listSlot="inline"><PolarisCheckbox accessibilityLabel="Select all promotions" checked={allSelected} indeterminate={visibleSelected.length > 0 && !allSelected} onChange={event => toggleAll(event.currentTarget.checked)} /></s-table-header>
+                  <s-table-header listSlot="primary">Promotion</s-table-header>
+                  <s-table-header listSlot="inline">Status</s-table-header>
+                  <s-table-header listSlot="inline">Website</s-table-header>
+                  <s-table-header listSlot="secondary">Value</s-table-header>
                   <s-table-header>Type</s-table-header>
-                  <s-table-header>Website</s-table-header>
-                  <s-table-header>Value</s-table-header>
-                  <s-table-header>Starts</s-table-header>
-                  <s-table-header>Ends</s-table-header>
-                  <s-table-header><span /></s-table-header>
+                  <s-table-header>Dates</s-table-header>
+                  <s-table-header>Created by</s-table-header>
                 </s-table-header-row>
                 <s-table-body>
                   {filteredPromotions.map((promotion) => {
                     const general = promotion.shopify.general;
-                    const summaryLines = getSummaryLines(general.summary);
+                    const summary = getSummaryLines(general.summary).join(" · ");
                     // A discount another app made can be looked at here but is changed in Shopify or in that app.
                     const otherApp = isOtherApp(creators[promotion.id]);
                     const shopifyUrl = `shopify:admin/discounts/${promotion.id.split("/").pop()}`;
+                    const linkId = `open-${promotion.routeId}`;
                     return (
-                      <s-table-row key={promotion.id}>
+                      <s-table-row key={promotion.id} clickDelegate={linkId}>
                         <s-table-cell><PolarisCheckbox accessibilityLabel={`Select ${general.title}`} disabled={otherApp} checked={selected.includes(promotion.id)} onChange={event => toggle(promotion.id, event.currentTarget.checked)} /></s-table-cell>
                         <s-table-cell>
                           <s-stack direction="inline" gap="base" alignItems="center">
                             <DiscountTypeIcon type={getPromotionIconType(promotion)} size={20} />
                             <s-stack direction="block" gap="small-300">
-                              {otherApp ? <s-link href={shopifyUrl} target="_blank">{general.title}</s-link> : <s-link href={appUrl(`/app/promotions/${promotion.routeId}`)}>{general.title}</s-link>}
-                              {summaryLines.map((line, index) => <s-text key={`${promotion.id}-summary-${index}`} color="subdued">{line}</s-text>)}
+                              {otherApp ? <s-link id={linkId} href={shopifyUrl} target="_blank">{general.title}</s-link> : <s-link id={linkId} href={appUrl(`/app/promotions/${promotion.routeId}`)}>{general.title}</s-link>}
+                              {summary && <s-text color="subdued">{summary}</s-text>}
                             </s-stack>
                           </s-stack>
                         </s-table-cell>
-                        <s-table-cell><s-badge tone={getStatusTone(general.status)}>{general.status}</s-badge></s-table-cell>
-                        <s-table-cell>{creators[promotion.id] ?? "–"}</s-table-cell>
-                        <s-table-cell>{general.method}</s-table-cell>
-                        <s-table-cell>{getEligibility(promotion)}</s-table-cell>
-                        <s-table-cell>{general.type}</s-table-cell>
+                        <s-table-cell><s-badge tone={getStatusTone(general.status)}>{sentenceCase(general.status)}</s-badge></s-table-cell>
                         <s-table-cell><s-badge tone={promotion.settings.websiteEnabled ? "success" : "neutral"}>{promotion.settings.websiteEnabled ? "Enabled" : "Draft"}</s-badge></s-table-cell>
                         <s-table-cell>{getPromotionValue(promotion)}</s-table-cell>
-                        <s-table-cell>{formatDate(promotion.shopify.schedule.startsAt)}</s-table-cell>
-                        <s-table-cell>{formatDate(promotion.shopify.schedule.endsAt)}</s-table-cell>
-                        <s-table-cell>{otherApp ? <s-button href={shopifyUrl} target="_blank" variant="secondary">Open in Shopify</s-button> : <s-button href={appUrl(`/app/promotions/${promotion.routeId}`)} variant="secondary">View</s-button>}</s-table-cell>
+                        <s-table-cell>
+                          <s-stack direction="block" gap="small-300">
+                            <s-text>{general.type}</s-text>
+                            <s-text color="subdued">{general.method} · {getEligibility(promotion)}</s-text>
+                          </s-stack>
+                        </s-table-cell>
+                        <s-table-cell>
+                          <s-stack direction="block" gap="small-300">
+                            <s-text>{formatDate(promotion.shopify.schedule.startsAt, "Starts now")}</s-text>
+                            <s-text color="subdued">{promotion.shopify.schedule.endsAt ? `Ends ${formatDate(promotion.shopify.schedule.endsAt)}` : "No end date"}</s-text>
+                          </s-stack>
+                        </s-table-cell>
+                        <s-table-cell>{creators[promotion.id] ?? "–"}</s-table-cell>
                       </s-table-row>
                     );
                   })}
@@ -428,6 +456,7 @@ export default function PromotionsPage() {
               </s-table>
             )}
           </s-section>
+          {total !== null && <s-text color="subdued">{total > promotions.length ? `Showing ${promotions.length} of ${total}` : `${promotions.length} promotion${promotions.length === 1 ? "" : "s"}`}{filters.source === "" && !indexing ? " · discounts made by other apps, such as Dotdigital, are hidden (see Source)" : ""}</s-text>}
         </s-stack>
       </div>
 
