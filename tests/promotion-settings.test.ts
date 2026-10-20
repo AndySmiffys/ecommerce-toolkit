@@ -2,6 +2,7 @@ import { getPriorityPosition, loadPromotionPriorities, savePromotionPriorities }
 import test from "node:test";
 import assert from "node:assert/strict";
 import { withDatabase } from "./helpers/database";
+import { deleteReportGroup, isSnapshotRunning, listReportGroups, loadReport, moveReportGroup, saveReportGroup, snapshotIsStale, takeSnapshot } from "../app/modules/promotions/services/reports.server";
 import { defaultDesign, readWebsite, websiteStorage, websiteFromSettings, promotionBlock, setPromotionBlock, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { promotionDiscountId } from "../app/modules/promotions/design/discountIdentity";
 import { createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
@@ -199,4 +200,78 @@ test("an enabled promotion syncs: an old excluded flag no longer hides it or kee
   assert.deepEqual(response.rows.map(row => row.routeId), ["901"], "and it is in the priority order");
   await updatePromotionWebsiteSettings(shop, id, websiteStorage(website()), database);
   assert.equal((await database.promotionSettings.findFirstOrThrow({ where: { shop } })).included, true, "saving it again clears the old flag");
+}));
+
+// A stand-in for Shopify that hands out pages of used discounts (used by the report tests below).
+function usageShopify(pages: Array<Array<Record<string, unknown>>>) {
+  const admin = { graphql: async (_query: string, request?: { variables?: Record<string, unknown> }) => {
+    const index = request?.variables?.after ? Number(request.variables.after) : 0;
+    return Response.json({ data: { discountNodes: { pageInfo: { hasNextPage: index + 1 < pages.length, endCursor: String(index + 1) }, nodes: pages[index] } } });
+  } };
+  return { admin };
+}
+const usageNode = (id: number, typename: string, title: string | null, uses: number | null, code: string | null, app: string | null) => ({ id: `gid://shopify/DiscountCodeNode/${id}`, events: { nodes: app === null ? [] : [{ appTitle: app }] }, discount: { __typename: typename, title, asyncUsageCount: uses, ...(code === null ? {} : { codes: { nodes: [{ code }] } }) } });
+
+// ---- Reports: saved groups and snapshots ----
+test("report groups are saved per shop in an order the merchant controls, and each shop only sees and changes its own", async () => withDatabase(async database => {
+  await saveReportGroup(shop, { name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }, database);
+  await saveReportGroup(shop, { name: "Cart", matchOn: "either", matchType: "contains", pattern: "abandon" }, database);
+  await saveReportGroup("other.myshopify.com", { name: "Theirs", matchOn: "title", matchType: "contains", pattern: "x" }, database);
+  let groups = await listReportGroups(shop, database);
+  assert.deepEqual(groups.map(group => group.name), ["Signup", "Cart"]);
+  await moveReportGroup(shop, groups[1].id, "up", database);
+  assert.deepEqual((await listReportGroups(shop, database)).map(group => group.name), ["Cart", "Signup"], "the order decides which group a discount counts in");
+  await moveReportGroup(shop, groups[0].id, "up", database);
+  assert.deepEqual((await listReportGroups(shop, database)).map(group => group.name), ["Signup", "Cart"]);
+  await saveReportGroup(shop, { id: String(groups[0].id), name: "Sign-up emails", matchOn: "title", matchType: "ends_with", pattern: "welcome" }, database);
+  groups = await listReportGroups(shop, database);
+  assert.deepEqual([groups[0].name, groups[0].matchOn, groups[0].matchType, groups[0].pattern], ["Sign-up emails", "title", "ends_with", "welcome"]);
+  const theirs = (await listReportGroups("other.myshopify.com", database))[0];
+  await assert.rejects(saveReportGroup(shop, { id: theirs.id, name: "Hijacked", matchOn: "code", matchType: "contains", pattern: "y" }, database), /no longer exists/);
+  await deleteReportGroup(shop, theirs.id, database);
+  assert.equal((await listReportGroups("other.myshopify.com", database)).length, 1, "another shop's group cannot be deleted");
+  await deleteReportGroup(shop, groups[0].id, database);
+  assert.deepEqual((await listReportGroups(shop, database)).map(group => group.name), ["Cart"]);
+  for (let i = 0; i < 19; i++) await saveReportGroup(shop, { name: `G${i}`, matchOn: "code", matchType: "contains", pattern: `p${i}` }, database);
+  await assert.rejects(saveReportGroup(shop, { name: "One too many", matchOn: "code", matchType: "contains", pattern: "z" }, database), /up to 20 groups/);
+}));
+
+test("snapshots record usage, give redemptions for a period from the difference, and old ones are dropped", async () => withDatabase(async database => {
+  const day = 86400000;
+  const t0 = Date.parse("2026-07-01T09:00:00Z");
+  const shopifyAt = (uses: number, extra: Array<Record<string, unknown>> = []) => usageShopify([[usageNode(1, "DiscountCodeBasic", "SIGNUP-1", uses, "SIGNUP-AAA", "Dotdigital"), ...extra]]).admin;
+  assert.equal(await snapshotIsStale(shop, 6, database, t0), true, "there is no snapshot yet");
+  assert.equal((await loadReport(shop, null, database, t0)).report, null, "nothing to show before the first reading");
+  await takeSnapshot(shopifyAt(10), shop, database, t0);
+  await takeSnapshot(shopifyAt(30, [usageNode(2, "DiscountAutomaticBasic", "Spring", 5, null, "Shopify Web")]), shop, database, t0 + 30 * day);
+  assert.equal(await snapshotIsStale(shop, 6, database, t0 + 30 * day + 3600000), false);
+  assert.equal(await snapshotIsStale(shop, 6, database, t0 + 31 * day), true);
+  await saveReportGroup(shop, { name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }, database);
+  const now = t0 + 30 * day + 3600000;
+  const allTime = await loadReport(shop, null, database, now);
+  assert.equal(allTime.report!.totals.redemptions, 35, "all time: 30 + 5");
+  assert.equal(allTime.comparedWith, null);
+  const month = await loadReport(shop, 30, database, now);
+  assert.equal(month.report!.totals.redemptions, 25, "20 more on the old discount and 5 on the new one");
+  assert.equal(month.comparedWith, new Date(t0).toISOString(), "measured from the snapshot a month ago");
+  assert.equal(month.historyStart, new Date(t0).toISOString());
+  const longer = await loadReport(shop, 90, database, now);
+  assert.equal(longer.comparedWith, null, "no snapshot is 90 days old yet, so the page falls back to all time and says so");
+  assert.equal(longer.report!.totals.redemptions, 35);
+  // Snapshots older than 120 days are dropped when a new one is taken.
+  await takeSnapshot(shopifyAt(40), shop, database, t0 + 200 * day);
+  assert.equal((await loadReport(shop, null, database, t0 + 200 * day)).historyStart, new Date(t0 + 200 * day).toISOString(), "the old ones are gone");
+}));
+
+test("only one snapshot runs at a time for a shop", async () => withDatabase(async database => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const slow = { graphql: async () => { await gate; return Response.json({ data: { discountNodes: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } }); } };
+  const first = takeSnapshot(slow, shop, database);
+  assert.equal(isSnapshotRunning(shop), true);
+  assert.equal(await takeSnapshot(slow, shop, database), null, "a second request while one is running does nothing");
+  release();
+  assert.ok(await first);
+  assert.equal(isSnapshotRunning(shop), false);
+  assert.equal((await database.reportSnapshot.count({ where: { shop } })), 1);
 }));

@@ -16,6 +16,8 @@ import { defaultDesign, readDesign, readWebsite, websiteStorage, websiteFromSett
 import { buildDiscountMutation, createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
 import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
 import { discountSearch, discountsPerPage, getDiscountsByIds, getDiscountsPage, listCursor } from "../app/modules/promotions/services/discounts.server";
+import { buildReport, describeGroup, matchesGroup, validateGroup, type GroupDef, type UsageRow } from "../app/modules/promotions/design/reports";
+import { loadUsage } from "../app/modules/promotions/services/reports.server";
 import { bulkLimit, parseBulkIds, runBulkAction } from "../app/modules/promotions/services/bulkPromotions.server";
 import { resolvePromotionImage, uploadPromotionImage, withImageRatios } from "../app/modules/promotions/services/promotionAssets.server";
 import { PromotionOffer, promotionCss } from "../app/modules/promotions/components/PromotionPreview";
@@ -712,4 +714,89 @@ test("each environment passes the app the same access scopes its Shopify config 
     assert.ok(fromConfig && fromConfig.length > 5, `${config} lists its scopes`);
     assert.deepEqual(fromSettings, fromConfig, `${settings} must list the same scopes as ${config}`);
   }
+});
+
+// ---- Reports: redemptions by group and by creating app ----
+const used = (id: number, title: string, code: string, createdBy: string, uses: number, kind: "code" | "automatic" = "code"): UsageRow => ({ id: `gid://shopify/DiscountNode/${id}`, title, code, kind, createdBy, uses });
+const signup: GroupDef = { id: 1, name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" };
+const cart: GroupDef = { id: 2, name: "Cart abandonment", matchOn: "either", matchType: "contains", pattern: "abandon" };
+
+test("a group matches by the start, middle or end of the code or title, in any case, and an empty pattern matches nothing", () => {
+  const row = { title: "Cart Abandonment 10%", code: "signup-4F9K" };
+  assert.equal(matchesGroup(signup, row), true, "code starts with, ignoring case");
+  assert.equal(matchesGroup({ ...signup, matchOn: "title" }, row), false, "only the title is looked at");
+  assert.equal(matchesGroup({ ...cart, matchOn: "title" }, row), true, "title contains, ignoring case");
+  assert.equal(matchesGroup({ ...cart, matchOn: "code" }, row), false);
+  assert.equal(matchesGroup({ matchOn: "either", matchType: "ends_with", pattern: "4f9k" }, row), true);
+  assert.equal(matchesGroup({ matchOn: "either", matchType: "starts_with", pattern: "  " }, row), false);
+  assert.equal(describeGroup(signup), "Code starts with “SIGNUP-”");
+});
+test("a report group is checked: it needs a name and text to look for, and sensible choices", () => {
+  assert.deepEqual(validateGroup({ name: " Signup ", matchOn: "code", matchType: "starts_with", pattern: " SIGNUP- " }), { name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" });
+  for (const [change, message] of [[{ name: "" }, /name/], [{ pattern: " " }, /text to look for/], [{ name: "x".repeat(61) }, /60/], [{ matchOn: "everything" }, /code, the title or either/], [{ matchType: "regex" }, /how the text should match/]] as const) {
+    assert.throws(() => validateGroup(Object.assign({ name: "A", matchOn: "code", matchType: "contains", pattern: "A" }, change)), message);
+  }
+});
+test("every used discount lands in one group or in Other discounts, so the totals always add up, whoever created them", () => {
+  const rows = [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 10), used(2, "Welcome", "SIGNUP-BBB", "Dotdigital", 5), used(3, "Cart abandonment", "CART-1", "Dotdigital", 7), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 3), used(5, "Spring", "", "A new app nobody set up", 2, "automatic"), used(6, "Both", "SIGNUP-X", "Dotdigital", 1)];
+  rows[5].title = "abandon signup";
+  const report = buildReport([signup, cart], rows, null);
+  const line = (key: string) => report.groups.find(item => item.key === key)!;
+  assert.equal(line("group-1").redemptions, 16, "signup: 10 + 5 + 1 (the first group a discount matches)");
+  assert.equal(line("group-2").redemptions, 7, "cart abandonment: its own one only, since the other matched Signup first");
+  assert.equal(line("other").redemptions, 5, "everything else: Halloween 3 + Spring 2");
+  assert.equal(report.groups.reduce((sum, item) => sum + item.redemptions, 0), report.totals.redemptions, "the groups add up to the total");
+  assert.equal(report.totals.redemptions, 28);
+  assert.deepEqual(report.creators.map(item => [item.name, item.redemptions]), [["Dotdigital", 23], ["Shopify Web", 3], ["A new app nobody set up", 2]], "a creating app nobody configured still has its own line");
+  assert.equal(report.creators.reduce((sum, item) => sum + item.redemptions, 0), 28);
+  assert.deepEqual(report.unmatched.map(item => item.title), ["Halloween", "Spring"], "what no group caught, biggest first");
+  assert.equal(buildReport([], rows, null).groups[0].redemptions, 28, "with no groups everything is in Other discounts");
+});
+test("a period counts the redemptions since an earlier snapshot, and a discount made since then counts in full", () => {
+  const earlier = [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 10), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 3)];
+  const now = [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 14), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 3), used(7, "SIGNUP-NEW", "SIGNUP-NEW", "Dotdigital", 6)];
+  const report = buildReport([signup], now, earlier);
+  assert.equal(report.groups[0].redemptions, 10, "4 more on an old discount and 6 on a new one");
+  assert.equal(report.groups[0].allTime, 20);
+  assert.equal(report.groups[0].discounts, 2, "two discounts were redeemed in the period");
+  assert.equal(report.totals.redemptions, 10);
+  assert.equal(report.groups.find(item => item.key === "other")!.redemptions, 0, "Halloween had no redemptions in the period");
+  assert.equal(buildReport([signup], [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 2)], [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 9)]).totals.redemptions, 0, "a count that went down is never negative");
+});
+
+// A stand-in for Shopify that hands out pages of used discounts.
+function usageShopify(pages: Array<Array<Record<string, unknown>>>, options: { throttle?: number; endless?: boolean } = {}) {
+  let throttled = 0;
+  const calls: Array<{ after: string | null; first: number }> = [];
+  const admin = { graphql: async (_query: string, request?: { variables?: Record<string, unknown> }) => {
+    const after = (request?.variables?.after as string | null) ?? null;
+    calls.push({ after, first: Number(request?.variables?.first) });
+    if (throttled < (options.throttle ?? 0)) { throttled++; return Response.json({ errors: [{ message: "Throttled", extensions: { code: "THROTTLED" } }] }); }
+    const index = after ? Number(after) : 0;
+    const more = options.endless ? true : index + 1 < pages.length;
+    return Response.json({ data: { discountNodes: { pageInfo: { hasNextPage: more, endCursor: String(index + 1) }, nodes: pages[Math.min(index, pages.length - 1)] } } });
+  } };
+  return { admin, calls };
+}
+const usageNode = (id: number, typename: string, title: string | null, uses: number | null, code: string | null, app: string | null) => ({ id: `gid://shopify/DiscountCodeNode/${id}`, events: { nodes: app === null ? [] : [{ appTitle: app }] }, discount: { __typename: typename, title, asyncUsageCount: uses, ...(code === null ? {} : { codes: { nodes: [{ code }] } }) } });
+
+test("usage is read from every kind of discount, from every source, across pages, waiting out Shopify's rate limit", async () => {
+  const shopify = usageShopify([
+    [usageNode(1, "DiscountCodeBasic", "SIGNUP-1", 4, "SIGNUP-AAA", "Dotdigital"), usageNode(2, "DiscountAutomaticBxgy", "Buy two", 9, null, "Shopify Web")],
+    [usageNode(3, "DiscountCodeApp", "From a function", 2, "FUNC1", "Some other app"), usageNode(4, "DiscountCodeFreeShipping", null, 1, null, null), usageNode(5, "DiscountCodeBasic", "Never used", 0, "X", "Dotdigital"), { id: "gid://shopify/DiscountNode/6", events: { nodes: [] }, discount: null }],
+  ], { throttle: 2 });
+  const waits: number[] = [];
+  const result = await loadUsage(shopify.admin, async ms => { waits.push(ms); });
+  assert.equal(result.complete, true);
+  assert.deepEqual(result.rows.map(row => [row.id.split("/").pop(), row.kind, row.createdBy, row.uses]), [["1", "code", "Dotdigital", 4], ["2", "automatic", "Shopify Web", 9], ["3", "code", "Some other app", 2], ["4", "code", "Unknown", 1]], "app discounts count, a missing creator is Unknown, and unused or unreadable ones are skipped");
+  assert.equal(result.rows[0].id, "gid://shopify/DiscountNode/1", "typed ids become the app's ids");
+  assert.deepEqual(waits, [1500, 3000], "it waits longer each time Shopify says to slow down");
+  assert.ok(shopify.calls.every(call => call.first === 100), "pages are small enough for Shopify's cost limit");
+});
+test("a reading that has to stop at the page limit says so instead of passing partial figures off as complete", async () => {
+  const shopify = usageShopify([[usageNode(1, "DiscountCodeBasic", "A", 1, "A", "Dotdigital")]], { endless: true });
+  const result = await loadUsage(shopify.admin, async () => {});
+  assert.equal(result.complete, false);
+  assert.equal(shopify.calls.length, 250);
+  await assert.rejects(loadUsage({ graphql: async () => Response.json({ errors: [{ message: "Nope" }] }) }), /Nope/);
 });

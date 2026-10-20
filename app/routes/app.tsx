@@ -69,6 +69,10 @@ export default function App() {
         <Link to={appUrl("/app/storefront-priorities")}>
           Storefront priority
         </Link>
+
+        <Link to={appUrl("/app/reports")}>
+          Reports
+        </Link>
       </NavMenu>
 
       {storefrontSyncError && <div style={{ padding: 20 }}><s-banner tone="warning">{storefrontSyncError}</s-banner></div>}

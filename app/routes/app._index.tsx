@@ -11,6 +11,11 @@ const tools = [
     description: "Drag promotions into the order they are shown in on the storefront.",
     path: "/app/storefront-priorities",
   },
+  {
+    title: "Reports",
+    description: "See how often discounts are redeemed, including codes made by other apps, grouped by a pattern in the code or title.",
+    path: "/app/reports",
+  },
 ];
 
 export default function DashboardPage() {

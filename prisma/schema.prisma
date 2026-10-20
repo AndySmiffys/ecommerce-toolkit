@@ -96,3 +96,33 @@ model PromotionCodeBatch {
   @@unique([shop, requestKey])
   @@index([shop, shopifyDiscountId])
 }
+
+// A group in the Reports page: discounts whose code or title matches a pattern are counted together, for example
+// every code starting SIGNUP- as "Signup". One row per group, in the order the merchant arranged them.
+model ReportGroup {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  name      String
+  matchOn   String   @default("either")
+  matchType String   @default("starts_with")
+  pattern   String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop])
+}
+
+// How many times each used discount had been redeemed at one moment, for the Reports page. Shopify only reports
+// lifetime totals, so the redemptions in a period are the difference between two snapshots. rowsJson holds one entry
+// per discount that has been used: id, title, first code, kind, creating app and uses.
+model ReportSnapshot {
+  id            Int      @id @default(autoincrement())
+  shop          String
+  takenAt       DateTime @default(now())
+  complete      Boolean  @default(true)
+  discountCount Int      @default(0)
+  rowsJson      String
+
+  @@index([shop, takenAt])
+}
