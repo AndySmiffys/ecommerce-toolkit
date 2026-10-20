@@ -1,15 +1,15 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "c8717906a421013fbf5c47e976637862"
-application_url = "https://example.com"
+application_url = "https://shopifyapps.smiffys.com"
 embedded = true
 name = "eCommerce Toolkit"
 
 [access_scopes]
-scopes = "read_shipping,read_customers,read_discounts,write_discounts,read_products,write_products,read_files,write_files,read_online_store_pages,write_app_proxy"
+scopes = "read_shipping,read_customers,read_discounts,write_discounts,read_products,write_products,read_files,write_files,read_online_store_pages,write_app_proxy,read_orders"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://shopifyapps.smiffys.com/api/auth" ]
 
 [webhooks]
 # Keep in step with ApiVersion in app/shopify.server.ts (the installed @shopify/shopify-api supports up to July 2026).
@@ -37,7 +37,7 @@ api_version = "2026-07"
 
 [build]
 include_config_on_deploy = true
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
 
 [app_proxy]
 url = "/promotion-storefront"
