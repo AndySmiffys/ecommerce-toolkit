@@ -7,6 +7,7 @@ node infra/aws/aws.mjs network [--execute]
 node infra/aws/aws.mjs environment <test|live> [--execute]
 node infra/aws/aws.mjs secret <test|live>
 node infra/aws/aws.mjs build <test|live>
+node infra/aws/aws.mjs import <test|live> [file.sqlite] [--execute]
 node infra/aws/aws.mjs release <test|live> <image-tag> [--execute]
 node infra/aws/aws.mjs domain <test|live> [--execute]
 node infra/aws/aws.mjs status <test|live>
@@ -37,6 +38,8 @@ The addresses are `shopifyapps-test.smiffys.com` and `shopifyapps.smiffys.com` (
 6. `release <env> <tag> --execute` creates the App Runner service. The first start applies the database migrations.
 7. `domain <env> --execute` links the address, requests the HTTPS certificate and adds the DNS records.
 8. Update that Shopify app's URLs to the address and deploy its configuration (`shopify app deploy --config <name>`), then install it.
+
+Bringing existing website settings into an environment (for example your dev store's designs into the test app): `import <env> <path-to>\prisma\dev.sqlite --execute`. The database is private, so this runs a one-off job inside the environment's network. The stored Shopify logins are cleaned out of the copy first (they belong to a different app), the data file is removed from the bucket afterwards, and rows that already exist are left alone.
 
 To release new code later: commit, `build <env>`, then `release <env> <tag> --execute`.
 
