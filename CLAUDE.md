@@ -49,7 +49,7 @@ Andy's rule: use Shopify's native functionality everywhere in the admin so the a
 
 ## Handoff notes (from previous assistant)
 
-Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`; verify against the code before relying on it. Repo: https://github.com/AndySmiffys/smiffys-promotion-engine. The user (Andy, Head of eCommerce at Smiffys) wants a professional, Shopify-consistent editor that supports multiple themes and lets merchants control each placement's content, styling and visibility independently.
+Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`; verify against the code before relying on it. Repo: https://github.com/AndySmiffys/ecommerce-toolkit. The user (Andy, Head of eCommerce at Smiffys) wants a professional, Shopify-consistent editor that supports multiple themes and lets merchants control each placement's content, styling and visibility independently.
 
 ### Environment and deployment
 - Andy's setup: Windows, Shopify CLI 4.9.2, Node v24.18.0. Update flow: `git pull --ff-only origin feature/free-shipping-support`, `npm ci`, `npm run setup`, `shopify app dev` (needs Node 22.12+; stop any running dev server before `npm ci` or Windows locks `esbuild.exe`). After committed updates, give Andy the local pull/restart command.
