@@ -45,6 +45,14 @@ export function validateGroup(input: { name?: unknown; matchOn?: unknown; matchT
   return { name, pattern, matchOn: input.matchOn as MatchOn, matchType: input.matchType as MatchType };
 }
 
+/**
+ * The campaign prefix of a generated code shaped PREFIX-UNIQUE-UNIQUE, like the single-use codes Dotdigital makes
+ * (WELCOME-1A2B3C4D-9XY8ZQ is WELCOME). Anything not shaped that way has no prefix.
+ */
+export function codePrefix(code: string): string | null {
+  return /^([A-Za-z0-9_]+)-[A-Za-z0-9]{4,}-[A-Za-z0-9]{4,}$/.exec(code.trim())?.[1].toUpperCase() ?? null;
+}
+
 export type ReportLine = { key: string; name: string; description: string; discounts: number; redemptions: number; allTime: number };
 export type ReportDiscount = { id: string; title: string; code: string; createdBy: string; redemptions: number; allTime: number };
 export type Report = {
@@ -52,6 +60,8 @@ export type Report = {
   groups: ReportLine[];
   /** The same redemptions grouped by the app that created the discount, biggest first. */
   creators: ReportLine[];
+  /** Redemptions of generated codes (PREFIX-UNIQUE-UNIQUE) by their prefix, biggest first. Needs no set-up. */
+  prefixes: ReportLine[];
   /** The used discounts that are in no group, biggest first, so the merchant can see what a new group would catch. */
   unmatched: ReportDiscount[];
   totals: { discounts: number; redemptions: number; allTime: number };
@@ -66,6 +76,7 @@ export function buildReport(groups: GroupDef[], current: UsageRow[], earlier: Us
   const lines = new Map<string, ReportLine>(groups.map(group => [`group-${group.id}`, { key: `group-${group.id}`, name: group.name, description: describeGroup(group), discounts: 0, redemptions: 0, allTime: 0 }]));
   lines.set(otherKey, { key: otherKey, name: "Other discounts", description: "Used discounts that are in none of the groups above", discounts: 0, redemptions: 0, allTime: 0 });
   const creators = new Map<string, ReportLine>();
+  const prefixes = new Map<string, ReportLine>();
   const unmatched: ReportDiscount[] = [];
   const totals = { discounts: 0, redemptions: 0, allTime: 0 };
   for (const row of current) {
@@ -75,6 +86,8 @@ export function buildReport(groups: GroupDef[], current: UsageRow[], earlier: Us
     add(lines.get(key)!);
     const creator = row.createdBy || "Unknown";
     add(creators.get(creator) ?? (creators.set(creator, { key: creator, name: creator, description: "Created by this app or person in Shopify", discounts: 0, redemptions: 0, allTime: 0 }), creators.get(creator)!));
+    const prefix = codePrefix(row.code);
+    if (prefix) add(prefixes.get(prefix) ?? (prefixes.set(prefix, { key: prefix, name: `${prefix}-`, description: `Codes shaped ${prefix}-…-…, such as the single-use codes another app generates`, discounts: 0, redemptions: 0, allTime: 0 }), prefixes.get(prefix)!));
     totals.allTime += row.uses; totals.redemptions += redemptions; if (redemptions > 0) totals.discounts++;
     if (key === otherKey) unmatched.push({ id: row.id, title: row.title, code: row.code, createdBy: creator, redemptions, allTime: row.uses });
   }
@@ -82,6 +95,7 @@ export function buildReport(groups: GroupDef[], current: UsageRow[], earlier: Us
   return {
     groups: [...lines.values()],
     creators: [...creators.values()].sort((a, b) => b.redemptions - a.redemptions || b.allTime - a.allTime),
+    prefixes: [...prefixes.values()].sort((a, b) => b.redemptions - a.redemptions || b.allTime - a.allTime),
     unmatched: unmatched.filter(row => row.redemptions > 0 || !earlier).slice(0, 25),
     totals,
   };

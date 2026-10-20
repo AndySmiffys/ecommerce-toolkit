@@ -16,7 +16,7 @@ import { defaultDesign, readDesign, readWebsite, websiteStorage, websiteFromSett
 import { buildDiscountMutation, createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
 import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
 import { discountSearch, discountsPerPage, getDiscountsByIds, getDiscountsPage, listCursor } from "../app/modules/promotions/services/discounts.server";
-import { buildReport, describeGroup, matchesGroup, validateGroup, type GroupDef, type UsageRow } from "../app/modules/promotions/design/reports";
+import { buildReport, codePrefix, describeGroup, matchesGroup, validateGroup, type GroupDef, type UsageRow } from "../app/modules/promotions/design/reports";
 import { loadUsage } from "../app/modules/promotions/services/reports.server";
 import { bulkLimit, parseBulkIds, runBulkAction } from "../app/modules/promotions/services/bulkPromotions.server";
 import { resolvePromotionImage, uploadPromotionImage, withImageRatios } from "../app/modules/promotions/services/promotionAssets.server";
@@ -751,6 +751,14 @@ test("every used discount lands in one group or in Other discounts, so the total
   assert.equal(report.creators.reduce((sum, item) => sum + item.redemptions, 0), 28);
   assert.deepEqual(report.unmatched.map(item => item.title), ["Halloween", "Spring"], "what no group caught, biggest first");
   assert.equal(buildReport([], rows, null).groups[0].redemptions, 28, "with no groups everything is in Other discounts");
+});
+test("generated codes are totalled by their prefix without any set-up", () => {
+  assert.equal(codePrefix("welcome-1A2B3C4D-9XY8ZQ"), "WELCOME");
+  assert.equal(codePrefix("CART10-ABCD1234-QWERTY"), "CART10");
+  for (const plain of ["HALLOWEEN", "SIGNUP-AAAA", "", "A-B-C"]) assert.equal(codePrefix(plain), null, plain);
+  const rows = [used(1, "WELCOME-COUPON || x", "WELCOME-1A2B3C4D-9XY8ZQ", "Dotdigital", 1), used(2, "WELCOME-COUPON || y", "WELCOME-5E6F7G8H-ABC123", "Dotdigital", 1), used(3, "CART10-COUPON || z", "CART10-ABCD1234-QWERTY", "Dotdigital", 1), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 4)];
+  const report = buildReport([], rows, null);
+  assert.deepEqual(report.prefixes.map(item => [item.name, item.redemptions, item.discounts]), [["WELCOME-", 2, 2], ["CART10-", 1, 1]]);
 });
 test("a period counts the redemptions since an earlier snapshot, and a discount made since then counts in full", () => {
   const earlier = [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 10), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 3)];

@@ -110,6 +110,12 @@ export function ReportsPage({ data, period, refreshing }: { data: ReportData; pe
           <div><s-button type="button" variant="secondary" disabled={groups.length >= maxGroups || undefined} onClick={() => { setError(null); setDraft({ ...blankDraft }); }}>Add group</s-button></div>
         </s-stack>
       </s-section>}
+      {report && report.prefixes.length > 0 && <s-section heading="By code prefix">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>Generated codes shaped PREFIX-UNIQUE-UNIQUE are totalled by their prefix automatically, so a new campaign appears here as soon as one of its codes is used. Prefixes are not groups: a code can count here and in a group above.</s-paragraph>
+          {table(report.prefixes, "Prefix", false)}
+        </s-stack>
+      </s-section>}
       {report && <s-section heading="By app">
         <s-stack direction="block" gap="base">
           <s-paragraph>The same redemptions by whoever created the discount. A new app’s discounts appear here without any set-up.</s-paragraph>
