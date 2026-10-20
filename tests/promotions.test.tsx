@@ -703,3 +703,13 @@ test("the app's own address reaches the build, so React Router accepts form post
   assert.match(environment, /--build-arg SHOPIFY_APP_URL="\$SHOPIFY_APP_URL"/, "the AWS build passes it on");
   assert.match(environment, /Name: SHOPIFY_APP_URL, Value: !Sub "https:\/\/\$\{DomainName\}"/, "from the environment's domain name");
 });
+
+test("each environment passes the app the same access scopes its Shopify config asks for", () => {
+  const scopesOf = (text: string) => (/scopes = "([^"]+)"/.exec(text) ?? [])[1]?.split(",").sort();
+  for (const [config, settings] of [["shopify.app.toml", "infra/aws/live.json"], ["shopify.app.test.toml", "infra/aws/test.json"]]) {
+    const fromConfig = scopesOf(readFileSync(config, "utf8"));
+    const fromSettings = (JSON.parse(readFileSync(settings, "utf8")).Scopes as string).split(",").sort();
+    assert.ok(fromConfig && fromConfig.length > 5, `${config} lists its scopes`);
+    assert.deepEqual(fromSettings, fromConfig, `${settings} must list the same scopes as ${config}`);
+  }
+});
