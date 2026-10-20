@@ -1,0 +1,11 @@
+{
+  "DomainName": "shopifyapps.smiffys.com",
+  "ShopifyApiKey": "c8717906a421013fbf5c47e976637862",
+  "Scopes": "read_shipping,read_customers,read_discounts,write_discounts,read_products,write_products,read_files,write_files,read_online_store_pages,write_app_proxy",
+  "DbInstanceClass": "db.t4g.small",
+  "DbStorageGb": 20,
+  "DbMultiAz": "false",
+  "DbBackupDays": 7,
+  "MinInstances": 1,
+  "MaxInstances": 3
+}

@@ -1,0 +1,361 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Promotion Engine, one environment (test or live): a private PostgreSQL database (RDS), secrets, a container registry,
+  a CodeBuild project that builds the app image from a zip of the code (no Docker needed on any computer), and the App
+  Runner service. The service is created only once an image exists (ImageTag is not "none").
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [test, live]
+  NetworkStackName:
+    Type: String
+    Default: promotion-engine-network
+    Description: The shared network stack (network.yaml).
+  DomainName:
+    Type: String
+    Description: The address the app will be served on, for example shopifyapps-test.smiffys.com. The DNS records are made by the deploy tool.
+  ShopifyApiKey:
+    Type: String
+    Description: The client ID of this environment's Shopify app (not secret). The client secret is stored separately by the deploy tool.
+  Scopes:
+    Type: String
+    Description: The Shopify access scopes, comma separated, exactly as in shopify.app.toml.
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DbStorageGb:
+    Type: Number
+    Default: 20
+    MinValue: 20
+  DbMultiAz:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+    Description: A second copy of the database in another zone, for automatic failover. Doubles the database cost.
+  DbBackupDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+    MaxValue: 35
+  MinInstances:
+    Type: Number
+    Default: 1
+  MaxInstances:
+    Type: Number
+    Default: 2
+  ImageTag:
+    Type: String
+    Default: none
+    Description: The image to run. "none" creates everything except the App Runner service.
+
+Conditions:
+  IsLive: !Equals [!Ref Environment, live]
+  DeployService: !Not [!Equals [!Ref ImageTag, none]]
+
+Resources:
+  # ---- Secrets (the names are generated, so a deleted environment can be created again at once) ----
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub Promotion Engine ${Environment} database login
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "promotion"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+      Tags:
+        - { Key: Project, Value: promotion-engine }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # Created empty: the deploy tool asks for the Shopify client secret and stores it here, so it never appears in a template.
+  ShopifySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub Promotion Engine ${Environment} Shopify app client secret
+      Tags:
+        - { Key: Project, Value: promotion-engine }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # ---- Database ----
+  ConnectorSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub Promotion Engine ${Environment} app (App Runner VPC connector)
+      VpcId: { Fn::ImportValue: !Sub "${NetworkStackName}-VpcId" }
+      Tags:
+        - { Key: Name, Value: !Sub "promotion-engine-${Environment}-app" }
+        - { Key: Project, Value: promotion-engine }
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub Promotion Engine ${Environment} database. Only the app may connect.
+      VpcId: { Fn::ImportValue: !Sub "${NetworkStackName}-VpcId" }
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ConnectorSecurityGroup
+          Description: PostgreSQL from the app
+      Tags:
+        - { Key: Name, Value: !Sub "promotion-engine-${Environment}-database" }
+        - { Key: Project, Value: promotion-engine }
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub Promotion Engine ${Environment} database (private subnets)
+      SubnetIds:
+        - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetA" }
+        - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetB" }
+
+  # A final snapshot is kept if the stack is ever deleted, so the data is not lost by accident.
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub promotion-engine-${Environment}
+      Engine: postgres
+      EngineVersion: "17.11"
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbStorageGb
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: promotion
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      PubliclyAccessible: false
+      MultiAZ: !Ref DbMultiAz
+      BackupRetentionPeriod: !Ref DbBackupDays
+      DeletionProtection: !If [IsLive, true, false]
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      Tags:
+        - { Key: Project, Value: promotion-engine }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # ---- Building the image ----
+  SourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - { Id: expire-old-source, Status: Enabled, ExpirationInDays: 30 }
+      Tags:
+        - { Key: Project, Value: promotion-engine }
+        - { Key: Environment, Value: !Ref Environment }
+
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub promotion-engine-${Environment}
+      EmptyOnDelete: true
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the last 15 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":15},"action":{"type":"expire"}}]}'
+      Tags:
+        - { Key: Project, Value: promotion-engine }
+        - { Key: Environment, Value: !Ref Environment }
+
+  BuildLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/promotion-engine-${Environment}-build
+      RetentionInDays: 30
+
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: codebuild.amazonaws.com }, Action: sts:AssumeRole }
+      Policies:
+        - PolicyName: build-image
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt BuildLogs.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${BuildLogs.Arn}:*"
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub "${SourceBucket.Arn}/*"
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !GetAtt Repository.Arn
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub promotion-engine-${Environment}-build
+      ServiceRole: !GetAtt BuildRole.Arn
+      Source:
+        Type: S3
+        Location: !Sub "${SourceBucket}/source.zip"
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${REPOSITORY_URI%%/*}"
+            build:
+              commands:
+                - docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine -t "$REPOSITORY_URI:$IMAGE_TAG" .
+            post_build:
+              commands:
+                - docker push "$REPOSITORY_URI:$IMAGE_TAG"
+      Artifacts: { Type: NO_ARTIFACTS }
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - { Name: REPOSITORY_URI, Value: !GetAtt Repository.RepositoryUri }
+          - { Name: IMAGE_TAG, Value: latest }
+      LogsConfig:
+        CloudWatchLogs: { Status: ENABLED, GroupName: !Ref BuildLogs }
+      TimeoutInMinutes: 30
+      Tags:
+        - { Key: Project, Value: promotion-engine }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # ---- The app ----
+  AccessRole:
+    Type: AWS::IAM::Role
+    Condition: DeployService
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: build.apprunner.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Condition: DeployService
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: tasks.apprunner.amazonaws.com }, Action: sts:AssumeRole }
+      Policies:
+        - PolicyName: read-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [!Ref DatabaseSecret, !Ref ShopifySecret]
+
+  VpcConnector:
+    Type: AWS::AppRunner::VpcConnector
+    Condition: DeployService
+    Properties:
+      VpcConnectorName: !Sub promotion-engine-${Environment}
+      Subnets:
+        - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetA" }
+        - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetB" }
+      SecurityGroups: [!Ref ConnectorSecurityGroup]
+
+  Scaling:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Condition: DeployService
+    Properties:
+      AutoScalingConfigurationName: !Sub promotion-engine-${Environment}
+      MinSize: !Ref MinInstances
+      MaxSize: !Ref MaxInstances
+      MaxConcurrency: 100
+
+  Service:
+    Type: AWS::AppRunner::Service
+    Condition: DeployService
+    DependsOn: Database
+    Properties:
+      ServiceName: !Sub promotion-engine-${Environment}
+      SourceConfiguration:
+        AutoDeploymentsEnabled: false
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AccessRole.Arn
+        ImageRepository:
+          ImageRepositoryType: ECR
+          ImageIdentifier: !Sub "${Repository.RepositoryUri}:${ImageTag}"
+          ImageConfiguration:
+            Port: "3000"
+            RuntimeEnvironmentVariables:
+              - { Name: NODE_ENV, Value: production }
+              - { Name: SHOPIFY_API_KEY, Value: !Ref ShopifyApiKey }
+              - { Name: SHOPIFY_APP_URL, Value: !Sub "https://${DomainName}" }
+              - { Name: SCOPES, Value: !Ref Scopes }
+              - { Name: DB_HOST, Value: !GetAtt Database.Endpoint.Address }
+              - { Name: DB_PORT, Value: !GetAtt Database.Endpoint.Port }
+              - { Name: DB_NAME, Value: promotion }
+            RuntimeEnvironmentSecrets:
+              - { Name: DB_USER, Value: !Sub "${DatabaseSecret}:username::" }
+              - { Name: DB_PASSWORD, Value: !Sub "${DatabaseSecret}:password::" }
+              - { Name: SHOPIFY_API_SECRET, Value: !Ref ShopifySecret }
+      InstanceConfiguration:
+        Cpu: 1 vCPU
+        Memory: 2 GB
+        InstanceRoleArn: !GetAtt InstanceRole.Arn
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 5
+      AutoScalingConfigurationArn: !Ref Scaling
+      NetworkConfiguration:
+        IngressConfiguration: { IsPubliclyAccessible: true }
+        EgressConfiguration:
+          EgressType: VPC
+          VpcConnectorArn: !Ref VpcConnector
+      Tags:
+        - { Key: Project, Value: promotion-engine }
+        - { Key: Environment, Value: !Ref Environment }
+
+Outputs:
+  RepositoryUri:
+    Value: !GetAtt Repository.RepositoryUri
+  SourceBucket:
+    Value: !Ref SourceBucket
+  BuildProject:
+    Value: !Ref BuildProject
+  ShopifySecretArn:
+    Value: !Ref ShopifySecret
+  DatabaseEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  ServiceArn:
+    Condition: DeployService
+    Value: !GetAtt Service.ServiceArn
+  ServiceUrl:
+    Condition: DeployService
+    Value: !GetAtt Service.ServiceUrl
