@@ -168,6 +168,29 @@ export function averages(totals: Totals) {
   };
 }
 
+// ---- Series for charts ----
+
+/** Every day from `from` to `to`, inclusive, as YYYY-MM-DD. */
+export function datesBetween(from: string, to: string): string[] {
+  const days: string[] = [];
+  for (let time = Date.parse(`${from}T00:00:00Z`), end = Date.parse(`${to}T00:00:00Z`); time <= end && days.length < 400; time += 86400000) days.push(new Date(time).toISOString().slice(0, 10));
+  return days;
+}
+
+/** The totals for each day in the range, with a zero for a day nothing happened, so a chart has no gaps. */
+export function dailySeries(days: Array<Totals & { day: string }>, from: string, to: string): Array<Totals & { day: string }> {
+  const byDay = new Map(days.map(item => [item.day, item]));
+  return datesBetween(from, to).map(day => byDay.get(day) ?? { day, ...zero() });
+}
+
+/** The same number of days straight before a range, or null when the orders held do not reach back that far. */
+export function previousRange(range: { from: string; to: string }, now = Date.now()): { from: string; to: string } | null {
+  const length = datesBetween(range.from, range.to).length;
+  const to = new Date(Date.parse(`${range.from}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+  const from = new Date(Date.parse(`${to}T00:00:00Z`) - (length - 1) * 86400000).toISOString().slice(0, 10);
+  return from < daysAgo(orderHistoryDays, now) ? null : { from, to };
+}
+
 // ---- Dates ----
 
 export const orderHistoryDays = 60;

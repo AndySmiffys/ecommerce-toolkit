@@ -6,6 +6,7 @@ import type { DiscountCounts, ReportData } from "../services/reports.server";
 import type { OrderReportData } from "../services/orderReport.server";
 import { ModalOverlay } from "./ModalOverlay";
 import { OrderDrilldown } from "./ReportOrders";
+import { useCsvDownload } from "./useCsvDownload";
 import { PolarisSelect } from "./PolarisControls";
 
 const number = new Intl.NumberFormat("en-GB");
@@ -15,7 +16,10 @@ const whenDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(
 type Draft = { id: string; name: string; matchOn: MatchOn; matchType: MatchType; pattern: string };
 const blankDraft: Draft = { id: "", name: "", matchOn: "either", matchType: "starts_with", pattern: "" };
 
-export function ReportsPage({ data, orders, counts, period, refreshing }: { data: ReportData; orders: OrderReportData; counts: DiscountCounts | null; period: string; refreshing: boolean }) {
+export function ReportsPage({ data, orders, counts, period, refreshing, view }: { data: ReportData; orders: OrderReportData; counts: DiscountCounts | null; period: string; refreshing: boolean; view: "discounts" | "groups" | "redemptions" }) {
+  const { busy: downloading, exportUrl, download } = useCsvDownload();
+  const path = `/app/reports/${view}`;
+  const titles = { discounts: "Discount returns", groups: "Groups, prefixes and apps", redemptions: "Redemptions" };
   const appUrl = useEmbeddedAppUrl();
   const navigate = useNavigate();
   const fetcher = useFetcher<{ ok: boolean; error: string | null; intent?: string }>();
@@ -80,8 +84,17 @@ export function ReportsPage({ data, orders, counts, period, refreshing }: { data
     </s-table-body>
   </s-table>;
 
-  return <s-page heading="Reports" inlineSize="large">
+  return <s-page heading={titles[view]} inlineSize="large">
+    <s-link slot="breadcrumb-actions" href={appUrl("/app/reports")}>Reports</s-link>
     <s-button slot="primary-action" type="button" variant="primary" disabled={refreshing || busy || undefined} onClick={() => send({ intent: "refresh" })}>{refreshing ? "Reading discounts…" : "Refresh figures"}</s-button>
+    {view === "discounts"
+      ? <>
+        <s-button slot="secondary-actions" commandFor="discount-export" disabled={downloading || !orders.syncedAt || undefined}>Export</s-button>
+        <s-menu id="discount-export" accessibilityLabel="Export a table as CSV">
+          {([["Discounts", "discounts"], ["By day", "days"], ["By group", "groups"], ["By code prefix", "prefixes"]] as const).map(([label, kind]) => <s-button key={kind} icon="export" onClick={() => void download(exportUrl(kind, orders.filter))}>{label}</s-button>)}
+        </s-menu>
+      </>
+      : <s-button slot="secondary-actions" icon="export" disabled={downloading || !report || undefined} onClick={() => void download(exportUrl("redemptions", undefined, { period }))}>Export CSV</s-button>}
     <s-stack direction="block" gap="base">
       {error && <s-banner tone="critical" dismissible onDismiss={() => setError(null)}>{error}</s-banner>}
       {refreshing && <s-banner tone="info">Reading your discounts and orders from Shopify. This page updates by itself when it is done.</s-banner>}
@@ -90,8 +103,8 @@ export function ReportsPage({ data, orders, counts, period, refreshing }: { data
       {report && compared && !data.comparedWith && <s-banner tone="info" heading="Not enough history for this period yet">
         Figures have been kept since {whenDate(data.historyStart)}, so this period cannot be measured yet. Until then the totals shown are for all time. The app takes a reading every day.
       </s-banner>}
-      <OrderDrilldown data={orders} />
-      {counts && <s-section heading="All discounts in your store">
+      {view === "discounts" && <OrderDrilldown data={orders} />}
+      {view === "redemptions" && counts && <s-section heading="All discounts in your store">
         <s-stack direction="block" gap="small-300">
           <s-heading>{number.format(counts.all)}{counts.capped ? "+" : ""} discounts</s-heading>
           <s-text color="subdued">
@@ -99,7 +112,7 @@ export function ReportsPage({ data, orders, counts, period, refreshing }: { data
           </s-text>
         </s-stack>
       </s-section>}
-      {report && <s-section heading="Redemptions, lifetime">
+      {view !== "discounts" && report && <s-section heading="Redemptions, lifetime">
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="base" alignItems="end" justifyContent="space-between">
             <s-stack direction="block" gap="small-300">
@@ -108,32 +121,32 @@ export function ReportsPage({ data, orders, counts, period, refreshing }: { data
                 {compared && data.comparedWith ? `Since ${when(data.comparedWith)}, across ${number.format(report.totals.discounts)} discounts.` : `Across ${number.format(report.totals.discounts || report.groups.reduce((sum, line) => sum + line.discounts, 0))} discounts used so far.`} Includes discounts made by hand, by this app and by other apps. Read from Shopify {when(data.takenAt)}.
               </s-text>
             </s-stack>
-            <PolarisSelect label="Period" value={period} onChange={event => navigate(appUrl(`/app/reports?period=${event.currentTarget.value}`))}>
+            <PolarisSelect label="Period" value={period} onChange={event => navigate(appUrl(`${path}?period=${event.currentTarget.value}`))}>
               {reportPeriods.map(option => <s-option key={option.value} value={option.value}>{option.label}</s-option>)}
             </PolarisSelect>
           </s-stack>
         </s-stack>
       </s-section>}
-      {report && <s-section heading="Groups">
+      {view === "groups" && report && <s-section heading="Groups">
         <s-stack direction="block" gap="base">
           <s-paragraph>Groups gather discounts whose code or title follows a pattern, for example the single-use codes another app creates. A discount counts in the first group it matches, so the order matters. Anything that matches no group is counted under Other discounts, so nothing is left out.</s-paragraph>
           {table(report.groups, "Group", true)}
           <div><s-button type="button" variant="secondary" disabled={groups.length >= maxGroups || undefined} onClick={() => { setError(null); setDraft({ ...blankDraft }); }}>Add group</s-button></div>
         </s-stack>
       </s-section>}
-      {report && report.prefixes.length > 0 && <s-section heading="By code prefix">
+      {view === "groups" && report && report.prefixes.length > 0 && <s-section heading="By code prefix">
         <s-stack direction="block" gap="base">
           <s-paragraph>Generated codes shaped PREFIX-UNIQUE-UNIQUE are totalled by their prefix automatically, so a new campaign appears here as soon as one of its codes is used. Prefixes are not groups: a code can count here and in a group above.</s-paragraph>
           {table(report.prefixes, "Prefix", false)}
         </s-stack>
       </s-section>}
-      {report && <s-section heading="By app">
+      {view === "groups" && report && <s-section heading="By app">
         <s-stack direction="block" gap="base">
           <s-paragraph>The same redemptions by whoever created the discount. A new app’s discounts appear here without any set-up.</s-paragraph>
           {report.creators.length ? table(report.creators, "Created by", false) : <s-text color="subdued">No discounts have been used yet.</s-text>}
         </s-stack>
       </s-section>}
-      {report && report.unmatched.length > 0 && <s-section heading="Discounts in no group">
+      {view === "groups" && report && report.unmatched.length > 0 && <s-section heading="Discounts in no group">
         <s-stack direction="block" gap="base">
           <s-paragraph>The most used discounts that no group catches. If several share a pattern, add a group for them.</s-paragraph>
           <s-table>

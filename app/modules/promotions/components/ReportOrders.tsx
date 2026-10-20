@@ -16,7 +16,7 @@ const makeMoney = (currency: string) => {
 };
 
 /** Why there may be nothing to show yet, in plain words. */
-function Status({ data }: { data: OrderReportData }) {
+export function ReportStatus({ data }: { data: OrderReportData }) {
   const denied = /access|scope|permission|approved/i.test(data.error ?? "");
   return <>
     {data.syncing && <s-banner tone="info">Reading your orders from Shopify. This can take a few minutes the first time, and this page updates by itself when it is done.</s-banner>}
@@ -55,7 +55,7 @@ export function OrderOverview({ data }: { data: OrderReportData }) {
   const { report } = data;
   return <s-section heading="Discount returns, last 30 days">
     <s-stack direction="block" gap="base">
-      <Status data={data} />
+      <ReportStatus data={data} />
       {data.syncedAt && <>
         <Metrics data={data} totals={report.selected} exact />
         <s-text color="subdued">Orders that used a discount code or an automatic discount, from every source. Read from Shopify {when(data.syncedAt)}. Orders using two discounts count once here.</s-text>
@@ -148,7 +148,7 @@ export function OrderDrilldown({ data }: { data: OrderReportData }) {
   const narrowed = !report.exact;
   const groups: Array<Totals & { key: string; name: string; sub?: string }> = report.groups.map((line: OrderLine) => ({ ...line, sub: undefined }));
   return <>
-    <Status data={data} />
+    <ReportStatus data={data} />
     <s-section heading="Returns by discount">
       <s-stack direction="block" gap="base">
         <s-paragraph>What orders that used a discount were worth, and what the discounts gave away, from your Shopify orders for {day(filter.from)} to {day(filter.to)}. The last 60 days are kept, and the app reads orders daily. Days are counted in UTC.</s-paragraph>

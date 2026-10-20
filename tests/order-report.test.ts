@@ -1,9 +1,13 @@
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { AreaChart, BarList, Donut, niceMax, Sparkline } from "../app/modules/promotions/components/charts/Charts";
 import assert from "node:assert/strict";
 import { withDatabase } from "./helpers/database";
-import { aggregateOrderLines, averages, buildOrderReport, emptyFilter, filterFromParams, type DayRow } from "../app/modules/promotions/design/orderReport";
+import { aggregateOrderLines, averages, buildOrderReport, dailySeries, datesBetween, emptyFilter, filterFromParams, previousRange, type DayRow } from "../app/modules/promotions/design/orderReport";
 import type { GroupDef } from "../app/modules/promotions/design/reports";
-import { driveOrderSync, firstDayToRead, linesOf, loadOrderReport, orderSyncIsDue, stepOrderSync } from "../app/modules/promotions/services/orderReport.server";
+import { decimal, toCsv } from "../app/modules/promotions/design/csv";
+import { driveOrderSync, exportOrderTable, firstDayToRead, linesOf, loadOrderReport, orderSyncIsDue, stepOrderSync } from "../app/modules/promotions/services/orderReport.server";
 
 const shop = "orders-test.myshopify.com";
 const money = (amount: string, currencyCode = "GBP") => ({ shopMoney: { amount, currencyCode } });
@@ -174,3 +178,64 @@ test("driving a read checks until Shopify is done, one at a time per shop", asyn
   assert.equal(waits, 3, "a wait after starting and after each check while Shopify was still preparing it; the second caller did nothing");
   assert.equal((await loadOrderReport(shop, emptyFilter("2026-10-10", "2026-10-11"), database)).report.selected.orders, 3);
 }));
+
+test("charts get a value for every day and a comparison only when the orders held reach back that far", () => {
+  assert.deepEqual(datesBetween("2026-10-09", "2026-10-12"), ["2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12"]);
+  const series = dailySeries([{ day: "2026-10-10", orders: 2, valueCents: 500, refundCents: 0, discountCents: 50 }], "2026-10-09", "2026-10-11");
+  assert.deepEqual(series.map(item => [item.day, item.orders]), [["2026-10-09", 0], ["2026-10-10", 2], ["2026-10-11", 0]], "a quiet day is a zero, not a gap");
+  const now = Date.parse("2026-10-20T12:00:00Z");
+  assert.deepEqual(previousRange({ from: "2026-10-14", to: "2026-10-20" }, now), { from: "2026-10-07", to: "2026-10-13" }, "the same number of days straight before");
+  assert.deepEqual(previousRange({ from: "2026-09-21", to: "2026-10-20" }, now), { from: "2026-08-22", to: "2026-09-20" });
+  assert.equal(previousRange({ from: "2026-08-22", to: "2026-10-20" }, now), null, "60 days has nothing before it that is held");
+});
+
+test("a table is downloaded as CSV with every row, escaped, and text that looks like a formula is made safe", () => {
+  const csv = toCsv(["Name", "Orders"], [["Plain", 3], ["A, \"quoted\" name", 2], ["=HYPERLINK(\"x\")", 1], ["-5 off", 4], [null, 0]]);
+  assert.equal(csv.charCodeAt(0), 0xfeff, "a byte-order mark so Excel reads it as UTF-8");
+  assert.deepEqual(csv.slice(1).split("\r\n"), ["Name,Orders", "Plain,3", "\"A, \"\"quoted\"\" name\",2", "\"'=HYPERLINK(\"\"x\"\")\",1", "'-5 off,4", ",0", ""]);
+  assert.equal(decimal(123456), "1234.56");
+});
+
+test("the overview compares with the period before, and downloads cover every discount, not only the ones shown", async () => withDatabase(async database => {
+  const days = ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"];
+  for (const [index, day] of days.entries()) {
+    await database.reportOrderDay.createMany({ data: [
+      { shop, day, key: "*all", kind: "all", label: "All orders", orders: 10, valueCents: 10000, refundCents: 0, discountCents: 0 },
+      { shop, day, key: "*discounted", kind: "all", label: "Orders with a discount", orders: index < 2 ? 2 : 4, valueCents: index < 2 ? 2000 : 4000, refundCents: 0, discountCents: index < 2 ? 200 : 400 },
+      ...Array.from({ length: 3 }, (_, code) => ({ shop, day, key: `c:WELCOME-AAAA-BBBB${code}`, kind: "code", label: `WELCOME-AAAA-BBBB${code}`, orders: 1, valueCents: 1000, refundCents: 0, discountCents: 100 })),
+    ] });
+  }
+  const now = Date.parse("2026-10-04T12:00:00Z");
+  const loaded = await loadOrderReport(shop, emptyFilter("2026-10-03", "2026-10-04"), database, { compare: true, now });
+  assert.equal(loaded.report.selected.orders, 8);
+  assert.equal(loaded.previous?.selected.orders, 4, "the two days before");
+  assert.deepEqual(loaded.previousRange, { from: "2026-10-01", to: "2026-10-02" });
+  assert.equal((await loadOrderReport(shop, emptyFilter("2026-10-03", "2026-10-04"), database, { now })).previous, null, "no comparison unless asked for");
+  const all = await exportOrderTable(shop, "discounts", emptyFilter("2026-10-01", "2026-10-04"), database);
+  assert.equal(all.rows.length, 3, "one line per discount");
+  assert.deepEqual(all.headers.slice(0, 3), ["Discount", "Type", "Orders"]);
+  assert.equal(all.rows[0][2], 4, "its orders across the days");
+  assert.equal((await exportOrderTable(shop, "days", emptyFilter("2026-10-01", "2026-10-04"), database)).rows.length, 4);
+  assert.equal((await exportOrderTable(shop, "prefixes", emptyFilter("2026-10-01", "2026-10-04"), database)).rows[0][0], "WELCOME-");
+}));
+
+test("the charts draw for normal, single-day, empty and all-zero data without breaking", () => {
+  const money = (value: number) => `£${value}`;
+  const area = (values: number[], previous: number[] | null = null) => renderToStaticMarkup(createElement(AreaChart, { values, previous, labels: values.map((_, index) => `${index + 1} Oct`), format: money, label: "Orders" }));
+  assert.match(area([1, 5, 3, 8]), /<path/);
+  assert.match(area([4, 6, 2], [1, 2, 3]), /stroke-dasharray/, "the previous period is dotted behind");
+  for (const odd of [[], [3], [0, 0, 0]]) assert.doesNotMatch(area(odd), /NaN|Infinity/, JSON.stringify(odd));
+  assert.doesNotMatch(renderToStaticMarkup(createElement(Sparkline, { values: [0, 0], label: "x" })), /NaN/);
+  assert.doesNotMatch(renderToStaticMarkup(createElement(Sparkline, { values: [5], label: "x" })), /NaN/);
+  const donut = renderToStaticMarkup(createElement(Donut, { slices: [{ label: "Signup", value: 300 }, { label: "Other", value: 100 }], centreLabel: "Given", centreValue: "£4", format: money, label: "x" }));
+  assert.match(donut, /75%/);
+  assert.match(donut, /25%/);
+  assert.doesNotMatch(renderToStaticMarkup(createElement(Donut, { slices: [], centreLabel: "Given", centreValue: "£0", format: money, label: "x" })), /NaN/);
+  const bars = renderToStaticMarkup(createElement(BarList, { items: [{ label: "WELCOME-", value: 40, note: "£4 off" }, { label: "CART10-", value: 10 }], format: value => String(value), empty: "None" }));
+  assert.match(bars, /WELCOME-/);
+  assert.match(renderToStaticMarkup(createElement(BarList, { items: [], format: String, empty: "None here" })), /None here/);
+  assert.equal(niceMax(0), 1);
+  assert.equal(niceMax(7), 10);
+  assert.equal(niceMax(130), 200);
+  assert.equal(niceMax(2400), 5000);
+});

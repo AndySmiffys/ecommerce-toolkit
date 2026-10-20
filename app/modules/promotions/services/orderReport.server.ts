@@ -1,6 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
 import db from "../../../db.server";
-import { aggregateOrderLines, buildOrderReport, daysAgo, orderHistoryDays, today, type DayRow, type OrderFilter, type OrderReport } from "../design/orderReport";
+import { aggregateOrderLines, averages, buildOrderReport, daysAgo, orderHistoryDays, previousRange, today, type DayRow, type OrderFilter, type OrderReport } from "../design/orderReport";
+import { decimal, type Cell } from "../design/csv";
+import { describeGroup } from "../design/reports";
 import { listReportGroups } from "./reports.server";
 import type { ShopifyAdminClient } from "./discount.server";
 
@@ -144,6 +146,9 @@ export async function orderSyncIsDue(shop: string, hours: number, database: Data
 
 export type OrderReportData = {
   report: OrderReport;
+  /** The same figures for the days straight before, when the orders held reach back that far. */
+  previous: OrderReport | null;
+  previousRange: { from: string; to: string } | null;
   filter: OrderFilter;
   currency: string;
   syncedAt: string | null;
@@ -152,14 +157,17 @@ export type OrderReportData = {
   groups: Array<{ id: number; name: string }>;
 };
 
-export async function loadOrderReport(shop: string, filter: OrderFilter, database: Database = db): Promise<OrderReportData> {
+export async function loadOrderReport(shop: string, filter: OrderFilter, database: Database = db, options: { compare?: boolean; now?: number } = {}): Promise<OrderReportData> {
+  const before = options.compare ? previousRange(filter, options.now) : null;
   const [groups, rows, sync] = await Promise.all([
     listReportGroups(shop, database),
-    database.reportOrderDay.findMany({ where: { shop, day: { gte: filter.from, lte: filter.to } } }),
+    database.reportOrderDay.findMany({ where: { shop, day: { gte: before?.from ?? filter.from, lte: filter.to } } }),
     database.reportOrderSync.findUnique({ where: { shop } }),
   ]);
   return {
     report: buildOrderReport(rows, groups, filter),
+    previous: before ? buildOrderReport(rows, groups, { ...filter, ...before }) : null,
+    previousRange: before,
     filter,
     currency: sync?.currency ?? "GBP",
     syncedAt: sync?.syncedAt?.toISOString() ?? null,
@@ -167,4 +175,28 @@ export async function loadOrderReport(shop: string, filter: OrderFilter, databas
     error: sync?.error ?? null,
     groups: groups.map(group => ({ id: group.id, name: group.name })),
   };
+}
+
+// ---- Downloads ----
+
+export const exportKinds = ["discounts", "days", "groups", "prefixes"] as const;
+export type ExportKind = (typeof exportKinds)[number];
+
+const money = (cents: number) => decimal(cents);
+const totalsCells = (totals: { orders: number; valueCents: number; discountCents: number; refundCents: number }): Cell[] => {
+  const average = averages(totals);
+  return [totals.orders, money(totals.valueCents), money(totals.discountCents), money(totals.refundCents), average.orderValueCents === null ? "" : money(average.orderValueCents), average.discountPerOrderCents === null ? "" : money(average.discountPerOrderCents)];
+};
+const totalsHeaders = ["Orders", "Order value", "Discount given", "Refunded", "Average order value", "Average discount per order"];
+
+/** The table behind a report as rows for a download: every row, not just the ones the page shows. */
+export async function exportOrderTable(shop: string, kind: ExportKind, filter: OrderFilter, database: Database = db): Promise<{ filename: string; headers: string[]; rows: Cell[][] }> {
+  const groups = await listReportGroups(shop, database);
+  const rows = await database.reportOrderDay.findMany({ where: { shop, day: { gte: filter.from, lte: filter.to } } });
+  const report = buildOrderReport(rows, groups, filter, Number.MAX_SAFE_INTEGER);
+  const range = `${filter.from}_to_${filter.to}`;
+  if (kind === "days") return { filename: `discounts-by-day-${range}.csv`, headers: ["Day", ...totalsHeaders], rows: report.days.map(item => [item.day, ...totalsCells(item)]) };
+  if (kind === "groups") return { filename: `discounts-by-group-${range}.csv`, headers: ["Group", "Rule", ...totalsHeaders], rows: report.groups.map(line => [line.name, groups.find(group => `group-${group.id}` === line.key) ? describeGroup(groups.find(group => `group-${group.id}` === line.key)!) : "Discounts in no group", ...totalsCells(line)]) };
+  if (kind === "prefixes") return { filename: `discounts-by-code-prefix-${range}.csv`, headers: ["Code prefix", ...totalsHeaders], rows: report.prefixes.map(line => [line.name, ...totalsCells(line)]) };
+  return { filename: `discounts-${range}.csv`, headers: ["Discount", "Type", ...totalsHeaders], rows: report.discounts.map(item => [item.label, item.kind === "code" ? "Discount code" : item.kind === "manual" ? "Manual discount" : "Automatic discount", ...totalsCells(item)]) };
 }
