@@ -110,7 +110,7 @@ function Filters({ data }: { data: OrderReportData }) {
     if (next.prefix) params.set("prefix", next.prefix);
     if (next.kind) params.set("kind", next.kind);
     if (next.search.trim()) params.set("q", next.search.trim());
-    navigate(appUrl(`/app/reports?${params}`));
+    navigate(appUrl(`/app/reports/discounts?${params}`));
   };
   const clear = () => { const reset = { ...draft, preset: "30", group: "", prefix: "", kind: "", search: "" }; setDraft(reset); apply(reset); };
   return <s-stack direction="block" gap="base">
