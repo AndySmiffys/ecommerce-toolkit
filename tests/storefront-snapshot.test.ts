@@ -355,7 +355,9 @@ test('end to end: the loader embed joins each promotion\'s badge data into the p
   Object.assign(listed.settings, { websiteEnabled: true, showProductBadge: true, priority: 9 });
   const everything = promotion(2).result;
   Object.assign(everything.settings, { websiteEnabled: true, showProductBadge: true, priority: 1 });
-  const split = splitSnapshot([publicSnapshotEntry(listed, now)!, publicSnapshotEntry(everything, now)!], 'rev');
+  // This test runs the real browser script, which uses the real clock, so these promotions must not have an end date that can pass.
+  const running = (entry: NonNullable<ReturnType<typeof publicSnapshotEntry>>) => ({ ...entry, starts: 0, ends: 0 });
+  const split = splitSnapshot([running(publicSnapshotEntry(listed, now)!), running(publicSnapshotEntry(everything, now)!)], 'rev');
   const shards = Object.fromEntries(Object.entries(split.badgeShards).map(([id, value]) => [`badge_${id}`, { value }]));
   const loader = readFileSync('extensions/promotion-engine/blocks/promotion-loader.liquid', 'utf8').split('{% schema %}')[0];
   const context = (pageType: string) => ({ app: { metafields: { promotion_engine: { badge_index: { value: split.badgeIndex }, ...shards } } }, block: { settings: { badges_enabled: true } }, request: { page_type: pageType }, routes: { root_url: '/' }, collection: { id: 1 } });
@@ -372,8 +374,9 @@ test('end to end: the loader embed joins each promotion\'s badge data into the p
     const embed = page.window.document.createElement('promotion-engine-embed');
     Object.assign(embed.dataset, { badgesEnabled: 'true', root: '/' });
     page.window.document.body.append(embed);
-    await new Promise(done => setTimeout(done, 60));
-    const badge = (id: string) => page.window.document.querySelector(`[data-pe-auto="badge"][data-product-id="${id}"]`) as HTMLElement;
+    const badge = (id: string) => page.window.document.querySelector(`[data-pe-auto="badge"][data-product-id="${id}"]`) as HTMLElement;
+    // Wait for the badges to appear rather than for a fixed time: the machine may be busy with other tests.
+    for (let waited = 0; waited < 5000 && !(badge('1000000000007') && !badge('1000000000007').hidden && badge('5') && !badge('5').hidden); waited += 25) await new Promise(done => setTimeout(done, 25));
     assert.equal(badge('1000000000007').hidden, false);
     assert.equal(badge('1000000000007').dataset.promotionId, '1', 'the specific-products offer ranks first for a product it lists');
     assert.equal(badge('5').dataset.promotionId, '2', 'every other product gets the offer on all products');
