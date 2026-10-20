@@ -1,0 +1,44 @@
+# eCommerce Toolkit (Test): the test environment on AWS (see infra/aws/README.md). It is a separate Shopify app from the
+# live one, with its own client ID and secret, installed on the dev store.
+client_id = "8b1d99591a232b76605beaa021ab0da6"
+name = "eCommerce Toolkit (Test)"
+application_url = "https://shopifyapps-test.smiffys.com"
+embedded = true
+
+[access_scopes]
+scopes = "read_shipping,read_customers,read_discounts,write_discounts,read_products,write_products,read_files,write_files,read_online_store_pages,write_app_proxy"
+
+[auth]
+redirect_urls = [ "https://shopifyapps-test.smiffys.com/api/auth" ]
+
+[webhooks]
+# Keep in step with ApiVersion in app/shopify.server.ts (the installed @shopify/shopify-api supports up to July 2026).
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/discounts/changed"
+  topics = [ "discounts/update", "discounts/delete", "discounts/redeemcode_added", "discounts/redeemcode_removed" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/collections/update"
+  topics = [ "collections/update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/products/update"
+  topics = [ "products/update" ]
+
+[build]
+include_config_on_deploy = true
+
+[app_proxy]
+url = "/promotion-storefront"
+prefix = "apps"
+subpath = "promotion-engine"
