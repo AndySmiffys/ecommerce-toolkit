@@ -1,11 +1,13 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import db from "../../../db.server";
 import { isOtherApp, type SourceChoice } from "../design/discountSource";
+import { matchesGroup, maxGroups, validateGroup, type GroupDef } from "../design/reports";
 import { promotionDiscountId } from "../design/discountIdentity";
 import { discountsPerPage, type DiscountsPage } from "./discounts.server";
 import type { ShopifyAdminClient } from "./discount.server";
 
-type Database = Pick<PrismaClient, "discountIndex" | "discountIndexState" | "$transaction">;
+type Database = Pick<PrismaClient, "discountIndex" | "discountIndexState" | "discountSourceRule" | "$transaction">;
+type SourceRule = Pick<GroupDef, "name" | "matchOn" | "matchType" | "pattern">;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // The index is built by reading every discount in pages, oldest first, which can take minutes when other apps have made
@@ -53,18 +55,20 @@ export function creatorOf(node: IndexNode): string {
   return node.events?.nodes?.[0]?.appTitle || "Unknown";
 }
 
-export function indexRow(shop: string, node: IndexNode): Row | null {
+export function indexRow(shop: string, node: IndexNode, rules: SourceRule[] = []): Row | null {
   const discount = node.discount;
   if (!discount?.__typename) return null;
   const id = promotionDiscountId(node.id);
   const numeric = id.split("/").pop() ?? "";
   if (!/^\d+$/.test(numeric)) return null;
   const createdBy = creatorOf(node);
+  const title = String(discount.title ?? "");
+  const code = String(discount.codes?.nodes?.[0]?.code ?? "");
   return {
     shop, discountId: id, numericId: BigInt(numeric),
     kind: discount.__typename.startsWith("DiscountCode") ? "code" : "automatic",
-    title: String(discount.title ?? ""), code: String(discount.codes?.nodes?.[0]?.code ?? ""),
-    createdBy, other: isOtherApp(createdBy), startsAt: asDate(discount.startsAt), endsAt: asDate(discount.endsAt),
+    title, code, createdBy, other: isOtherApp(createdBy), ruleName: rules.find(rule => matchesGroup(rule, { code, title }))?.name ?? null,
+    startsAt: asDate(discount.startsAt), endsAt: asDate(discount.endsAt),
   };
 }
 
@@ -78,8 +82,8 @@ async function readPage(admin: ShopifyAdminClient, after: string | null, query: 
   }
 }
 
-async function store(database: Database, shop: string, nodes: IndexNode[]) {
-  const rows = nodes.map(node => indexRow(shop, node)).filter((row): row is Row => Boolean(row));
+async function store(database: Database, shop: string, nodes: IndexNode[], rules: SourceRule[]) {
+  const rows = nodes.map(node => indexRow(shop, node, rules)).filter((row): row is Row => Boolean(row));
   if (!rows.length) return;
   await database.$transaction([
     database.discountIndex.deleteMany({ where: { shop, discountId: { in: rows.map(row => row.discountId) } } }),
@@ -100,6 +104,7 @@ export async function buildIndex(getAdmin: () => Promise<ShopifyAdminClient>, sh
   try {
     const state = await database.discountIndexState.findUnique({ where: { shop } });
     const started = new Date(now);
+    const rules = await listSourceRules(shop, database);
     const incremental = Boolean(state?.scanDone && state.refreshedAt);
     // A little before the last read, so a change made while that read ran is not missed.
     const query = incremental ? `updated_at:>=${new Date(state!.refreshedAt!.getTime() - 5 * 60000).toISOString()}` : null;
@@ -107,7 +112,7 @@ export async function buildIndex(getAdmin: () => Promise<ShopifyAdminClient>, sh
     if (!incremental && !state) await database.discountIndexState.create({ data: { shop, scanStarted: started } });
     for (let page = 0; page < maxPages; page++) {
       const connection = await readPage(await getAdmin(), cursor, query, wait);
-      await store(database, shop, connection?.nodes ?? []);
+      await store(database, shop, connection?.nodes ?? [], rules);
       cursor = connection?.pageInfo?.endCursor ?? cursor;
       if (!connection?.pageInfo?.hasNextPage) {
         await database.discountIndexState.update({ where: { shop }, data: { scanDone: true, scanCursor: null, refreshedAt: incremental ? started : state?.scanStarted ?? started, count: await database.discountIndex.count({ where: { shop } }), error: null } });
@@ -138,9 +143,9 @@ export type IndexFilter = { source: SourceChoice; app: string; status: string; t
 
 function where(shop: string, filter: IndexFilter, now: Date): Prisma.DiscountIndexWhereInput {
   const and: Prisma.DiscountIndexWhereInput[] = [];
-  if (filter.source === "") and.push({ other: false });
-  if (filter.source === "other") and.push({ other: true });
-  if (filter.app) and.push({ createdBy: filter.app });
+  if (filter.source === "") and.push({ other: false, ruleName: null });
+  if (filter.source === "other") and.push({ OR: [{ other: true }, { ruleName: { not: null } }] });
+  if (filter.app) and.push({ OR: [{ ruleName: filter.app }, { ruleName: null, createdBy: filter.app }] });
   if (filter.status === "active") and.push({ OR: [{ startsAt: null }, { startsAt: { lte: now } }] }, { OR: [{ endsAt: null }, { endsAt: { gt: now } }] });
   if (filter.status === "scheduled") and.push({ startsAt: { gt: now } });
   if (filter.status === "expired") and.push({ endsAt: { lte: now } });
@@ -181,14 +186,18 @@ export async function listFromIndex(shop: string, filter: IndexFilter, database:
 /** Who created each of these discounts, where the index knows. */
 export async function creatorsOf(shop: string, ids: string[], database: Pick<PrismaClient, "discountIndex"> = db): Promise<Record<string, string>> {
   if (!ids.length) return {};
-  const rows = await database.discountIndex.findMany({ where: { shop, discountId: { in: ids.map(id => promotionDiscountId(id)) } }, select: { discountId: true, createdBy: true } });
-  return Object.fromEntries(rows.map(row => [row.discountId, row.createdBy]));
+  const rows = await database.discountIndex.findMany({ where: { shop, discountId: { in: ids.map(id => promotionDiscountId(id)) } }, select: { discountId: true, createdBy: true, ruleName: true } });
+  return Object.fromEntries(rows.map(row => [row.discountId, row.ruleName ?? row.createdBy]));
 }
 
 /** The other apps that have made discounts, and how many each, for the app filter. */
 export async function otherApps(shop: string, database: Pick<PrismaClient, "discountIndex"> = db): Promise<Array<{ name: string; count: number }>> {
-  const groups = await database.discountIndex.groupBy({ by: ["createdBy"], where: { shop, other: true }, _count: { _all: true } });
-  return groups.map(group => ({ name: group.createdBy, count: group._count._all })).sort((a, b) => b.count - a.count);
+  const byApp = await database.discountIndex.groupBy({ by: ["createdBy"], where: { shop, other: true, ruleName: null }, _count: { _all: true } });
+  const byRule = await database.discountIndex.groupBy({ by: ["ruleName"], where: { shop, ruleName: { not: null } }, _count: { _all: true } });
+  const counts = new Map<string, number>();
+  for (const group of byApp) counts.set(group.createdBy, (counts.get(group.createdBy) ?? 0) + group._count._all);
+  for (const group of byRule) counts.set(group.ruleName!, (counts.get(group.ruleName!) ?? 0) + group._count._all);
+  return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 }
 
 /** Drops discounts Shopify no longer has, so the list does not keep asking for them. */
@@ -199,6 +208,42 @@ export async function forgetDiscounts(shop: string, ids: string[], database: Pic
 /** Which of these discounts another app created. Anything not in the index is treated as the merchant's own. */
 export async function madeByOtherApps(shop: string, ids: string[], database: Pick<PrismaClient, "discountIndex"> = db): Promise<Record<string, string>> {
   if (!ids.length) return {};
-  const rows = await database.discountIndex.findMany({ where: { shop, other: true, discountId: { in: ids.map(id => promotionDiscountId(id)) } }, select: { discountId: true, createdBy: true } });
-  return Object.fromEntries(rows.map(row => [row.discountId, row.createdBy]));
+  const rows = await database.discountIndex.findMany({ where: { shop, OR: [{ other: true }, { ruleName: { not: null } }], discountId: { in: ids.map(id => promotionDiscountId(id)) } }, select: { discountId: true, createdBy: true, ruleName: true } });
+  return Object.fromEntries(rows.map(row => [row.discountId, row.ruleName ?? row.createdBy]));
+}
+
+// ---- The merchant's rules for what counts as another app's discount ----
+
+export const maxSourceRules = maxGroups;
+
+export async function listSourceRules(shop: string, database: Pick<PrismaClient, "discountSourceRule"> = db): Promise<GroupDef[]> {
+  const rows = await database.discountSourceRule.findMany({ where: { shop }, orderBy: { id: "asc" } });
+  return rows.map(row => ({ id: row.id, name: row.name, matchOn: row.matchOn as GroupDef["matchOn"], matchType: row.matchType as GroupDef["matchType"], pattern: row.pattern }));
+}
+
+/** Marks every indexed discount that a rule matches, and clears the mark from the ones no rule matches now. */
+export async function applySourceRules(shop: string, database: Pick<PrismaClient, "discountIndex" | "discountSourceRule"> = db): Promise<void> {
+  const rules = await listSourceRules(shop, database);
+  await database.discountIndex.updateMany({ where: { shop, ruleName: { not: null } }, data: { ruleName: null } });
+  for (const rule of rules) {
+    const text = rule.pattern.trim();
+    if (!text) continue;
+    const test = rule.matchType === "starts_with" ? { startsWith: text, mode: "insensitive" as const } : rule.matchType === "ends_with" ? { endsWith: text, mode: "insensitive" as const } : { contains: text, mode: "insensitive" as const };
+    const fields: Prisma.DiscountIndexWhereInput[] = [];
+    if (rule.matchOn !== "title") fields.push({ code: test });
+    if (rule.matchOn !== "code") fields.push({ title: test });
+    await database.discountIndex.updateMany({ where: { shop, ruleName: null, OR: fields }, data: { ruleName: rule.name } });
+  }
+}
+
+export async function saveSourceRule(shop: string, input: { name?: unknown; matchOn?: unknown; matchType?: unknown; pattern?: unknown }, database: Pick<PrismaClient, "discountIndex" | "discountSourceRule"> = db): Promise<void> {
+  const values = validateGroup(input);
+  if ((await database.discountSourceRule.count({ where: { shop } })) >= maxSourceRules) throw new Error(`You can have up to ${maxSourceRules} rules.`);
+  await database.discountSourceRule.create({ data: { shop, ...values } });
+  await applySourceRules(shop, database);
+}
+
+export async function deleteSourceRule(shop: string, id: number, database: Pick<PrismaClient, "discountIndex" | "discountSourceRule"> = db): Promise<void> {
+  await database.discountSourceRule.deleteMany({ where: { id, shop } });
+  await applySourceRules(shop, database);
 }

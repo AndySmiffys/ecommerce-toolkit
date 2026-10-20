@@ -7,10 +7,11 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 
 import { authenticate, unauthenticated } from "../shopify.server";
 import { isOtherApp, sourceFromParam } from "../modules/promotions/design/discountSource";
-import { buildIndex, creatorsOf, forgetDiscounts, indexIsDue, indexState, isIndexing, listFromIndex, otherApps } from "../modules/promotions/services/discountIndex.server";
+import { buildIndex, creatorsOf, deleteSourceRule, forgetDiscounts, indexIsDue, indexState, isIndexing, listFromIndex, listSourceRules, otherApps, saveSourceRule } from "../modules/promotions/services/discountIndex.server";
 import { getStatusTone } from "../modules/promotions/design/statusTone";
 import { PolarisCheckbox, PolarisSelect } from "../modules/promotions/components/PolarisControls";
 import { PromotionBulkBar } from "../modules/promotions/components/PromotionBulkBar";
+import { SourceRulesModal } from "../modules/promotions/components/SourceRulesModal";
 import { bulkIntents, parseBulkIds, runBulkAction, type BulkIntent } from "../modules/promotions/services/bulkPromotions.server";
 import { discountSearch, getDiscountsByIds, getDiscountsPage, listCursor, type DiscountsPage } from "../modules/promotions/services/discounts.server";
 import { mapDiscountsToPromotions } from "../modules/promotions/mappers/promotionMapper";
@@ -50,6 +51,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
   const creators = await creatorsOf(session.shop, page.nodes.map(node => node.id));
   const apps = index.ready ? await otherApps(session.shop) : [];
+  const rules = await listSourceRules(session.shop);
   const promotions = await attachPromotionSettings(session.shop, mapDiscountsToPromotions(page.nodes));
 
   // The storefront data is refreshed when the plain newest page opens, not on every search or page turn.
@@ -57,7 +59,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!after && !before && !q && !status && source === "") {
     try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `Promotions loaded, but storefront sync failed: ${error instanceof Error ? error.message : "Please retry."}`; }
   }
-  return { promotions, syncError, pageInfo: page.pageInfo, total: page.total, filters: { q, status, source, app }, creators, apps, indexing: !index.ready, indexError: index.error };
+  return { promotions, syncError, pageInfo: page.pageInfo, total: page.total, filters: { q, status, source, app }, creators, apps, rules, indexing: !index.ready, indexError: index.error };
 }
 
 // Bulk changes from the list: Shopify discount status, website status, and deleting. See bulkPromotions.server.ts.
@@ -65,6 +67,16 @@ export async function action({ request }: ActionFunctionArgs) {
   const { admin, session } = await authenticate.admin(request);
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
+  // The rules for what counts as another app's discount (see SourceRulesModal).
+  if (intent === "saveRule" || intent === "deleteRule") {
+    try {
+      if (intent === "saveRule") await saveSourceRule(session.shop, { name: form.get("name"), matchOn: form.get("matchOn"), matchType: form.get("matchType"), pattern: form.get("pattern") });
+      else await deleteSourceRule(session.shop, Number(form.get("id")));
+      return { intent, ok: true as const, error: null as string | null, done: [] as string[], failed: [] as Array<{ id: string; message: string }>, syncError: null as string | null };
+    } catch (error) {
+      return { intent, ok: false as const, error: error instanceof Error ? error.message : "The rule could not be saved.", done: [] as string[], failed: [] as Array<{ id: string; message: string }>, syncError: null as string | null };
+    }
+  }
   if (!(bulkIntents as readonly string[]).includes(intent)) return { intent, error: "That action is not available.", done: [] as string[], failed: [] as Array<{ id: string; message: string }>, syncError: null as string | null };
   let ids: string[];
   try { ids = parseBulkIds(form.get("ids")); }
@@ -224,7 +236,8 @@ const discountTypes: { type: string; title: string; description: string; icon: D
 
 export default function PromotionsPage() {
   const appUrl = useEmbeddedAppUrl();
-  const { promotions, syncError, pageInfo, total, filters, creators, apps, indexing, indexError } = useLoaderData<typeof loader>();
+  const { promotions, syncError, pageInfo, total, filters, creators, apps, rules, indexing, indexError } = useLoaderData<typeof loader>();
+  const [rulesOpen, setRulesOpen] = useState(false);
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
@@ -299,6 +312,9 @@ export default function PromotionsPage() {
     <s-page heading="Promotions" inlineSize="large">
       <s-button slot="primary-action" variant="primary" commandFor="create-discount-modal" command="--show">
         Create discount
+      </s-button>
+      <s-button slot="secondary-actions" type="button" onClick={() => setRulesOpen(true)}>
+        Hide by pattern
       </s-button>
       <s-button slot="secondary-actions" href="shopify:admin/discounts" target="_blank">
         Open Shopify discounts
@@ -415,6 +431,7 @@ export default function PromotionsPage() {
         </s-stack>
       </div>
 
+      <SourceRulesModal open={rulesOpen} rules={rules} onClose={() => setRulesOpen(false)} />
       <s-modal id="create-discount-modal" heading="Select discount type">
         <s-stack direction="block" gap="small">
           {discountTypes.map((discountType) => (

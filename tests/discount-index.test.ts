@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { withDatabase } from "./helpers/database";
 import { discountStatusAt, isOtherApp, sourceFromParam } from "../app/modules/promotions/design/discountSource";
-import { buildIndex, creatorOf, creatorsOf, forgetDiscounts, indexIsDue, indexState, listFromIndex, madeByOtherApps, otherApps } from "../app/modules/promotions/services/discountIndex.server";
+import { buildIndex, creatorOf, creatorsOf, deleteSourceRule, forgetDiscounts, listSourceRules, saveSourceRule, indexIsDue, indexState, listFromIndex, madeByOtherApps, otherApps } from "../app/modules/promotions/services/discountIndex.server";
 import { bulkDiscountAction } from "../app/modules/promotions/services/bulkPromotions.server";
 
 const shop = "index-test.myshopify.com";
@@ -139,4 +139,34 @@ test("a discount another app made is left alone by activate, deactivate and dele
   const refused = outcome.failed.find(item => item.id === "gid://shopify/DiscountNode/3");
   assert.match(refused?.message ?? "", /Dotdigital made this discount/);
   assert.equal(calls.some(id => id.endsWith("/3")), false, "Shopify was never asked to change it");
+}));
+
+test("a rule hides discounts by pattern even when Shopify names no app, and removing it brings them back", async () => withDatabase(async database => {
+  const t0 = Date.parse("2026-10-20T12:00:00Z");
+  const loox = [
+    node(1, "DiscountCodeBasic", "Halloween", "HALLOWEEN", "Shopify Web"),
+    node(2, "DiscountCodeBasic", "Loox Referrals - Friend Discount - LXZ-CNQ23GT", "LXZ-CNQ23GT", null),
+    node(3, "DiscountCodeBasic", "Loox Referrals - Friend Discount - LXZ-AAA", "LXZ-AAA", null),
+  ];
+  await buildIndex(async () => fakeShopify(loox).admin, shop, database, t0, async () => {});
+  const now = new Date(t0);
+  const ids = async (filter: Parameters<typeof listFromIndex>[1]) => (await listFromIndex(shop, filter, database, now)).ids.map(id => id.split("/").pop());
+  assert.deepEqual(await ids(none), ["3", "2", "1"], "no app is named, so they show until a rule says otherwise");
+  await saveSourceRule(shop, { name: "Loox", matchOn: "title", matchType: "starts_with", pattern: "loox referrals" }, database);
+  assert.deepEqual(await ids(none), ["1"], "the rule applies to what is already indexed");
+  assert.deepEqual(await ids({ ...none, source: "other" }), ["3", "2"]);
+  assert.deepEqual(await ids({ ...none, source: "other", app: "Loox" }), ["3", "2"], "and the rule's name is the app");
+  assert.deepEqual(await otherApps(shop, database), [{ name: "Loox", count: 2 }]);
+  assert.deepEqual(await creatorsOf(shop, ["gid://shopify/DiscountNode/2"], database), { "gid://shopify/DiscountNode/2": "Loox" });
+  assert.deepEqual(await madeByOtherApps(shop, ["gid://shopify/DiscountNode/2", "gid://shopify/DiscountNode/1"], database), { "gid://shopify/DiscountNode/2": "Loox" }, "so they are left alone by bulk changes");
+  // A discount made later is caught as it is indexed.
+  const later = fakeShopify([node(4, "DiscountCodeBasic", "Loox Referrals - Friend Discount - LXZ-NEW", "LXZ-NEW", null)]);
+  await buildIndex(async () => later.admin, shop, database, t0 + 3600000, async () => {});
+  assert.deepEqual(await ids(none), ["1"]);
+  assert.equal((await listFromIndex(shop, { ...none, source: "other" }, database, now)).total, 3);
+  const rule = (await listSourceRules(shop, database))[0];
+  await deleteSourceRule(shop, rule.id, database);
+  assert.deepEqual(await ids(none), ["4", "3", "2", "1"], "removing the rule brings them back");
+  await assert.rejects(saveSourceRule(shop, { name: "", matchOn: "title", matchType: "contains", pattern: "x" }, database), /name/);
+  await assert.rejects(saveSourceRule(shop, { name: "X", matchOn: "title", matchType: "contains", pattern: " " }, database), /text to look for/);
 }));

@@ -173,6 +173,7 @@ model DiscountIndex {
   code      String
   createdBy String
   other     Boolean
+  ruleName  String?
   startsAt  DateTime?
   endsAt    DateTime?
   updatedAt DateTime  @updatedAt
@@ -193,4 +194,18 @@ model DiscountIndexState {
   count       Int       @default(0)
   error       String?
   updatedAt   DateTime  @updatedAt
+}
+
+// A rule the merchant set for the Promotions list: discounts whose code or title matches the pattern are treated as
+// another app's and kept out of the default view, even when Shopify records no creating app (as with Loox).
+model DiscountSourceRule {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  name      String
+  matchOn   String   @default("either")
+  matchType String   @default("starts_with")
+  pattern   String
+  createdAt DateTime @default(now())
+
+  @@index([shop])
 }
