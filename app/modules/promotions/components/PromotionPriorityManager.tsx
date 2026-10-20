@@ -24,17 +24,21 @@ export function PromotionPriorityManager({ rows, hidden, errors, highlight, refr
   const appUrl = useEmbeddedAppUrl();
   const shopify = useAppBridge();
   const loadedOrder = useMemo(() => rows.map(row => row.id), [rows]);
-  const [order, setOrder] = useState(loadedOrder);
+  const [chosenOrder, setChosenOrder] = useState(loadedOrder);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [introduced, setIntroduced] = useState(true);
   const [announcement, setAnnouncement] = useState("");
   const highlighted = useRef<HTMLDivElement | null>(null);
-  useEffect(() => { setOrder(loadedOrder); }, [loadedOrder]);
+  useEffect(() => { setChosenOrder(loadedOrder); }, [loadedOrder]);
   useEffect(() => { highlighted.current?.scrollIntoView?.({ block: "center" }); }, [highlight, rows]);
 
   const byId = useMemo(() => Object.fromEntries(rows.map(row => [row.id, row])), [rows]);
+  // The merchant's arrangement is used only while it holds exactly the promotions that were loaded. When the list is
+  // reloaded and a promotion has joined or left the order (for example its website status changed), the loaded order
+  // is used at once, not for one render after it, which would look up a promotion that is no longer there.
+  const order = chosenOrder.length === loadedOrder.length && chosenOrder.every(id => id in byId) ? chosenOrder : loadedOrder;
   const dirty = order.some((id, index) => id !== loadedOrder[index]);
   const changes = order.map((id, index) => ({ id, priority: order.length - index, expectedPriority: byId[id].priority })).filter(change => change.priority !== change.expectedPriority);
   const saving = fetcher.state !== "idle";
@@ -49,7 +53,7 @@ export function PromotionPriorityManager({ rows, hidden, errors, highlight, refr
   function move(from: number, to: number) {
     const next = moveTo(order, from, to);
     if (next === order) return;
-    setOrder(next);
+    setChosenOrder(next);
     setAnnouncement(`Moved ${byId[order[from]].title} to position ${to + 1} of ${order.length}.`);
   }
   function save() {
@@ -59,7 +63,7 @@ export function PromotionPriorityManager({ rows, hidden, errors, highlight, refr
   }
 
   return <s-page heading="Storefront priority" inlineSize="large">
-    <PromotionSaveBar dirty={dirty} saving={saving} busy={refreshing} issue={null} showWhileIncomplete onSave={save} onDiscard={() => { setOrder(loadedOrder); setSaveError(null); }} />
+    <PromotionSaveBar dirty={dirty} saving={saving} busy={refreshing} issue={null} showWhileIncomplete onSave={save} onDiscard={() => { setChosenOrder(loadedOrder); setSaveError(null); }} />
     <SaveNotices error={saveError} onDismissError={() => setSaveError(null)} />
     <s-stack direction="block" gap="base">
       {target && introduced && !dirty && <s-banner tone="info" heading={`Set where ${target.title} ranks`}>It starts at the top of the order. Drag it to a new place, or use Move up and Move down, then save.</s-banner>}

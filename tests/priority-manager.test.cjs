@@ -50,7 +50,9 @@ async function mountPage({ rows, hidden = [], search = '', respond }) {
   } }] }], { initialEntries: [`/app/storefront-priorities${search}`] });
   const root = createRoot(document.getElementById('root'));
   await React.act(async () => { root.render(React.createElement(RouterProvider, { router })); await wait(); });
-  return { submissions, unmount: async () => { await React.act(async () => root.unmount()); router.dispose(); } };
+  // Replaces what the page loads next and reloads it, as happens when the list changes elsewhere.
+  const reload = async next => { current = next; await React.act(async () => { await router.revalidate(); await wait(); }); };
+  return { submissions, reload, unmount: async () => { await React.act(async () => root.unmount()); router.dispose(); } };
 }
 
 const three = () => [promotion(1, 'Halloween sale', 30), promotion(2, 'Free shipping', 20, { blocks: ['Header'] }), promotion(3, 'Costume badge', 10, { status: 'Scheduled', schedule: 'Starts 1 Dec 2026', restricted: true, audience: 'Selected customer segments (login required)' })];
@@ -143,4 +145,23 @@ test('moveTo places an item at the position of another and ignores moves that go
   assert.equal(moveTo(same, 1, 1), same);
   assert.equal(moveTo(same, 0, 5), same);
   assert.equal(moveTo(same, -1, 0), same);
+});
+
+test('when the list is reloaded and a promotion has left or joined the order, the page shows the new list instead of failing', async () => {
+  const page = await mountPage({ rows: three() });
+  try {
+    // The merchant has already rearranged the list when it is reloaded.
+    await click(rowAt(0).querySelector('s-button[accessibilityLabel="Move Halloween sale down"], s-button[accessibilitylabel="Move Halloween sale down"]'));
+    assert.deepEqual(titles(), ['Free shipping', 'Halloween sale', 'Costume badge']);
+    // Free shipping's website status changed elsewhere, so it is no longer in the order.
+    await page.reload(three().filter(row => row.title !== 'Free shipping'));
+    assert.deepEqual(titles(), ['Halloween sale', 'Costume badge'], 'the page shows what was loaded, without the promotion that left');
+    assert.equal(button('Save').disabled, true, 'nothing is waiting to be saved');
+    // A promotion joins the order at the top.
+    await page.reload([promotion(9, 'New offer', 40), ...three().filter(row => row.title !== 'Free shipping')]);
+    assert.deepEqual(titles(), ['New offer', 'Halloween sale', 'Costume badge']);
+    // And it can still be moved and saved afterwards.
+    await click(rowAt(0).querySelector('s-button[accessibilityLabel="Move New offer down"], s-button[accessibilitylabel="Move New offer down"]'));
+    assert.deepEqual(titles(), ['Halloween sale', 'New offer', 'Costume badge']);
+  } finally { await page.unmount(); }
 });
