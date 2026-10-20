@@ -693,3 +693,13 @@ test("discounts are looked up by id in batches, skipping any Shopify no longer h
   assert.equal(found[0].id, "gid://shopify/DiscountNode/1");
   assert.deepEqual(await getDiscountsByIds(admin, []), []);
 });
+
+test("the app's own address reaches the build, so React Router accepts form posts behind App Runner's https front", () => {
+  const dockerfile = readFileSync("Dockerfile", "utf8");
+  const environment = readFileSync("infra/aws/environment.yaml", "utf8");
+  const config = readFileSync("react-router.config.ts", "utf8");
+  assert.match(config, /process\.env\.SHOPIFY_APP_URL/, "the router config allows the app's own host");
+  assert.ok(dockerfile.indexOf("ARG SHOPIFY_APP_URL") !== -1 && dockerfile.indexOf("ARG SHOPIFY_APP_URL") < dockerfile.indexOf("npm run build"), "the address is a build argument that exists before the app is built");
+  assert.match(environment, /--build-arg SHOPIFY_APP_URL="\$SHOPIFY_APP_URL"/, "the AWS build passes it on");
+  assert.match(environment, /Name: SHOPIFY_APP_URL, Value: !Sub "https:\/\/\$\{DomainName\}"/, "from the environment's domain name");
+});

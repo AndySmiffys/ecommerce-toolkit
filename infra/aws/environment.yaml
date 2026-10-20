@@ -226,7 +226,7 @@ Resources:
                 - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "${REPOSITORY_URI%%/*}"
             build:
               commands:
-                - docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine -t "$REPOSITORY_URI:$IMAGE_TAG" .
+                - docker build --build-arg NODE_IMAGE=public.ecr.aws/docker/library/node:22-alpine --build-arg SHOPIFY_APP_URL="$SHOPIFY_APP_URL" -t "$REPOSITORY_URI:$IMAGE_TAG" .
             post_build:
               commands:
                 - docker push "$REPOSITORY_URI:$IMAGE_TAG"
@@ -239,6 +239,7 @@ Resources:
         EnvironmentVariables:
           - { Name: REPOSITORY_URI, Value: !GetAtt Repository.RepositoryUri }
           - { Name: IMAGE_TAG, Value: latest }
+          - { Name: SHOPIFY_APP_URL, Value: !Sub "https://${DomainName}" }
       LogsConfig:
         CloudWatchLogs: { Status: ENABLED, GroupName: !Ref BuildLogs }
       TimeoutInMinutes: 30
