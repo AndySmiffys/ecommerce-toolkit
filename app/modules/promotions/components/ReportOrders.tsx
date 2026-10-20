@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
-import { averages, type OrderFilter, type OrderLine, type Totals } from "../design/orderReport";
+import { averages, spanDays, today, type OrderFilter, type OrderLine, type Totals } from "../design/orderReport";
 import type { OrderReportData } from "../services/orderReport.server";
 import { DateField } from "./DateTimeField";
 import { PolarisSelect } from "./PolarisControls";
@@ -101,7 +101,7 @@ const kinds = [{ value: "", label: "All types" }, { value: "code", label: "Disco
 function Filters({ data }: { data: OrderReportData }) {
   const appUrl = useEmbeddedAppUrl();
   const navigate = useNavigate();
-  const [draft, setDraft] = useState<OrderFilter & { preset: string }>(() => ({ ...data.filter, preset: presets.find(item => item.value !== "custom" && Math.round((Date.parse(`${data.filter.to}T00:00:00Z`) - Date.parse(`${data.filter.from}T00:00:00Z`)) / 86400000) === Number(item.value))?.value ?? "custom" }));
+  const [draft, setDraft] = useState<OrderFilter & { preset: string }>(() => ({ ...data.filter, preset: presets.find(item => item.value !== "custom" && data.filter.to === today() && spanDays(data.filter) === Number(item.value))?.value ?? "custom" }));
   const set = (change: Partial<typeof draft>) => setDraft(current => ({ ...current, ...change }));
   const apply = (next = draft) => {
     const params = new URLSearchParams();

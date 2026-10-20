@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
-import { averages, dailySeries, type Totals } from "../design/orderReport";
+import { averages, dailySeries, spanDays, type Totals } from "../design/orderReport";
 import { formatMoney } from "../design/formatMoney";
 import type { OrderReportData } from "../services/orderReport.server";
 import { AreaChart, BarList, Donut, Sparkline, type Slice } from "./charts/Charts";
@@ -60,7 +60,7 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
   const series = (pick: (item: Totals) => number) => days.map(pick);
   const previousSeries = (pick: (item: Totals) => number) => before?.map(pick) ?? null;
   const ready = Boolean(data.syncedAt);
-  const preset = periods.find(item => Math.round((Date.parse(`${filter.to}T00:00:00Z`) - Date.parse(`${filter.from}T00:00:00Z`)) / 86400000) + 1 === Number(item.value))?.value ?? "30";
+  const preset = periods.find(item => spanDays(filter) === Number(item.value))?.value ?? "30";
   const go = (nextDays: string, nextCompare: boolean) => navigate(appUrl(`/app/reports?days=${nextDays}&compare=${nextCompare ? 1 : 0}`));
 
   const metrics: Array<{ label: string; value: string; trend: React.ReactNode; values: number[]; previous: number[] | null }> = [

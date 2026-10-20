@@ -197,6 +197,10 @@ export const orderHistoryDays = 60;
 const dayOf = (date: Date) => date.toISOString().slice(0, 10);
 export const today = (now = Date.now()) => dayOf(new Date(now));
 export const daysAgo = (days: number, now = Date.now()) => dayOf(new Date(now - days * 86400000));
+/** The last N days including today, as a range. "Last 30 days" is 30 days, today and the 29 before. */
+export const lastDays = (days: number, now = Date.now()) => ({ from: daysAgo(days - 1, now), to: today(now) });
+/** How many days a range covers, counting both ends. */
+export const spanDays = (range: { from: string; to: string }) => datesBetween(range.from, range.to).length;
 export const isDay = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 
 /** Reads the filters from the address. The period is the last 30 days unless it names valid days; it is kept inside the 60 days held. */
@@ -204,9 +208,9 @@ export function filterFromParams(params: URLSearchParams, now = Date.now()): Ord
   const earliest = daysAgo(orderHistoryDays, now);
   const latest = today(now);
   const preset = Number(params.get("days"));
-  let from = daysAgo(30, now);
+  let from = lastDays(30, now).from;
   let to = latest;
-  if ([7, 14, 30, 60].includes(preset)) from = daysAgo(preset, now);
+  if ([7, 14, 30, 60].includes(preset)) from = lastDays(preset, now).from;
   else if (isDay(params.get("from")) && isDay(params.get("to"))) { from = params.get("from")!; to = params.get("to")!; }
   if (from < earliest) from = earliest;
   if (to > latest) to = latest;

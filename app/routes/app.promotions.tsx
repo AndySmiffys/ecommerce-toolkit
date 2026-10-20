@@ -13,7 +13,7 @@ import { PolarisCheckbox, PolarisSelect } from "../modules/promotions/components
 import { PromotionBulkBar } from "../modules/promotions/components/PromotionBulkBar";
 import { SourceRulesModal } from "../modules/promotions/components/SourceRulesModal";
 import { MetricStrip } from "../modules/promotions/components/MetricStrip";
-import { daysAgo, emptyFilter, today } from "../modules/promotions/design/orderReport";
+import { emptyFilter, lastDays } from "../modules/promotions/design/orderReport";
 import { loadOrderReport } from "../modules/promotions/services/orderReport.server";
 import { formatMoney } from "../modules/promotions/design/formatMoney";
 import { bulkIntents, parseBulkIds, runBulkAction, type BulkIntent } from "../modules/promotions/services/bulkPromotions.server";
@@ -57,7 +57,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const apps = index.ready ? await otherApps(session.shop) : [];
   const rules = await listSourceRules(session.shop);
   // The figures across the top: what is running, and what discounts did in the last 30 days.
-  const returns = await loadOrderReport(session.shop, emptyFilter(daysAgo(30), today()));
+  const returns = await loadOrderReport(session.shop, emptyFilter(lastDays(30).from, lastDays(30).to));
   const activeCount = index.ready ? await countActivePromotions(session.shop) : null;
   const stats = { activeCount, orders: returns.syncedAt ? returns.report.selected.orders : null, valueCents: returns.syncedAt ? returns.report.selected.valueCents : null, discountCents: returns.syncedAt ? returns.report.selected.discountCents : null, share: returns.syncedAt ? returns.report.discountedShare : null, currency: returns.currency };
   const promotions = await attachPromotionSettings(session.shop, mapDiscountsToPromotions(page.nodes));

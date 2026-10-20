@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { AreaChart, BarList, Donut, niceMax, Sparkline } from "../app/modules/promotions/components/charts/Charts";
 import assert from "node:assert/strict";
 import { withDatabase } from "./helpers/database";
-import { aggregateOrderLines, averages, buildOrderReport, dailySeries, datesBetween, emptyFilter, filterFromParams, previousRange, type DayRow } from "../app/modules/promotions/design/orderReport";
+import { aggregateOrderLines, averages, buildOrderReport, dailySeries, datesBetween, emptyFilter, filterFromParams, previousRange, spanDays, type DayRow } from "../app/modules/promotions/design/orderReport";
 import type { GroupDef } from "../app/modules/promotions/design/reports";
 import { decimal, toCsv } from "../app/modules/promotions/design/csv";
 import { driveOrderSync, exportOrderTable, firstDayToRead, linesOf, loadOrderReport, orderSyncIsDue, stepOrderSync } from "../app/modules/promotions/services/orderReport.server";
@@ -87,11 +87,13 @@ test("averages are worked out from the totals and are empty when there is nothin
 
 test("filters come from the address and stay inside the 60 days that are held", () => {
   const now = Date.parse("2026-10-20T12:00:00Z");
-  assert.deepEqual(filterFromParams(new URLSearchParams(""), now), emptyFilter("2026-09-20", "2026-10-20"), "the last 30 days by default");
-  assert.equal(filterFromParams(new URLSearchParams("days=7"), now).from, "2026-10-13");
+  assert.deepEqual(filterFromParams(new URLSearchParams(""), now), emptyFilter("2026-09-21", "2026-10-20"), "the last 30 days by default: 30 days, today included");
+  assert.equal(filterFromParams(new URLSearchParams("days=7"), now).from, "2026-10-14");
+  for (const days of [7, 14, 30, 60]) assert.equal(spanDays(filterFromParams(new URLSearchParams(`days=${days}`), now)), days, `${days} days is exactly ${days} days, so the page can show the choice that was made`);
+  for (const [days, comparable] of [[7, true], [14, true], [30, true], [60, false]] as const) assert.equal(previousRange(filterFromParams(new URLSearchParams(`days=${days}`), now), now) !== null, comparable, `${days} days compared with the period before`);
   assert.equal(filterFromParams(new URLSearchParams("from=2026-01-01&to=2026-12-31"), now).from, "2026-08-21", "no earlier than 60 days");
   assert.equal(filterFromParams(new URLSearchParams("from=2026-01-01&to=2026-12-31"), now).to, "2026-10-20", "and not in the future");
-  assert.equal(filterFromParams(new URLSearchParams("from=nonsense&to=2026-10-01"), now).from, "2026-09-20");
+  assert.equal(filterFromParams(new URLSearchParams("from=nonsense&to=2026-10-01"), now).from, "2026-09-21");
   const chosen = filterFromParams(new URLSearchParams("group=other&prefix=welcome&kind=code&q=abc"), now);
   assert.deepEqual([chosen.group, chosen.prefix, chosen.kind, chosen.search], ["other", "WELCOME", "code", "abc"]);
   assert.equal(filterFromParams(new URLSearchParams("kind=evil"), now).kind, "");
