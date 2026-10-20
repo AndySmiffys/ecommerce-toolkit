@@ -242,10 +242,19 @@ async function main() {
     const associated = domains.CustomDomains.find(domain => domain.DomainName === settings.DomainName);
     say(`Domain ${settings.DomainName} in Route 53 zone ${zone.Name}: ${associated ? "already linked to the service (" + associated.Status + ")" : "not linked yet"}.`);
     if (!execute) { say("\nNothing was changed. Run again with --execute to link the domain, request its HTTPS certificate and add the DNS records."); return; }
-    const details = associated ? domains : aws(["apprunner", "associate-custom-domain", "--service-arn", outputs.ServiceArn, "--domain-name", settings.DomainName, "--no-enable-www-subdomain"]);
-    const target = details.DNSTarget ?? domains.DNSTarget;
-    const custom = details.CustomDomain ?? associated;
-    const records = [{ Name: settings.DomainName, Value: target }, ...(custom?.CertificateValidationRecords ?? []).map(record => ({ Name: record.Name, Value: record.Value }))];
+    if (!associated) aws(["apprunner", "associate-custom-domain", "--service-arn", outputs.ServiceArn, "--domain-name", settings.DomainName, "--no-enable-www-subdomain"]);
+    // AWS takes a moment to produce the certificate-check records after the domain is linked, so wait for them.
+    let target = domains.DNSTarget;
+    let validation = [];
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const state = aws(["apprunner", "describe-custom-domains", "--service-arn", outputs.ServiceArn]);
+      const current = state.CustomDomains.find(domain => domain.DomainName === settings.DomainName);
+      target = state.DNSTarget;
+      validation = current?.CertificateValidationRecords ?? [];
+      if (validation.length || current?.Status === "active") break;
+      await sleep(5000);
+    }
+    const records = [{ Name: settings.DomainName, Value: target }, ...validation.map(record => ({ Name: record.Name, Value: record.Value }))];
     const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-dns-"));
     try {
       const file = join(directory, "records.json");
