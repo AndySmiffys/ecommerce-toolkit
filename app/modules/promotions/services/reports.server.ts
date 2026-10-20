@@ -76,6 +76,30 @@ export async function loadUsage(admin: ShopifyAdminClient, wait: (ms: number) =>
   return { rows, complete: false };
 }
 
+// ---- How many discounts there are altogether, used or not ----
+
+export type DiscountCounts = { all: number; used: number; neverUsed: number; codes: number; automatic: number; active: number; capped: boolean };
+const COUNTS = `query ReportCounts {
+  all: discountNodesCount(limit: 10000) { count precision }
+  used: discountNodesCount(query: "times_used:>0", limit: 10000) { count precision }
+  codes: discountNodesCount(query: "method:code", limit: 10000) { count precision }
+  automatic: discountNodesCount(query: "method:automatic", limit: 10000) { count precision }
+  active: discountNodesCount(query: "status:active", limit: 10000) { count precision }
+}`;
+
+/** Every discount in the store, used or not, so the page shows the whole picture beside the ones that have redemptions. Null if Shopify cannot say. */
+export async function loadDiscountCounts(admin: ShopifyAdminClient): Promise<DiscountCounts | null> {
+  try {
+    const result = await (await admin.graphql(COUNTS)).json();
+    if (result.errors?.length || !result.data) return null;
+    const read = (key: string) => result.data[key] as { count?: number; precision?: string } | undefined;
+    const count = (key: string) => Number(read(key)?.count ?? 0);
+    const all = count("all");
+    const used = count("used");
+    return { all, used, neverUsed: Math.max(0, all - used), codes: count("codes"), automatic: count("automatic"), active: count("active"), capped: Object.keys(result.data).some(key => read(key)?.precision === "AT_LEAST") };
+  } catch { return null; }
+}
+
 // ---- Snapshots: Shopify gives lifetime totals, so redemptions in a period come from two snapshots ----
 
 const keepDays = 120;

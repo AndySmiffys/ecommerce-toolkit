@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFetcher, useNavigate } from "react-router";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
 import { matchOnLabels, matchOptions, matchTypeLabels, matchTypes, maxGroups, otherKey, reportPeriods, type GroupDef, type MatchOn, type MatchType, type ReportLine } from "../design/reports";
-import type { ReportData } from "../services/reports.server";
+import type { DiscountCounts, ReportData } from "../services/reports.server";
 import { ModalOverlay } from "./ModalOverlay";
 import { PolarisSelect } from "./PolarisControls";
 
@@ -13,7 +13,7 @@ const whenDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(
 type Draft = { id: string; name: string; matchOn: MatchOn; matchType: MatchType; pattern: string };
 const blankDraft: Draft = { id: "", name: "", matchOn: "either", matchType: "starts_with", pattern: "" };
 
-export function ReportsPage({ data, period, refreshing }: { data: ReportData; period: string; refreshing: boolean }) {
+export function ReportsPage({ data, counts, period, refreshing }: { data: ReportData; counts: DiscountCounts | null; period: string; refreshing: boolean }) {
   const appUrl = useEmbeddedAppUrl();
   const navigate = useNavigate();
   const fetcher = useFetcher<{ ok: boolean; error: string | null; intent?: string }>();
@@ -88,6 +88,14 @@ export function ReportsPage({ data, period, refreshing }: { data: ReportData; pe
       {report && compared && !data.comparedWith && <s-banner tone="info" heading="Not enough history for this period yet">
         Figures have been kept since {whenDate(data.historyStart)}, so this period cannot be measured yet. Until then the totals shown are for all time. The app takes a reading every day.
       </s-banner>}
+      {counts && <s-section heading="All discounts in your store">
+        <s-stack direction="block" gap="small-300">
+          <s-heading>{number.format(counts.all)}{counts.capped ? "+" : ""} discounts</s-heading>
+          <s-text color="subdued">
+            {number.format(counts.codes)} with codes and {number.format(counts.automatic)} automatic promotions, from every source. {number.format(counts.active)} are active now. {number.format(counts.used)} have been used at least once and {number.format(counts.neverUsed)} never have. The tables below cover every discount that has been used.
+          </s-text>
+        </s-stack>
+      </s-section>}
       {report && <s-section heading="Redemptions">
         <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="base" alignItems="end" justifyContent="space-between">

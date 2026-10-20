@@ -17,7 +17,7 @@ import { buildDiscountMutation, createShopifyPromotion, type CreateDiscountDraft
 import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
 import { discountSearch, discountsPerPage, getDiscountsByIds, getDiscountsPage, listCursor } from "../app/modules/promotions/services/discounts.server";
 import { buildReport, codePrefix, describeGroup, matchesGroup, validateGroup, type GroupDef, type UsageRow } from "../app/modules/promotions/design/reports";
-import { loadUsage } from "../app/modules/promotions/services/reports.server";
+import { loadDiscountCounts, loadUsage } from "../app/modules/promotions/services/reports.server";
 import { bulkLimit, parseBulkIds, runBulkAction } from "../app/modules/promotions/services/bulkPromotions.server";
 import { resolvePromotionImage, uploadPromotionImage, withImageRatios } from "../app/modules/promotions/services/promotionAssets.server";
 import { PromotionOffer, promotionCss } from "../app/modules/promotions/components/PromotionPreview";
@@ -759,6 +759,13 @@ test("generated codes are totalled by their prefix without any set-up", () => {
   const rows = [used(1, "WELCOME-COUPON || x", "WELCOME-1A2B3C4D-9XY8ZQ", "Dotdigital", 1), used(2, "WELCOME-COUPON || y", "WELCOME-5E6F7G8H-ABC123", "Dotdigital", 1), used(3, "CART10-COUPON || z", "CART10-ABCD1234-QWERTY", "Dotdigital", 1), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 4)];
   const report = buildReport([], rows, null);
   assert.deepEqual(report.prefixes.map(item => [item.name, item.redemptions, item.discounts]), [["WELCOME-", 2, 2], ["CART10-", 1, 1]]);
+});
+test("the discount counts cover every discount, used or never used, and say when Shopify only gave a lower bound", async () => {
+  const count = (value: number, precision = "EXACT") => ({ count: value, precision });
+  const admin = (precision: string) => ({ graphql: async () => Response.json({ data: { all: count(120), used: count(45), codes: count(100, precision), automatic: count(20), active: count(60) } }) });
+  assert.deepEqual(await loadDiscountCounts(admin("EXACT")), { all: 120, used: 45, neverUsed: 75, codes: 100, automatic: 20, active: 60, capped: false });
+  assert.equal((await loadDiscountCounts(admin("AT_LEAST")))?.capped, true);
+  assert.equal(await loadDiscountCounts({ graphql: async () => Response.json({ errors: [{ message: "No" }] }) }), null, "a failure leaves the section out instead of breaking the page");
 });
 test("a period counts the redemptions since an earlier snapshot, and a discount made since then counts in full", () => {
   const earlier = [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 10), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 3)];

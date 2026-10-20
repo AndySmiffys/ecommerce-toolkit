@@ -3,7 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useRevalidator } from "react-router";
 import { authenticate } from "../shopify.server";
 import { periodDays } from "../modules/promotions/design/reports";
-import { deleteReportGroup, isSnapshotRunning, loadReport, moveReportGroup, saveReportGroup, snapshotIsStale, takeSnapshot } from "../modules/promotions/services/reports.server";
+import { deleteReportGroup, isSnapshotRunning, loadDiscountCounts, loadReport, moveReportGroup, saveReportGroup, snapshotIsStale, takeSnapshot } from "../modules/promotions/services/reports.server";
 import { ReportsPage } from "../modules/promotions/components/ReportsPage";
 
 // How old the figures may be before opening the page reads them again from Shopify.
@@ -16,7 +16,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!isSnapshotRunning(session.shop) && await snapshotIsStale(session.shop, staleAfterHours)) {
     void takeSnapshot(admin, session.shop).catch(error => console.error("The report reading failed:", error instanceof Error ? error.message : error));
   }
-  return { data: await loadReport(session.shop, periodDays(period)), period, refreshing: isSnapshotRunning(session.shop) };
+  return { data: await loadReport(session.shop, periodDays(period)), counts: await loadDiscountCounts(admin), period, refreshing: isSnapshotRunning(session.shop) };
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -40,7 +40,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Reports() {
-  const { data, period, refreshing } = useLoaderData<typeof loader>();
+  const { data, counts, period, refreshing } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   // While the figures are being read, check back every few seconds so they appear as soon as they are ready.
   useEffect(() => {
@@ -48,5 +48,5 @@ export default function Reports() {
     const timer = setTimeout(() => revalidator.revalidate(), 6000);
     return () => clearTimeout(timer);
   }, [refreshing, data.takenAt, revalidator]);
-  return <ReportsPage data={data} period={period} refreshing={refreshing} />;
+  return <ReportsPage data={data} counts={counts} period={period} refreshing={refreshing} />;
 }
