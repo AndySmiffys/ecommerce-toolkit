@@ -5,7 +5,7 @@ set -e
 
 if [ -z "$DATABASE_URL" ] && [ -n "$DB_HOST" ]; then
   # The password is letters and numbers only, so it needs no escaping in the address.
-  export DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT:-5432}/${DB_NAME:-promotion}?sslmode=require&connection_limit=10"
+  export DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT:-5432}/${DB_NAME:-toolkit}?sslmode=require&connection_limit=10"
 fi
 
 npx prisma migrate deploy

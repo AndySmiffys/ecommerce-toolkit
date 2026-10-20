@@ -13,7 +13,7 @@
     }
   };
   const request = url => new Promise((resolve, reject) => { queue.push({ url, resolve, reject }); drain(); });
-  // Product badges are decided in the browser from data Shopify puts in the page (see the Promotion Engine loader
+  // Product badges are decided in the browser from data Shopify puts in the page (see the eCommerce Toolkit loader
   // embed), so a collection of product cards makes no requests to the app. Without that data they ask the app.
   let badgeData;
   const badges = () => {

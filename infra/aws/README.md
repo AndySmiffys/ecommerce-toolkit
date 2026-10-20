@@ -1,4 +1,4 @@
-# Promotion Engine on AWS
+# eCommerce Toolkit on AWS
 
 Test and live run in one AWS account in London (`eu-west-2`): one shared network, then one stack per environment. The app runs on AWS App Runner from an image built inside AWS (CodeBuild), with a private PostgreSQL database on Amazon RDS. Everything is created by `aws.mjs`, which shows what it will do first and only acts with `--execute`.
 

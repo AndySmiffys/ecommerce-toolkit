@@ -1,6 +1,6 @@
 # Progress
 
-Status of the Smiffys Promotion Engine, a Shopify embedded app that creates and edits native Shopify discounts and manages how they appear on the storefront. Last updated 19 October 2026.
+Status of the eCommerce Toolkit, a Shopify embedded app that creates and edits native Shopify discounts and manages how they appear on the storefront. Last updated 19 October 2026.
 
 Branch `feature/free-shipping-support`, at `f2c6a00`, pushed and up to date with GitHub. 141 tests pass, and lint, typecheck and the build are clean.
 

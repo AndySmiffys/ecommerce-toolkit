@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  Promotion Engine, one environment (test or live): a private PostgreSQL database (RDS), secrets, a container registry,
+  eCommerce Toolkit, one environment (test or live): a private PostgreSQL database (RDS), secrets, a container registry,
   a CodeBuild project that builds the app image from a zip of the code (no Docker needed on any computer), and the App
   Runner service. The service is created only once an image exists (ImageTag is not "none").
 
@@ -10,7 +10,7 @@ Parameters:
     AllowedValues: [test, live]
   NetworkStackName:
     Type: String
-    Default: promotion-engine-network
+    Default: ecommerce-toolkit-network
     Description: The shared network stack (network.yaml).
   DomainName:
     Type: String
@@ -58,39 +58,39 @@ Resources:
   DatabaseSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Description: !Sub Promotion Engine ${Environment} database login
+      Description: !Sub eCommerce Toolkit ${Environment} database login
       GenerateSecretString:
-        SecretStringTemplate: '{"username": "promotion"}'
+        SecretStringTemplate: '{"username": "toolkit"}'
         GenerateStringKey: password
         PasswordLength: 32
         ExcludePunctuation: true
       Tags:
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Project, Value: ecommerce-toolkit }
         - { Key: Environment, Value: !Ref Environment }
 
   # Created empty: the deploy tool asks for the Shopify client secret and stores it here, so it never appears in a template.
   ShopifySecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Description: !Sub Promotion Engine ${Environment} Shopify app client secret
+      Description: !Sub eCommerce Toolkit ${Environment} Shopify app client secret
       Tags:
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Project, Value: ecommerce-toolkit }
         - { Key: Environment, Value: !Ref Environment }
 
   # ---- Database ----
   ConnectorSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub Promotion Engine ${Environment} app (App Runner VPC connector)
+      GroupDescription: !Sub eCommerce Toolkit ${Environment} app (App Runner VPC connector)
       VpcId: { Fn::ImportValue: !Sub "${NetworkStackName}-VpcId" }
       Tags:
-        - { Key: Name, Value: !Sub "promotion-engine-${Environment}-app" }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: !Sub "ecommerce-toolkit-${Environment}-app" }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub Promotion Engine ${Environment} database. Only the app may connect.
+      GroupDescription: !Sub eCommerce Toolkit ${Environment} database. Only the app may connect.
       VpcId: { Fn::ImportValue: !Sub "${NetworkStackName}-VpcId" }
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -99,13 +99,13 @@ Resources:
           SourceSecurityGroupId: !Ref ConnectorSecurityGroup
           Description: PostgreSQL from the app
       Tags:
-        - { Key: Name, Value: !Sub "promotion-engine-${Environment}-database" }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: !Sub "ecommerce-toolkit-${Environment}-database" }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   DatabaseSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
-      DBSubnetGroupDescription: !Sub Promotion Engine ${Environment} database (private subnets)
+      DBSubnetGroupDescription: !Sub eCommerce Toolkit ${Environment} database (private subnets)
       SubnetIds:
         - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetA" }
         - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetB" }
@@ -116,14 +116,14 @@ Resources:
     DeletionPolicy: Snapshot
     UpdateReplacePolicy: Snapshot
     Properties:
-      DBInstanceIdentifier: !Sub promotion-engine-${Environment}
+      DBInstanceIdentifier: !Sub ecommerce-toolkit-${Environment}
       Engine: postgres
       EngineVersion: "17.11"
       DBInstanceClass: !Ref DbInstanceClass
       AllocatedStorage: !Ref DbStorageGb
       StorageType: gp3
       StorageEncrypted: true
-      DBName: promotion
+      DBName: toolkit
       MasterUsername: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}"
       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
       DBSubnetGroupName: !Ref DatabaseSubnetGroup
@@ -135,7 +135,7 @@ Resources:
       AutoMinorVersionUpgrade: true
       CopyTagsToSnapshot: true
       Tags:
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Project, Value: ecommerce-toolkit }
         - { Key: Environment, Value: !Ref Environment }
 
   # ---- Building the image ----
@@ -154,25 +154,25 @@ Resources:
         Rules:
           - { Id: expire-old-source, Status: Enabled, ExpirationInDays: 30 }
       Tags:
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Project, Value: ecommerce-toolkit }
         - { Key: Environment, Value: !Ref Environment }
 
   Repository:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: !Sub promotion-engine-${Environment}
+      RepositoryName: !Sub ecommerce-toolkit-${Environment}
       EmptyOnDelete: true
       ImageScanningConfiguration: { ScanOnPush: true }
       LifecyclePolicy:
         LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Keep the last 15 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":15},"action":{"type":"expire"}}]}'
       Tags:
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Project, Value: ecommerce-toolkit }
         - { Key: Environment, Value: !Ref Environment }
 
   BuildLogs:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /aws/codebuild/promotion-engine-${Environment}-build
+      LogGroupName: !Sub /aws/codebuild/ecommerce-toolkit-${Environment}-build
       RetentionInDays: 30
 
   BuildRole:
@@ -213,7 +213,7 @@ Resources:
   BuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub promotion-engine-${Environment}-build
+      Name: !Sub ecommerce-toolkit-${Environment}-build
       ServiceRole: !GetAtt BuildRole.Arn
       Source:
         Type: S3
@@ -243,7 +243,7 @@ Resources:
         CloudWatchLogs: { Status: ENABLED, GroupName: !Ref BuildLogs }
       TimeoutInMinutes: 30
       Tags:
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Project, Value: ecommerce-toolkit }
         - { Key: Environment, Value: !Ref Environment }
 
   # ---- The app ----
@@ -279,7 +279,7 @@ Resources:
     Type: AWS::AppRunner::VpcConnector
     Condition: DeployService
     Properties:
-      VpcConnectorName: !Sub promotion-engine-${Environment}
+      VpcConnectorName: !Sub ecommerce-toolkit-${Environment}
       Subnets:
         - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetA" }
         - { Fn::ImportValue: !Sub "${NetworkStackName}-PrivateSubnetB" }
@@ -289,7 +289,7 @@ Resources:
     Type: AWS::AppRunner::AutoScalingConfiguration
     Condition: DeployService
     Properties:
-      AutoScalingConfigurationName: !Sub promotion-engine-${Environment}
+      AutoScalingConfigurationName: !Sub ecommerce-toolkit-${Environment}
       MinSize: !Ref MinInstances
       MaxSize: !Ref MaxInstances
       MaxConcurrency: 100
@@ -299,7 +299,7 @@ Resources:
     Condition: DeployService
     DependsOn: Database
     Properties:
-      ServiceName: !Sub promotion-engine-${Environment}
+      ServiceName: !Sub ecommerce-toolkit-${Environment}
       SourceConfiguration:
         AutoDeploymentsEnabled: false
         AuthenticationConfiguration:
@@ -316,7 +316,7 @@ Resources:
               - { Name: SCOPES, Value: !Ref Scopes }
               - { Name: DB_HOST, Value: !GetAtt Database.Endpoint.Address }
               - { Name: DB_PORT, Value: !GetAtt Database.Endpoint.Port }
-              - { Name: DB_NAME, Value: promotion }
+              - { Name: DB_NAME, Value: toolkit }
             RuntimeEnvironmentSecrets:
               - { Name: DB_USER, Value: !Sub "${DatabaseSecret}:username::" }
               - { Name: DB_PASSWORD, Value: !Sub "${DatabaseSecret}:password::" }
@@ -339,7 +339,7 @@ Resources:
           EgressType: VPC
           VpcConnectorArn: !Ref VpcConnector
       Tags:
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Project, Value: ecommerce-toolkit }
         - { Key: Environment, Value: !Ref Environment }
 
 Outputs:

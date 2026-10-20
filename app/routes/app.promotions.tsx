@@ -281,7 +281,7 @@ export default function PromotionsPage() {
           )}
           {result?.syncError && <s-banner tone="warning">{result.syncError}</s-banner>}
           <s-text color="subdued">
-            Review Shopify discounts and manage their Promotion Engine settings. {total !== null && total > promotions.length ? `Showing ${promotions.length} of ${total} promotions, newest first.` : `${promotions.length} promotion${promotions.length === 1 ? "" : "s"}.`}
+            Review Shopify discounts and manage their storefront settings. {total !== null && total > promotions.length ? `Showing ${promotions.length} of ${total} promotions, newest first.` : `${promotions.length} promotion${promotions.length === 1 ? "" : "s"}.`}
           </s-text>
 
                     <s-section padding="none">

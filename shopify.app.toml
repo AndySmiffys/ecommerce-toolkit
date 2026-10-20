@@ -3,7 +3,7 @@
 client_id = "c8717906a421013fbf5c47e976637862"
 application_url = "https://example.com"
 embedded = true
-name = "Smiffys Promotion Engine"
+name = "eCommerce Toolkit"
 
 [access_scopes]
 scopes = "read_shipping,read_customers,read_discounts,write_discounts,read_products,write_products,read_files,write_files,read_online_store_pages,write_app_proxy"

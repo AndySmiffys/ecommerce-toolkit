@@ -1,7 +1,7 @@
 # Storefront promotions
 
 The extension uses Shopify app blocks for product offers and collection banners,
-and header announcements. The **Promotion Engine loader** app embed handles product-card
+and header announcements. The **eCommerce Toolkit loader** app embed handles product-card
 badges only. Promotion content, visibility and styling come from the saved promotion.
 Fonts inherit from the theme; initial CSS is scoped to promotions, then isolated in shadow DOM after initialization.
 The app proxy path is fixed in the extension and is not a merchant-editable theme setting.
@@ -13,7 +13,7 @@ The app proxy path is fixed in the extension and is not a merchant-editable them
    use `--use-localhost` for storefront testing: Shopify invokes the app proxy
    server-side and cannot reach your local-only server. Use the development
    theme preview associated with this CLI session.
-2. Open that theme's editor, select **App embeds**, enable **Promotion Engine
+2. Open that theme's editor, select **App embeds**, enable **eCommerce Toolkit
    loader**, then save. Choose badges and their positions. Add **Header promotion** to the header group where supported, or to the first page section. No header is inserted without an explicit block.
 3. Open the product template. Add **Product promotion** to the product details
    section. This block is offered only on product templates and uses the current
@@ -26,7 +26,7 @@ The app proxy path is fixed in the extension and is not a merchant-editable them
    section rather than inside a product-card or narrow nested group. Theme wrappers
    that clip overflow must use their full-width setting for full-page banners.
    Remove the old generic Collection placement when replacing it, then save.
-   Repeat for alternate templates in use. Existing generic Promotion Engine blocks
+   Repeat for alternate templates in use. Existing generic eCommerce Toolkit blocks
    remain supported; their collection wrappers now span the row.
 5. In the app, enable a promotion and its required website blocks. Verify active
    dates and product/collection/customer eligibility. A block with no eligible
@@ -137,7 +137,7 @@ following Shopify's networking guide. Localhost alone cannot test app proxies.
 
 Opening the app initializes or upgrades the initial storefront snapshot automatically, including when using a bookmarked editor. The Promotions page also refreshes it. This publishes enabled public promotion designs into an app-installation metafield that Shopify Liquid can read. The create/edit Save action and priority Save also publish it. A sync failure is displayed in the app; opening Promotions retries it. Discount update/delete and redeem-code change webhooks refresh the same data when discounts are edited directly in Shopify. Restart `shopify app dev` to apply the updated webhook configuration; production needs the usual app deployment.
 
-The Collection promotion, Product promotion and legacy explicit Promotion Engine blocks now select a public promotion in the initial Liquid render. They check priority order, scheduled start/end timestamps and placement targeting. No eligible promotion means a hidden element with no reserved banner height. Future schedules are stored so Liquid can activate them on subsequent page loads without an app visit. Restricted customer/segment content is excluded from the published snapshot and continues to use the authenticated live eligibility renderer. Scope connections that reach the API limit also fall back to the live renderer.
+The Collection promotion, Product promotion and legacy explicit eCommerce Toolkit blocks now select a public promotion in the initial Liquid render. They check priority order, scheduled start/end timestamps and placement targeting. No eligible promotion means a hidden element with no reserved banner height. Future schedules are stored so Liquid can activate them on subsequent page loads without an app visit. Restricted customer/segment content is excluded from the published snapshot and continues to use the authenticated live eligibility renderer. Scope connections that reach the API limit also fall back to the live renderer.
 
 For the header, add **Header promotion** in the theme editor's header group if the theme supports app sections there. Otherwise add it as the first page section (or use the legacy explicit block with Header announcement selected). The loader does not insert header announcements. Leave the loader enabled for product badges. Add the header block to every template where it should appear when using page sections.
 

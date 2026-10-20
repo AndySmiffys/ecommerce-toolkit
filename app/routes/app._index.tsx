@@ -16,7 +16,7 @@ const tools = [
 export default function DashboardPage() {
   const appUrl = useEmbeddedAppUrl();
   return (
-    <s-page heading="Smiffys Promotion Engine" inlineSize="large">
+    <s-page heading="eCommerce Toolkit" inlineSize="large">
       <s-section heading="Tools">
         <s-stack direction="block" gap="base">
           <s-paragraph>Manage Shopify promotions and the website settings that sit alongside them.</s-paragraph>

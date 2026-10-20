@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  Promotion Engine shared network. One VPC for the test and live environments: two public subnets (internet gateway and
+  eCommerce Toolkit shared network. One VPC for the test and live environments: two public subnets (internet gateway and
   the NAT gateway), two private subnets (databases and the App Runner connector) and ONE NAT gateway that lets the apps
   in the private subnets reach the internet (Shopify's API). Create this once; each environment stack uses it.
 
@@ -18,15 +18,15 @@ Resources:
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
-        - { Key: Name, Value: promotion-engine }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
-        - { Key: Name, Value: promotion-engine }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -42,8 +42,8 @@ Resources:
       CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 8, 8]]
       MapPublicIpOnLaunch: false
       Tags:
-        - { Key: Name, Value: promotion-engine-public-a }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit-public-a }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   PublicSubnetB:
     Type: AWS::EC2::Subnet
@@ -53,8 +53,8 @@ Resources:
       CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 8, 8]]
       MapPublicIpOnLaunch: false
       Tags:
-        - { Key: Name, Value: promotion-engine-public-b }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit-public-b }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
@@ -63,8 +63,8 @@ Resources:
       AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Select [2, !Cidr [!Ref VpcCidr, 8, 8]]
       Tags:
-        - { Key: Name, Value: promotion-engine-private-a }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit-private-a }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   PrivateSubnetB:
     Type: AWS::EC2::Subnet
@@ -73,16 +73,16 @@ Resources:
       AvailabilityZone: !Select [1, !GetAZs ""]
       CidrBlock: !Select [3, !Cidr [!Ref VpcCidr, 8, 8]]
       Tags:
-        - { Key: Name, Value: promotion-engine-private-b }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit-private-b }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref Vpc
       Tags:
-        - { Key: Name, Value: promotion-engine-public }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit-public }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   PublicRoute:
     Type: AWS::EC2::Route
@@ -110,8 +110,8 @@ Resources:
     Properties:
       Domain: vpc
       Tags:
-        - { Key: Name, Value: promotion-engine-nat }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit-nat }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   # One NAT gateway for both environments keeps the cost down. If its availability zone has a problem, the apps
   # cannot reach Shopify until it recovers; the database and the stored data are not affected.
@@ -121,16 +121,16 @@ Resources:
       AllocationId: !GetAtt NatAddress.AllocationId
       SubnetId: !Ref PublicSubnetA
       Tags:
-        - { Key: Name, Value: promotion-engine }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref Vpc
       Tags:
-        - { Key: Name, Value: promotion-engine-private }
-        - { Key: Project, Value: promotion-engine }
+        - { Key: Name, Value: ecommerce-toolkit-private }
+        - { Key: Project, Value: ecommerce-toolkit }
 
   PrivateRoute:
     Type: AWS::EC2::Route

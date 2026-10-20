@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Promotion Engine on AWS: creates and updates the network, the test and live environments, builds the app image in
+// eCommerce Toolkit on AWS: creates and updates the network, the test and live environments, builds the app image in
 // AWS and releases it. It only uses the AWS command line (`aws`) and Node's own modules.
 //
 //   node infra/aws/aws.mjs network [--execute]       shared network (once)
@@ -22,8 +22,8 @@ import process from "node:process";
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, "..", "..");
 const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "eu-west-2";
-const networkStack = "promotion-engine-network";
-const stackName = environment => `promotion-engine-${environment}`;
+const networkStack = "ecommerce-toolkit-network";
+const stackName = environment => `ecommerce-toolkit-${environment}`;
 
 // ---- running the AWS command line ----
 function findAws() {
@@ -71,13 +71,13 @@ async function applyStack(name, templateFile, parameters, execute, { capabilitie
   const existing = stackStatus(name);
   const exists = existing && existing.StackStatus !== "REVIEW_IN_PROGRESS";
   const changeSet = `change-${Date.now()}`;
-  const directory = mkdtempSync(join(tmpdir(), "promotion-engine-aws-"));
+  const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-aws-"));
   try {
     const file = join(directory, "parameters.json");
     writeFileSync(file, JSON.stringify(parameters.map(([key, value]) => value === undefined ? { ParameterKey: key, UsePreviousValue: true } : { ParameterKey: key, ParameterValue: String(value) })));
     aws(["cloudformation", "create-change-set", "--stack-name", name, "--change-set-name", changeSet, "--change-set-type", exists ? "UPDATE" : "CREATE",
       "--template-body", `file://${join(here, templateFile)}`, "--parameters", `file://${file}`, ...(capabilities ? ["--capabilities", "CAPABILITY_IAM"] : []),
-      "--tags", "Key=Project,Value=promotion-engine"]);
+      "--tags", "Key=Project,Value=ecommerce-toolkit"]);
     let described;
     for (let attempt = 0; attempt < 60; attempt++) {
       described = aws(["cloudformation", "describe-change-set", "--stack-name", name, "--change-set-name", changeSet]);
@@ -170,7 +170,7 @@ async function main() {
     if (!stack) throw new Error(`Create the ${environment} environment first.`);
     const secret = (await askHidden(`Shopify client secret for the ${environment} app (typing is hidden): `)).trim();
     if (secret.length < 16) throw new Error("That does not look like a Shopify client secret.");
-    const directory = mkdtempSync(join(tmpdir(), "promotion-engine-secret-"));
+    const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-secret-"));
     try {
       const file = join(directory, "secret.json");
       writeFileSync(file, JSON.stringify({ SecretId: stackOutputs(stack).ShopifySecretArn, SecretString: secret }), { mode: 0o600 });
@@ -183,7 +183,7 @@ async function main() {
     const git = args => spawnSync("git", args, { cwd: repo, encoding: "utf8" });
     if (git(["status", "--porcelain"]).stdout.trim()) say("Note: only committed code is built. Uncommitted changes are not included.");
     const tag = `${git(["rev-parse", "--short", "HEAD"]).stdout.trim()}-${Date.now().toString(36)}`;
-    const directory = mkdtempSync(join(tmpdir(), "promotion-engine-source-"));
+    const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-source-"));
     try {
       const zip = join(directory, "source.zip");
       if (git(["archive", "--format=zip", "-o", zip, "HEAD"]).status !== 0) throw new Error("Could not zip the code.");
@@ -217,7 +217,7 @@ async function main() {
     const settings = environmentSettings(environment);
     const outputs = stackOutputs(stackStatus(stackName(environment)));
     if (!tag) throw new Error("Say which image: release <test|live> <tag>");
-    const image = aws(["ecr", "describe-images", "--repository-name", `promotion-engine-${environment}`, "--image-ids", `imageTag=${tag}`], { allowFail: true });
+    const image = aws(["ecr", "describe-images", "--repository-name", `ecommerce-toolkit-${environment}`, "--image-ids", `imageTag=${tag}`], { allowFail: true });
     if (!image) throw new Error(`There is no image tagged ${tag} for ${environment}. Build one first.`);
     if (!outputs.BuildProject) throw new Error(`Create the ${environment} environment first.`);
     const secret = aws(["secretsmanager", "get-secret-value", "--secret-id", outputs.ShopifySecretArn], { allowFail: true });
@@ -239,10 +239,10 @@ async function main() {
     const target = details.DNSTarget ?? domains.DNSTarget;
     const custom = details.CustomDomain ?? associated;
     const records = [{ Name: settings.DomainName, Value: target }, ...(custom?.CertificateValidationRecords ?? []).map(record => ({ Name: record.Name, Value: record.Value }))];
-    const directory = mkdtempSync(join(tmpdir(), "promotion-engine-dns-"));
+    const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-dns-"));
     try {
       const file = join(directory, "records.json");
-      writeFileSync(file, JSON.stringify({ Comment: "Promotion Engine", Changes: records.map(record => ({ Action: "UPSERT", ResourceRecordSet: { Name: record.Name, Type: "CNAME", TTL: 300, ResourceRecords: [{ Value: record.Value }] } })) }));
+      writeFileSync(file, JSON.stringify({ Comment: "eCommerce Toolkit", Changes: records.map(record => ({ Action: "UPSERT", ResourceRecordSet: { Name: record.Name, Type: "CNAME", TTL: 300, ResourceRecords: [{ Value: record.Value }] } })) }));
       aws(["route53", "change-resource-record-sets", "--hosted-zone-id", zoneId, "--change-batch", `file://${file}`]);
     } finally { rmSync(directory, { recursive: true, force: true }); }
     say(`Added ${records.length} DNS records. Waiting for the certificate (this can take 10 minutes or more)...`);
@@ -260,7 +260,7 @@ async function main() {
     const outputs = stackOutputs(stack);
     say(`${stackName(environment)}: ${stack.StackStatus}`);
     for (const [key, value] of Object.entries(outputs)) say(`  ${key}: ${value}`);
-    const database = aws(["rds", "describe-db-instances", "--db-instance-identifier", `promotion-engine-${environment}`], { allowFail: true });
+    const database = aws(["rds", "describe-db-instances", "--db-instance-identifier", `ecommerce-toolkit-${environment}`], { allowFail: true });
     if (database) say(`  Database: ${database.DBInstances[0].DBInstanceStatus} (${database.DBInstances[0].DBInstanceClass})`);
     if (outputs.ServiceArn) {
       const service = aws(["apprunner", "describe-service", "--service-arn", outputs.ServiceArn]).Service;

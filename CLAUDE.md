@@ -32,7 +32,7 @@ All promotion code lives in `app/modules/promotions/`:
 
 *Live app proxy (fallback only)*: `routes/promotion-storefront.tsx` (served at `/apps/promotion-engine`) authenticates via `authenticate.public.appProxy` and returns `{html, css, promotionId, revision}` as `no-store` JSON. The browser uses it only when no published data exists (before the first sync, or an old theme extension). Customer- and segment-restricted offers are not published and are not shown on the storefront yet (the editor says so); bringing them back means a live request for logged-in customers only.
 
-`webhooks.discounts.changed` and save actions resync the snapshot. Storefront JS (`extensions/promotion-engine/assets/promotion-engine.js`, `promotion-placements.js`) fetches/hydrates and renders into shadow DOM; theme blocks (`blocks/*.liquid`) must be added explicitly by merchants — nothing (especially the header) is inserted automatically. Only the "Promotion Engine loader" app embed handles product-card badges.
+`webhooks.discounts.changed` and save actions resync the snapshot. Storefront JS (`extensions/promotion-engine/assets/promotion-engine.js`, `promotion-placements.js`) fetches/hydrates and renders into shadow DOM; theme blocks (`blocks/*.liquid`) must be added explicitly by merchants — nothing (especially the header) is inserted automatically. Only the "eCommerce Toolkit loader" app embed handles product-card badges.
 
 **Duplicated file:** `app/modules/promotions/design/promotion-ui.js` is the source and is copied to `extensions/promotion-engine/assets/promotion-ui.js` by `scripts/sync-promotion-ui.mjs` (run automatically on dev/build/deploy). Edit the `app/` copy, never the extension copy.
 

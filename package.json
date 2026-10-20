@@ -1,5 +1,5 @@
 {
-  "name": "smiffys-promotion-engine",
+  "name": "ecommerce-toolkit",
   "private": true,
   "scripts": {
     "sync:promotion-ui": "node scripts/sync-promotion-ui.mjs",
