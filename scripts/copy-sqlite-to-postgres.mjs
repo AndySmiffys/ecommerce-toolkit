@@ -3,6 +3,7 @@
 //
 //   npm run db:copy-sqlite              (copies prisma/dev.sqlite)
 //   npm run db:copy-sqlite -- path.db   (copies another SQLite file)
+//   add --skip-sessions to leave the stored Shopify logins behind (use it when the data goes to a different Shopify app)
 //
 // It is safe to run again: rows that already exist are left alone. The SQLite file is only read, never changed.
 // Needs Node 22.13 or later (it reads SQLite with Node's built-in module).
@@ -15,7 +16,8 @@ if (!/^postgres(ql)?:\/\//.test(url)) {
   console.error("DATABASE_URL must be a PostgreSQL connection string, for example postgresql://user:password@host:5432/database");
   process.exit(1);
 }
-const path = process.argv[2] ?? "prisma/dev.sqlite";
+const skipSessions = process.argv.includes("--skip-sessions");
+const path = process.argv.slice(2).find(argument => !argument.startsWith("--")) ?? "prisma/dev.sqlite";
 const source = new DatabaseSync(path, { readOnly: true });
 const target = new PrismaClient();
 
@@ -26,7 +28,7 @@ const rows = table => source.prepare(`SELECT * FROM "${table}"`).all();
 const same = (row, names) => Object.fromEntries(names.map(name => [name, row[name] ?? null]));
 
 try {
-  const sessions = rows("Session").map(row => ({
+  const sessions = (skipSessions ? [] : rows("Session")).map(row => ({
     ...same(row, ["id", "shop", "state", "scope", "accessToken", "firstName", "lastName", "email", "locale", "refreshToken"]),
     isOnline: Boolean(row.isOnline), accountOwner: Boolean(row.accountOwner),
     collaborator: bool(row.collaborator), emailVerified: bool(row.emailVerified),
@@ -50,6 +52,7 @@ try {
     promotionSettings: (await target.promotionSettings.createMany({ data: settings, skipDuplicates: true })).count,
     promotionCodeBatches: (await target.promotionCodeBatch.createMany({ data: batches, skipDuplicates: true })).count,
   };
+  if (skipSessions) console.log("Stored Shopify logins were left behind (--skip-sessions).");
   console.log(`Read ${sessions.length} sessions, ${settings.length} promotion settings and ${batches.length} code batches from ${path}.`);
   console.log(`Copied ${copied.sessions} sessions, ${copied.promotionSettings} promotion settings and ${copied.promotionCodeBatches} code batches (rows already there were left alone).`);
 } finally {

@@ -6,6 +6,7 @@
 //   node infra/aws/aws.mjs environment <test|live> [--execute]
 //   node infra/aws/aws.mjs secret <test|live> [--clipboard]   the Shopify client secret (typed hidden, or from the clipboard), stored in Secrets Manager
 //   node infra/aws/aws.mjs build <test|live>         zip the committed code, build the image in AWS, print its tag
+//   node infra/aws/aws.mjs import <test|live> [file.sqlite] [--execute]   copy website settings from a SQLite file (default prisma/dev.sqlite)
 //   node infra/aws/aws.mjs release <test|live> <tag> [--execute]   run that image (creates or updates the App Runner service)
 //   node infra/aws/aws.mjs domain <test|live> [--execute]          custom domain, certificate and DNS records
 //   node infra/aws/aws.mjs status <test|live>
@@ -13,7 +14,7 @@
 //
 // Anything that creates, changes or deletes something shows what it would do first and only does it with --execute.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +37,7 @@ function findAws() {
 }
 const awsPath = findAws();
 function aws(args, { json = true, allowFail = false } = {}) {
-  const result = spawnSync(awsPath, [...args, "--region", region, ...(json ? ["--output", "json"] : [])], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const result = spawnSync(awsPath, [...args, "--region", region, ...(json ? ["--output", "json"] : [])], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" } });
   if (result.status !== 0) {
     if (allowFail) return null;
     throw new Error(`aws ${args.slice(0, 2).join(" ")} failed: ${(result.stderr || result.stdout || "").trim()}`);
@@ -151,6 +152,40 @@ function askHidden(question) {
   });
 }
 
+// Starts a CodeBuild project and waits for it. Returns the last lines of its log; throws, with the log, if it fails.
+async function runCodeBuild(project, overrides = []) {
+  const started = aws(["codebuild", "start-build", "--project-name", project, ...(overrides.length ? ["--environment-variables-override", ...overrides] : [])]);
+  let phase = "";
+  for (;;) {
+    await sleep(10000);
+    const build = aws(["codebuild", "batch-get-builds", "--ids", started.build.id]).builds[0];
+    if (build.currentPhase !== phase) { phase = build.currentPhase; say(`  ${new Date().toLocaleTimeString()}  ${phase}`); }
+    if (build.buildStatus === "IN_PROGRESS") continue;
+    let log = "";
+    if (build.logs?.groupName && build.logs?.streamName) {
+      const events = aws(["logs", "get-log-events", "--log-group-name", build.logs.groupName, "--log-stream-name", build.logs.streamName, "--limit", "60", "--no-start-from-head"], { allowFail: true });
+      log = (events?.events ?? []).map(event => event.message.trimEnd()).join("\n");
+    }
+    if (build.buildStatus !== "SUCCEEDED") {
+      const messages = build.phases.flatMap(item => (item.contexts ?? []).map(context => context.message)).filter(Boolean);
+      throw new Error(`The job ${build.buildStatus}. ${messages.join(" ")}\n${log}`);
+    }
+    return log;
+  }
+}
+
+// A zip of the committed code, uploaded to the environment's bucket under `key`.
+function uploadSource(bucket, key, tag) {
+  const git = args => spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+  const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-source-"));
+  try {
+    const zip = join(directory, "source.zip");
+    if (git(["archive", "--format=zip", "-o", zip, "HEAD"]).status !== 0) throw new Error("Could not zip the code.");
+    say(`Uploading the code (${tag})...`);
+    aws(["s3", "cp", zip, `s3://${bucket}/${key}`, "--only-show-errors"], { json: false });
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
 // ---- commands ----
 const [command, environment, extra] = process.argv.slice(2).filter(argument => !argument.startsWith("--"));
 const execute = process.argv.includes("--execute");
@@ -190,35 +225,34 @@ async function main() {
     const git = args => spawnSync("git", args, { cwd: repo, encoding: "utf8" });
     if (git(["status", "--porcelain"]).stdout.trim()) say("Note: only committed code is built. Uncommitted changes are not included.");
     const tag = `${git(["rev-parse", "--short", "HEAD"]).stdout.trim()}-${Date.now().toString(36)}`;
-    const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-source-"));
-    try {
-      const zip = join(directory, "source.zip");
-      if (git(["archive", "--format=zip", "-o", zip, "HEAD"]).status !== 0) throw new Error("Could not zip the code.");
-      say(`Uploading the code (${tag})...`);
-      aws(["s3", "cp", zip, `s3://${outputs.SourceBucket}/source.zip`, "--only-show-errors"], { json: false });
-    } finally { rmSync(directory, { recursive: true, force: true }); }
-    const started = aws(["codebuild", "start-build", "--project-name", outputs.BuildProject, "--environment-variables-override", `name=IMAGE_TAG,value=${tag},type=PLAINTEXT`]);
-    const id = started.build.id;
+    uploadSource(outputs.SourceBucket, "source.zip", tag);
     say("Building the image in AWS. This takes a few minutes.");
-    let phase = "";
-    for (;;) {
-      await sleep(10000);
-      const build = aws(["codebuild", "batch-get-builds", "--ids", id]).builds[0];
-      if (build.currentPhase !== phase) { phase = build.currentPhase; say(`  ${new Date().toLocaleTimeString()}  ${phase}`); }
-      if (build.buildStatus !== "IN_PROGRESS") {
-        if (build.buildStatus !== "SUCCEEDED") {
-          const messages = build.phases.flatMap(item => (item.contexts ?? []).map(context => context.message)).filter(Boolean);
-          let log = "";
-          if (build.logs?.groupName && build.logs?.streamName) {
-            const events = aws(["logs", "get-log-events", "--log-group-name", build.logs.groupName, "--log-stream-name", build.logs.streamName, "--limit", "60", "--no-start-from-head"], { allowFail: true });
-            log = (events?.events ?? []).map(event => event.message.trimEnd()).join("\n");
-          }
-          throw new Error(`The build ${build.buildStatus}. ${messages.join(" ")}\n${log}`);
-        }
-        say(`\nBuilt image tag: ${tag}\nRun it with: node infra/aws/aws.mjs release ${environment} ${tag} --execute`);
-        break;
-      }
-    }
+    await runCodeBuild(outputs.BuildProject, [`name=IMAGE_TAG,value=${tag},type=PLAINTEXT`]);
+    say(`\nBuilt image tag: ${tag}\nRun it with: node infra/aws/aws.mjs release ${environment} ${tag} --execute`);
+  } else if (command === "import") {
+    const outputs = stackOutputs(stackStatus(stackName(environment)));
+    if (!outputs.TaskProject) throw new Error(`Update the ${environment} environment first: node infra/aws/aws.mjs environment ${environment} --execute`);
+    const source = extra ? extra : join(repo, "prisma", "dev.sqlite");
+    if (!existsSync(source)) throw new Error(`The data file ${source} does not exist.`);
+    say(`This copies the website settings and code batches from ${source} into the ${environment} database, from a job inside AWS's private network. Stored Shopify logins are not copied, and rows already there are left alone.`);
+    if (!execute) { say("\nNothing was changed. Run again with --execute to do it."); return; }
+    const { DatabaseSync } = await import("node:sqlite");
+    const directory = mkdtempSync(join(tmpdir(), "ecommerce-toolkit-import-"));
+    try {
+      // The copy is cleaned of the stored Shopify logins first, so they never leave this computer.
+      const clean = join(directory, "data.sqlite");
+      copyFileSync(source, clean);
+      const database = new DatabaseSync(clean);
+      database.exec('DELETE FROM "Session"; VACUUM;');
+      database.close();
+      aws(["s3", "cp", clean, `s3://${outputs.SourceBucket}/import/data.sqlite`, "--only-show-errors"], { json: false });
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+    uploadSource(outputs.SourceBucket, "task-source.zip", spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim());
+    say("Running the import inside AWS. This takes a few minutes.");
+    const log = await runCodeBuild(outputs.TaskProject);
+    for (const line of log.split("\n").filter(line => /Read \d|Copied \d|logins|rror/.test(line))) say(line.replace(/^\[Container\] \S+ \S+ /, ""));
+    aws(["s3", "rm", `s3://${outputs.SourceBucket}/import/data.sqlite`, "--only-show-errors"], { json: false, allowFail: true });
+    say("\nDone. The uploaded data file has been removed from the bucket. Reload the app to see the settings.");
   } else if (command === "release") {
     const tag = extra;
     const settings = environmentSettings(environment);
