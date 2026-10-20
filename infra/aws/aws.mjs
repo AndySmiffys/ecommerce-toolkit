@@ -49,11 +49,14 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const say = (...parts) => console.log(...parts);
 
 // ---- settings for each environment ----
-function environmentSettings(environment) {
+// With `allowPending`, a value still to be filled in becomes "pending". The database, secrets and image build can be
+// created before the Shopify app exists; releasing the app (which needs the real value) is blocked until it is set.
+function environmentSettings(environment, { allowPending = false } = {}) {
   if (!["test", "live"].includes(environment)) throw new Error('Say which environment: "test" or "live".');
   const settings = JSON.parse(readFileSync(join(here, `${environment}.json`), "utf8"));
   const unset = Object.entries(settings).filter(([, value]) => /REPLACE/i.test(String(value))).map(([key]) => key);
-  if (unset.length) throw new Error(`Set ${unset.join(", ")} in infra/aws/${environment}.json first.`);
+  if (unset.length && !allowPending) throw new Error(`Set ${unset.join(", ")} in infra/aws/${environment}.json first.`);
+  for (const key of unset) { settings[key] = "pending"; say(`Note: ${key} is not set yet, so "pending" is used until it is.`); }
   return settings;
 }
 
@@ -159,7 +162,7 @@ async function main() {
   if (command === "network") {
     await applyStack(networkStack, "network.yaml", [["VpcCidr", "10.20.0.0/16"]], execute);
   } else if (command === "environment") {
-    const settings = environmentSettings(environment);
+    const settings = environmentSettings(environment, { allowPending: !currentImageTag(environment) || currentImageTag(environment) === "none" });
     if (!stackStatus(networkStack)) throw new Error("Create the network first: node infra/aws/aws.mjs network --execute");
     await applyStack(stackName(environment), "environment.yaml", environmentParameters(environment, settings, currentImageTag(environment)), execute);
   } else if (command === "secret") {
