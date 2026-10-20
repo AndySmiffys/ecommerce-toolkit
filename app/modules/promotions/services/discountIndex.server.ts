@@ -20,10 +20,10 @@ const PAGE = `query DiscountIndexPage($first: Int!, $after: String, $query: Stri
       events(first: 1, query: "action:create") { nodes { ... on BasicEvent { appTitle } } }
       discount {
         __typename
-        ... on DiscountCodeBasic { title startsAt endsAt codes(first: 1) { nodes { code } } }
-        ... on DiscountCodeBxgy { title startsAt endsAt codes(first: 1) { nodes { code } } }
-        ... on DiscountCodeFreeShipping { title startsAt endsAt codes(first: 1) { nodes { code } } }
-        ... on DiscountCodeApp { title startsAt endsAt codes(first: 1) { nodes { code } } }
+        ... on DiscountCodeBasic { title startsAt endsAt codes(first: 1) { nodes { code createdBy { title } } } }
+        ... on DiscountCodeBxgy { title startsAt endsAt codes(first: 1) { nodes { code createdBy { title } } } }
+        ... on DiscountCodeFreeShipping { title startsAt endsAt codes(first: 1) { nodes { code createdBy { title } } } }
+        ... on DiscountCodeApp { title startsAt endsAt codes(first: 1) { nodes { code createdBy { title } } } }
         ... on DiscountAutomaticBasic { title startsAt endsAt }
         ... on DiscountAutomaticBxgy { title startsAt endsAt }
         ... on DiscountAutomaticFreeShipping { title startsAt endsAt }
@@ -36,11 +36,22 @@ const PAGE = `query DiscountIndexPage($first: Int!, $after: String, $query: Stri
 type IndexNode = {
   id: string;
   events?: { nodes?: Array<{ appTitle?: string | null } | null> };
-  discount?: { __typename?: string; title?: string | null; startsAt?: string | null; endsAt?: string | null; codes?: { nodes?: Array<{ code?: string } | null> } } | null;
+  discount?: { __typename?: string; title?: string | null; startsAt?: string | null; endsAt?: string | null; codes?: { nodes?: Array<{ code?: string; createdBy?: { title?: string | null } | null } | null> } } | null;
 };
 type Row = Prisma.DiscountIndexCreateManyInput;
 
 const asDate = (value: string | null | undefined) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date : null; };
+
+/**
+ * Who made a discount. A code made by an app records that app on the code itself (Shopify shows it as "created by"),
+ * which is what Dotdigital and Loox use; the create event is the fallback for the rest, and is where a discount made
+ * by hand in the admin says so. A code made by an app that has no name is still known to be another app's.
+ */
+export function creatorOf(node: IndexNode): string {
+  const app = node.discount?.codes?.nodes?.[0]?.createdBy;
+  if (app) return app.title?.trim() || "Another app";
+  return node.events?.nodes?.[0]?.appTitle || "Unknown";
+}
 
 export function indexRow(shop: string, node: IndexNode): Row | null {
   const discount = node.discount;
@@ -48,7 +59,7 @@ export function indexRow(shop: string, node: IndexNode): Row | null {
   const id = promotionDiscountId(node.id);
   const numeric = id.split("/").pop() ?? "";
   if (!/^\d+$/.test(numeric)) return null;
-  const createdBy = node.events?.nodes?.[0]?.appTitle || "Unknown";
+  const createdBy = creatorOf(node);
   return {
     shop, discountId: id, numericId: BigInt(numeric),
     kind: discount.__typename.startsWith("DiscountCode") ? "code" : "automatic",

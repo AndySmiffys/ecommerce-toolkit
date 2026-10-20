@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import db from "../../../db.server";
 import { promotionDiscountId } from "../design/discountIdentity";
 import { buildReport, maxGroups, validateGroup, type GroupDef, type Report, type UsageRow } from "../design/reports";
+import { creatorOf } from "./discountIndex.server";
 import type { ShopifyAdminClient } from "./discount.server";
 
 type Database = Pick<PrismaClient, "reportGroup" | "reportSnapshot">;
@@ -21,10 +22,10 @@ const USAGE_PAGE = `query ReportUsage($first: Int!, $after: String) {
       events(first: 1, query: "action:create") { nodes { ... on BasicEvent { appTitle } } }
       discount {
         __typename
-        ... on DiscountCodeBasic { title asyncUsageCount codes(first: 1) { nodes { code } } }
-        ... on DiscountCodeBxgy { title asyncUsageCount codes(first: 1) { nodes { code } } }
-        ... on DiscountCodeFreeShipping { title asyncUsageCount codes(first: 1) { nodes { code } } }
-        ... on DiscountCodeApp { title asyncUsageCount codes(first: 1) { nodes { code } } }
+        ... on DiscountCodeBasic { title asyncUsageCount codes(first: 1) { nodes { code createdBy { title } } } }
+        ... on DiscountCodeBxgy { title asyncUsageCount codes(first: 1) { nodes { code createdBy { title } } } }
+        ... on DiscountCodeFreeShipping { title asyncUsageCount codes(first: 1) { nodes { code createdBy { title } } } }
+        ... on DiscountCodeApp { title asyncUsageCount codes(first: 1) { nodes { code createdBy { title } } } }
         ... on DiscountAutomaticBasic { title asyncUsageCount }
         ... on DiscountAutomaticBxgy { title asyncUsageCount }
         ... on DiscountAutomaticFreeShipping { title asyncUsageCount }
@@ -37,7 +38,7 @@ const USAGE_PAGE = `query ReportUsage($first: Int!, $after: String) {
 type UsageNode = {
   id: string;
   events?: { nodes?: Array<{ appTitle?: string | null } | null> };
-  discount?: { __typename?: string; title?: string | null; asyncUsageCount?: number | null; codes?: { nodes?: Array<{ code?: string } | null> } } | null;
+  discount?: { __typename?: string; title?: string | null; asyncUsageCount?: number | null; codes?: { nodes?: Array<{ code?: string; createdBy?: { title?: string | null } | null } | null> } } | null;
 };
 
 /**
@@ -66,7 +67,7 @@ export async function loadUsage(admin: ShopifyAdminClient, wait: (ms: number) =>
         title: String(discount.title ?? ""),
         code: String(discount.codes?.nodes?.[0]?.code ?? ""),
         kind: String(discount.__typename ?? "").startsWith("DiscountCode") ? "code" : "automatic",
-        createdBy: node.events?.nodes?.[0]?.appTitle || "Unknown",
+        createdBy: creatorOf(node),
         uses,
       });
     }

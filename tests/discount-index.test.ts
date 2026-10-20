@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { withDatabase } from "./helpers/database";
 import { discountStatusAt, isOtherApp, sourceFromParam } from "../app/modules/promotions/design/discountSource";
-import { buildIndex, creatorsOf, forgetDiscounts, indexIsDue, indexState, listFromIndex, madeByOtherApps, otherApps } from "../app/modules/promotions/services/discountIndex.server";
+import { buildIndex, creatorOf, creatorsOf, forgetDiscounts, indexIsDue, indexState, listFromIndex, madeByOtherApps, otherApps } from "../app/modules/promotions/services/discountIndex.server";
 import { bulkDiscountAction } from "../app/modules/promotions/services/bulkPromotions.server";
 
 const shop = "index-test.myshopify.com";
@@ -19,6 +19,16 @@ test("only a creator that is clearly another app counts as one", () => {
   assert.equal(discountStatusAt(null, null, now), "active");
   assert.equal(discountStatusAt(new Date("2026-11-01T00:00:00Z"), null, now), "scheduled");
   assert.equal(discountStatusAt(null, new Date("2026-10-01T00:00:00Z"), now), "expired");
+});
+
+test("who made a discount comes from the code when an app made it, else from the create event", () => {
+  const code = (createdBy: { title: string | null } | null, events: string[] = []) => ({ id: "gid://shopify/DiscountCodeNode/1", events: { nodes: events.map(appTitle => ({ appTitle })) }, discount: { __typename: "DiscountCodeBasic", title: "x", codes: { nodes: [{ code: "C", createdBy }] } } });
+  assert.equal(creatorOf(code({ title: "Dotdigital" })), "Dotdigital", "the code records the app, even when the event does not");
+  assert.equal(creatorOf(code({ title: null })), "Another app", "an app with no name is still an app");
+  assert.equal(creatorOf(code(null, ["Shopify Web"])), "Shopify Web", "made by hand: no app on the code");
+  assert.equal(creatorOf(code(null)), "Unknown");
+  assert.equal(creatorOf(code({ title: "Loox" }, ["Shopify Web"])), "Loox", "the code wins over the event");
+  assert.equal(isOtherApp(creatorOf(code({ title: null }))), true);
 });
 
 const node = (id: number, type: string, title: string, code: string | null, createdBy: string | null, startsAt: string | null = null, endsAt: string | null = null) => ({
