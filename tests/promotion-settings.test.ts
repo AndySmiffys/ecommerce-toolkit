@@ -214,26 +214,47 @@ const usageNode = (id: number, typename: string, title: string | null, uses: num
 
 // ---- Reports: saved groups and snapshots ----
 test("report groups are saved per shop in an order the merchant controls, and each shop only sees and changes its own", async () => withDatabase(async database => {
-  await saveReportGroup(shop, { name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }, database);
-  await saveReportGroup(shop, { name: "Cart", matchOn: "either", matchType: "contains", pattern: "abandon" }, database);
-  await saveReportGroup("other.myshopify.com", { name: "Theirs", matchOn: "title", matchType: "contains", pattern: "x" }, database);
+  await saveReportGroup(shop, { name: "Signup", rules: [{ matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }] }, database);
+  await saveReportGroup(shop, { name: "Cart", rules: [{ matchOn: "either", matchType: "contains", pattern: "abandon" }] }, database);
+  await saveReportGroup("other.myshopify.com", { name: "Theirs", rules: [{ matchOn: "title", matchType: "contains", pattern: "x" }] }, database);
   let groups = await listReportGroups(shop, database);
   assert.deepEqual(groups.map(group => group.name), ["Signup", "Cart"]);
   await moveReportGroup(shop, groups[1].id, "up", database);
   assert.deepEqual((await listReportGroups(shop, database)).map(group => group.name), ["Cart", "Signup"], "the order decides which group a discount counts in");
   await moveReportGroup(shop, groups[0].id, "up", database);
   assert.deepEqual((await listReportGroups(shop, database)).map(group => group.name), ["Signup", "Cart"]);
-  await saveReportGroup(shop, { id: String(groups[0].id), name: "Sign-up emails", matchOn: "title", matchType: "ends_with", pattern: "welcome" }, database);
+  await saveReportGroup(shop, { id: String(groups[0].id), name: "Sign-up emails", rules: [{ matchOn: "title", matchType: "ends_with", pattern: "welcome" }] }, database);
   groups = await listReportGroups(shop, database);
-  assert.deepEqual([groups[0].name, groups[0].matchOn, groups[0].matchType, groups[0].pattern], ["Sign-up emails", "title", "ends_with", "welcome"]);
+  assert.deepEqual([groups[0].name, groups[0].rules], ["Sign-up emails", [{ matchOn: "title", matchType: "ends_with", pattern: "welcome" }]]);
   const theirs = (await listReportGroups("other.myshopify.com", database))[0];
-  await assert.rejects(saveReportGroup(shop, { id: theirs.id, name: "Hijacked", matchOn: "code", matchType: "contains", pattern: "y" }, database), /no longer exists/);
+  await assert.rejects(saveReportGroup(shop, { id: theirs.id, name: "Hijacked", rules: [{ matchOn: "code", matchType: "contains", pattern: "y" }] }, database), /no longer exists/);
   await deleteReportGroup(shop, theirs.id, database);
   assert.equal((await listReportGroups("other.myshopify.com", database)).length, 1, "another shop's group cannot be deleted");
   await deleteReportGroup(shop, groups[0].id, database);
   assert.deepEqual((await listReportGroups(shop, database)).map(group => group.name), ["Cart"]);
-  for (let i = 0; i < 19; i++) await saveReportGroup(shop, { name: `G${i}`, matchOn: "code", matchType: "contains", pattern: `p${i}` }, database);
-  await assert.rejects(saveReportGroup(shop, { name: "One too many", matchOn: "code", matchType: "contains", pattern: "z" }, database), /up to 20 groups/);
+  for (let i = 0; i < 19; i++) await saveReportGroup(shop, { name: `G${i}`, rules: [{ matchOn: "code", matchType: "contains", pattern: `p${i}` }] }, database);
+  await assert.rejects(saveReportGroup(shop, { name: "One too many", rules: [{ matchOn: "code", matchType: "contains", pattern: "z" }] }, database), /up to 20 groups/);
+}));
+
+test("a group keeps several ways to match, in order, and a damaged row is read as having none instead of breaking the page", async () => withDatabase(async database => {
+  const rules = ["WELCOME-", "CART10-", "CART15-"].map(pattern => ({ matchOn: "code", matchType: "starts_with", pattern }));
+  await saveReportGroup(shop, { name: "Dotdigital", rules }, database);
+  assert.deepEqual((await listReportGroups(shop, database))[0].rules.map(rule => rule.pattern), ["WELCOME-", "CART10-", "CART15-"]);
+  const id = (await listReportGroups(shop, database))[0].id;
+  await saveReportGroup(shop, { id, name: "Dotdigital", rules: [...rules, { matchOn: "code", matchType: "starts_with", pattern: "BIRTHDAY-" }] }, database);
+  assert.equal((await listReportGroups(shop, database))[0].rules.length, 4, "a new prefix is added to the same group");
+  await database.reportGroup.update({ where: { id }, data: { rules: "not json" } });
+  assert.deepEqual((await listReportGroups(shop, database))[0].rules, []);
+  await assert.rejects(saveReportGroup(shop, { name: "None", rules: [] }, database), /at least one way/);
+}));
+
+test("the migration that gave groups several rules turns an old group's single pattern into its first rule", async () => withDatabase(async database => {
+  // The same expression the migration uses, run on a row shaped like the old table.
+  await database.$executeRawUnsafe(`CREATE TEMP TABLE "OldGroup" ("matchOn" TEXT, "matchType" TEXT, "pattern" TEXT, "rules" TEXT NOT NULL DEFAULT '[]')`);
+  await database.$executeRawUnsafe(`INSERT INTO "OldGroup" ("matchOn", "matchType", "pattern") VALUES ('title', 'ends_with', 'Welcome "x"')`);
+  await database.$executeRawUnsafe(`UPDATE "OldGroup" SET "rules" = json_build_array(json_build_object('matchOn', "matchOn", 'matchType', "matchType", 'pattern', "pattern"))::text`);
+  const [row] = await database.$queryRawUnsafe<Array<{ rules: string }>>(`SELECT "rules" FROM "OldGroup"`);
+  assert.deepEqual(JSON.parse(row.rules), [{ matchOn: "title", matchType: "ends_with", pattern: 'Welcome "x"' }]);
 }));
 
 test("snapshots record usage, give redemptions for a period from the difference, and old ones are dropped", async () => withDatabase(async database => {
@@ -246,7 +267,7 @@ test("snapshots record usage, give redemptions for a period from the difference,
   await takeSnapshot(shopifyAt(30, [usageNode(2, "DiscountAutomaticBasic", "Spring", 5, null, "Shopify Web")]), shop, database, t0 + 30 * day);
   assert.equal(await snapshotIsStale(shop, 6, database, t0 + 30 * day + 3600000), false);
   assert.equal(await snapshotIsStale(shop, 6, database, t0 + 31 * day), true);
-  await saveReportGroup(shop, { name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }, database);
+  await saveReportGroup(shop, { name: "Signup", rules: [{ matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }] }, database);
   const now = t0 + 30 * day + 3600000;
   const allTime = await loadReport(shop, null, database, now);
   assert.equal(allTime.report!.totals.redemptions, 35, "all time: 30 + 5");

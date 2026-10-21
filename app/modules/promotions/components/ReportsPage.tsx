@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useNavigate } from "react-router";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
-import { matchOnLabels, matchOptions, matchTypeLabels, matchTypes, maxGroups, otherKey, reportPeriods, type GroupDef, type MatchOn, type MatchType, type ReportLine } from "../design/reports";
+import { matchOnLabels, matchOptions, matchTypeLabels, matchTypes, maxGroups, maxRulesPerGroup, otherKey, reportPeriods, type GroupDef, type GroupRule, type MatchOn, type MatchType, type ReportLine } from "../design/reports";
 import type { DiscountCounts, ReportData } from "../services/reports.server";
 import type { OrderReportData } from "../services/orderReport.server";
 import { ModalOverlay } from "./ModalOverlay";
@@ -13,8 +13,9 @@ const number = new Intl.NumberFormat("en-GB");
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
 const whenDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("en-GB", { dateStyle: "medium" }) : "";
 
-type Draft = { id: string; name: string; matchOn: MatchOn; matchType: MatchType; pattern: string };
-const blankDraft: Draft = { id: "", name: "", matchOn: "either", matchType: "starts_with", pattern: "" };
+type Draft = { id: string; name: string; rules: GroupRule[] };
+const blankRule: GroupRule = { matchOn: "either", matchType: "starts_with", pattern: "" };
+const blankDraft: Draft = { id: "", name: "", rules: [blankRule] };
 
 export function ReportsPage({ data, orders, counts, period, refreshing, view }: { data: ReportData; orders: OrderReportData; counts: DiscountCounts | null; period: string; refreshing: boolean; view: "discounts" | "groups" | "redemptions" }) {
   const { busy: downloading, exportUrl, download } = useCsvDownload();
@@ -40,6 +41,7 @@ export function ReportsPage({ data, orders, counts, period, refreshing, view }: 
     if (intent === "refresh") shopify.toast.show("Reading the discounts from Shopify");
   }, [fetcher.state, fetcher.data]);
 
+  const setRule = (index: number, change: Partial<GroupRule>) => setDraft(current => current && { ...current, rules: current.rules.map((rule, position) => position === index ? { ...rule, ...change } : rule) });
   const send = (values: Record<string, string>) => {
     submitted.current = values.intent;
     fetcher.submit(values, { method: "post", action });
@@ -75,7 +77,7 @@ export function ReportsPage({ data, orders, counts, period, refreshing, view }: 
             {group && <s-stack direction="inline" gap="small-300" justifyContent="end">
               <s-button type="button" variant="tertiary" icon="arrow-up" accessibilityLabel={`Move ${line.name} up`} disabled={index === 0 || busy || undefined} onClick={() => send({ intent: "moveGroup", id: String(group.id), direction: "up" })} />
               <s-button type="button" variant="tertiary" icon="arrow-down" accessibilityLabel={`Move ${line.name} down`} disabled={index >= groups.length - 1 || busy || undefined} onClick={() => send({ intent: "moveGroup", id: String(group.id), direction: "down" })} />
-              <s-button type="button" variant="tertiary" onClick={() => { setError(null); setDraft({ id: String(group.id), name: group.name, matchOn: group.matchOn, matchType: group.matchType, pattern: group.pattern }); }}>Edit</s-button>
+              <s-button type="button" variant="tertiary" onClick={() => { setError(null); setDraft({ id: String(group.id), name: group.name, rules: group.rules.map(rule => ({ ...rule })) }); }}>Edit</s-button>
               <s-button type="button" variant="tertiary" tone="critical" disabled={busy || undefined} onClick={() => send({ intent: "deleteGroup", id: String(group.id) })}>Delete</s-button>
             </s-stack>}
           </s-table-cell>}
@@ -131,7 +133,7 @@ export function ReportsPage({ data, orders, counts, period, refreshing, view }: 
         <s-stack direction="block" gap="base">
           <s-paragraph>Groups gather discounts whose code or title follows a pattern, for example the single-use codes another app creates. A discount counts in the first group it matches, so the order matters. Anything that matches no group is counted under Other discounts, so nothing is left out.</s-paragraph>
           {table(report.groups, "Group", true)}
-          <div><s-button type="button" variant="secondary" disabled={groups.length >= maxGroups || undefined} onClick={() => { setError(null); setDraft({ ...blankDraft }); }}>Add group</s-button></div>
+          <div><s-button type="button" variant="secondary" disabled={groups.length >= maxGroups || undefined} onClick={() => { setError(null); setDraft({ ...blankDraft, rules: [{ ...blankRule }] }); }}>Add group</s-button></div>
         </s-stack>
       </s-section>}
       {view === "groups" && report && report.prefixes.length > 0 && <s-section heading="By code prefix">
@@ -172,16 +174,29 @@ export function ReportsPage({ data, orders, counts, period, refreshing, view }: 
       {draft && <s-stack direction="block" gap="base">
         {error && <s-banner tone="critical">{error}</s-banner>}
         <s-text-field label="Name" value={draft.name} maxLength={60} onInput={event => setDraft({ ...draft, name: event.currentTarget.value })} details="For example: Dotdigital sign-up codes" />
-        <PolarisSelect label="Look in" value={draft.matchOn} onChange={event => setDraft({ ...draft, matchOn: event.currentTarget.value as MatchOn })}>
-          {matchOptions.map(value => <s-option key={value} value={value}>{matchOnLabels[value]}</s-option>)}
-        </PolarisSelect>
-        <PolarisSelect label="Matches when it" value={draft.matchType} onChange={event => setDraft({ ...draft, matchType: event.currentTarget.value as MatchType })}>
-          {matchTypes.map(value => <s-option key={value} value={value}>{matchTypeLabels[value]}</s-option>)}
-        </PolarisSelect>
-        <s-text-field label="Text to look for" value={draft.pattern} maxLength={60} onInput={event => setDraft({ ...draft, pattern: event.currentTarget.value })} details="Not case sensitive. A discount with many codes matches on its first code or its title." />
+        <s-text color="subdued">A discount belongs to this group when it fits any one of these ways of matching. Add one for each prefix or pattern, and add more whenever a new one appears.</s-text>
+        {draft.rules.map((rule, index) => <s-box key={index} border="base" borderRadius="base" padding="base">
+          <s-stack direction="block" gap="base">
+            <s-stack direction="inline" gap="base" justifyContent="space-between" alignItems="center">
+              <s-text type="strong">Way to match {index + 1}</s-text>
+              {draft.rules.length > 1 && <s-button type="button" variant="tertiary" tone="critical" onClick={() => setDraft({ ...draft, rules: draft.rules.filter((_, position) => position !== index) })}>Remove</s-button>}
+            </s-stack>
+            <s-grid gridTemplateColumns="repeat(auto-fit, minmax(160px, 1fr))" gap="base">
+              <PolarisSelect label="Look in" value={rule.matchOn} onChange={event => setRule(index, { matchOn: event.currentTarget.value as MatchOn })}>
+                {matchOptions.map(value => <s-option key={value} value={value}>{matchOnLabels[value]}</s-option>)}
+              </PolarisSelect>
+              <PolarisSelect label="Matches when it" value={rule.matchType} onChange={event => setRule(index, { matchType: event.currentTarget.value as MatchType })}>
+                {matchTypes.map(value => <s-option key={value} value={value}>{matchTypeLabels[value]}</s-option>)}
+              </PolarisSelect>
+              <s-text-field label="Text to look for" value={rule.pattern} maxLength={60} onInput={event => setRule(index, { pattern: event.currentTarget.value })} />
+            </s-grid>
+          </s-stack>
+        </s-box>)}
+        <div><s-button type="button" variant="secondary" disabled={draft.rules.length >= maxRulesPerGroup || undefined} onClick={() => setDraft({ ...draft, rules: [...draft.rules, { ...blankRule }] })}>Add another way to match</s-button></div>
+        <s-text color="subdued">Not case sensitive. A discount with many codes matches on its first code or its title.</s-text>
       </s-stack>}
       <s-button slot="secondary-actions" type="button" onClick={() => setDraft(null)}>Cancel</s-button>
-      <s-button slot="primary-actions" type="button" variant="primary" disabled={busy || undefined} onClick={() => draft && send({ intent: "saveGroup", ...draft })}>Save group</s-button>
+      <s-button slot="primary-actions" type="button" variant="primary" disabled={busy || undefined} onClick={() => draft && send({ intent: "saveGroup", id: draft.id, name: draft.name, rules: JSON.stringify(draft.rules) })}>Save group</s-button>
     </ModalOverlay>
   </s-page>;
 }

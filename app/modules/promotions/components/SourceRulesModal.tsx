@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
-import { describeGroup, matchOnLabels, matchOptions, matchTypeLabels, matchTypes, type GroupDef, type MatchOn, type MatchType } from "../design/reports";
+import { describeRule, matchOnLabels, matchOptions, matchTypeLabels, matchTypes, type MatchOn, type MatchType } from "../design/reports";
+import type { SourceRuleDef } from "../services/discountIndex.server";
 import { ModalOverlay } from "./ModalOverlay";
 import { PolarisSelect } from "./PolarisControls";
 
@@ -11,7 +12,7 @@ const blank: Draft = { name: "", matchOn: "either", matchType: "starts_with", pa
  * The rules for what counts as another app's discount. Some apps (Loox, for example) leave no app name on their
  * discounts, so Shopify cannot say who made them. A rule names them by a pattern in the code or title instead.
  */
-export function SourceRulesModal({ open, rules, onClose }: { open: boolean; rules: GroupDef[]; onClose: () => void }) {
+export function SourceRulesModal({ open, rules, onClose }: { open: boolean; rules: SourceRuleDef[]; onClose: () => void }) {
   const fetcher = useFetcher<{ ok: boolean; error: string | null }>();
   const [draft, setDraft] = useState<Draft>(blank);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +35,7 @@ export function SourceRulesModal({ open, rules, onClose }: { open: boolean; rule
         <s-table-header-row><s-table-header>Rule</s-table-header><s-table-header><span /></s-table-header></s-table-header-row>
         <s-table-body>
           {rules.map(rule => <s-table-row key={rule.id}>
-            <s-table-cell><s-stack direction="block" gap="small-300"><s-text type="strong">{rule.name}</s-text><s-text color="subdued">{describeGroup(rule)}</s-text></s-stack></s-table-cell>
+            <s-table-cell><s-stack direction="block" gap="small-300"><s-text type="strong">{rule.name}</s-text><s-text color="subdued">{describeRule(rule)}</s-text></s-stack></s-table-cell>
             <s-table-cell><s-button type="button" variant="tertiary" tone="critical" disabled={busy || undefined} onClick={() => send({ intent: "deleteRule", id: String(rule.id) })}>Remove</s-button></s-table-cell>
           </s-table-row>)}
         </s-table-body>

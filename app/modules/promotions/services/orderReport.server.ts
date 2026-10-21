@@ -187,7 +187,7 @@ const totalsCells = (totals: { orders: number; valueCents: number; discountCents
   const average = averages(totals);
   return [totals.orders, money(totals.valueCents), money(totals.discountCents), money(totals.refundCents), average.orderValueCents === null ? "" : money(average.orderValueCents), average.discountPerOrderCents === null ? "" : money(average.discountPerOrderCents)];
 };
-const totalsHeaders = ["Orders", "Order value", "Discount given", "Refunded", "Average order value", "Average discount per order"];
+const totalsHeaders = ["Orders", "Revenue", "Discount given", "Refunded", "Average order value", "Average discount per order"];
 
 /** The table behind a report as rows for a download: every row, not just the ones the page shows. */
 export async function exportOrderTable(shop: string, kind: ExportKind, filter: OrderFilter, database: Database = db): Promise<{ filename: string; headers: string[]; rows: Cell[][] }> {

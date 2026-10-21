@@ -10,39 +10,70 @@ export const matchOptions = ["code", "title", "either"] as const;
 export const matchTypes = ["starts_with", "contains", "ends_with"] as const;
 export type MatchOn = (typeof matchOptions)[number];
 export type MatchType = (typeof matchTypes)[number];
-export type GroupDef = { id: number; name: string; matchOn: MatchOn; matchType: MatchType; pattern: string };
+/** One way of recognising a discount: a pattern in its code, its title or either. */
+export type GroupRule = { matchOn: MatchOn; matchType: MatchType; pattern: string };
+/** A group is a name and any number of ways to match: a discount belongs to it when any one of them fits. */
+export type GroupDef = { id: number; name: string; rules: GroupRule[] };
 
 export const matchOnLabels: Record<MatchOn, string> = { code: "Code", title: "Title", either: "Code or title" };
 export const matchTypeLabels: Record<MatchType, string> = { starts_with: "starts with", contains: "contains", ends_with: "ends with" };
 export const maxGroups = 20;
+export const maxRulesPerGroup = 20;
 export const otherKey = "other";
 
-export function describeGroup(group: Pick<GroupDef, "matchOn" | "matchType" | "pattern">): string {
-  return `${matchOnLabels[group.matchOn]} ${matchTypeLabels[group.matchType]} “${group.pattern}”`;
+export function describeRule(rule: GroupRule): string {
+  return `${matchOnLabels[rule.matchOn]} ${matchTypeLabels[rule.matchType]} “${rule.pattern}”`;
 }
 
-/** Whether a discount belongs to a group. Not case sensitive; an empty pattern matches nothing. */
-export function matchesGroup(group: Pick<GroupDef, "matchOn" | "matchType" | "pattern">, row: Pick<UsageRow, "title" | "code">): boolean {
-  const pattern = group.pattern.trim().toLowerCase();
+export function describeGroup(group: Pick<GroupDef, "rules">): string {
+  return group.rules.map(describeRule).join(" or ");
+}
+
+/** Whether a discount fits one way of matching. Not case sensitive; an empty pattern matches nothing. */
+export function matchesRule(rule: GroupRule, row: Pick<UsageRow, "title" | "code">): boolean {
+  const pattern = rule.pattern.trim().toLowerCase();
   if (!pattern) return false;
   const test = (value: string) => {
     const text = value.toLowerCase();
-    return group.matchType === "starts_with" ? text.startsWith(pattern) : group.matchType === "ends_with" ? text.endsWith(pattern) : text.includes(pattern);
+    return rule.matchType === "starts_with" ? text.startsWith(pattern) : rule.matchType === "ends_with" ? text.endsWith(pattern) : text.includes(pattern);
   };
-  return (group.matchOn !== "title" && test(row.code)) || (group.matchOn !== "code" && test(row.title));
+  return (rule.matchOn !== "title" && test(row.code)) || (rule.matchOn !== "code" && test(row.title));
 }
 
-/** Checks what the merchant typed for a group. Throws a plain message, or returns the cleaned values. */
-export function validateGroup(input: { name?: unknown; matchOn?: unknown; matchType?: unknown; pattern?: unknown }): Omit<GroupDef, "id"> {
-  const name = typeof input.name === "string" ? input.name.trim() : "";
+/** Whether a discount belongs to a group: it fits any one of the group's ways of matching. */
+export function matchesGroup(group: Pick<GroupDef, "rules">, row: Pick<UsageRow, "title" | "code">): boolean {
+  return group.rules.some(rule => matchesRule(rule, row));
+}
+
+/** Checks a name the merchant typed. Throws a plain message, or returns it cleaned. */
+export function validateName(value: unknown, what = "group"): string {
+  const name = typeof value === "string" ? value.trim() : "";
+  if (!name) throw new Error(`Give the ${what} a name.`);
+  if (name.length > 60) throw new Error(`The ${what} name can be up to 60 characters.`);
+  return name;
+}
+
+/** Checks one way of matching. Throws a plain message, or returns the cleaned values. */
+export function validateRule(input: { matchOn?: unknown; matchType?: unknown; pattern?: unknown }): GroupRule {
   const pattern = typeof input.pattern === "string" ? input.pattern.trim() : "";
-  if (!name) throw new Error("Give the group a name.");
-  if (name.length > 60) throw new Error("The group name can be up to 60 characters.");
   if (!pattern) throw new Error("Enter the text to look for in the code or title.");
   if (pattern.length > 60) throw new Error("The text to look for can be up to 60 characters.");
   if (!(matchOptions as readonly unknown[]).includes(input.matchOn)) throw new Error("Choose whether to look in the code, the title or either.");
   if (!(matchTypes as readonly unknown[]).includes(input.matchType)) throw new Error("Choose how the text should match.");
-  return { name, pattern, matchOn: input.matchOn as MatchOn, matchType: input.matchType as MatchType };
+  return { pattern, matchOn: input.matchOn as MatchOn, matchType: input.matchType as MatchType };
+}
+
+/** Checks what the merchant typed for a group: its name and at least one way of matching. */
+export function validateGroup(input: { name?: unknown; rules?: unknown }): Omit<GroupDef, "id"> {
+  const name = validateName(input.name);
+  const given = Array.isArray(input.rules) ? input.rules : [];
+  if (!given.length) throw new Error("Add at least one way to match.");
+  if (given.length > maxRulesPerGroup) throw new Error(`A group can have up to ${maxRulesPerGroup} ways to match.`);
+  const rules = given.map((rule, index) => {
+    try { return validateRule((rule ?? {}) as Record<string, unknown>); }
+    catch (error) { throw new Error(given.length > 1 ? `Way to match ${index + 1}: ${error instanceof Error ? error.message : "not valid."}` : error instanceof Error ? error.message : "Not valid."); }
+  });
+  return { name, rules };
 }
 
 /**

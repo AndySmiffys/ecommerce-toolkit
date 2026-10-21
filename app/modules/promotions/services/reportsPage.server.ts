@@ -31,7 +31,9 @@ export async function runReportsAction(request: Request) {
       void takeSnapshot(admin, session.shop).catch(error => console.error("The report reading failed:", error instanceof Error ? error.message : error));
       void driveOrderSync(async () => (await unauthenticated.admin(session.shop)).admin, session.shop);
     } else if (intent === "saveGroup") {
-      await saveReportGroup(session.shop, { id: form.get("id") || undefined, name: form.get("name"), matchOn: form.get("matchOn"), matchType: form.get("matchType"), pattern: form.get("pattern") });
+      let rules: unknown = [];
+      try { rules = JSON.parse(String(form.get("rules") ?? "[]")); } catch { /* validated below */ }
+      await saveReportGroup(session.shop, { id: form.get("id") || undefined, name: form.get("name"), rules });
     } else if (intent === "deleteGroup") {
       await deleteReportGroup(session.shop, Number(form.get("id")));
     } else if (intent === "moveGroup") {

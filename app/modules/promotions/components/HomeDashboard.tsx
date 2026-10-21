@@ -33,11 +33,11 @@ export function HomeDashboard({ current, previous, activeCount }: { current: Ord
   const before = previous.report.selected;
   const money = (cents: number) => formatMoney(cents, current.currency);
   const ready = Boolean(current.syncedAt);
-  const top = current.report.discounts.slice(0, 5);
+  const top = [...current.report.discounts].sort((a, b) => b.valueCents - a.valueCents).slice(0, 5);
   return <s-stack direction="block" gap="large">
     <MetricStrip caption="Last 30 days" metrics={[
       { label: "Orders with a discount", value: ready ? String(now.orders) : "–", ...(ready ? trend(now.orders, before.orders) : {}) },
-      { label: "Order value", value: ready ? money(now.valueCents) : "–", ...(ready ? trend(now.valueCents, before.valueCents) : {}) },
+      { label: "Revenue", value: ready ? money(now.valueCents) : "–", ...(ready ? trend(now.valueCents, before.valueCents) : {}) },
       { label: "Discount given away", value: ready ? money(now.discountCents) : "–", ...(ready ? trend(now.discountCents, before.discountCents) : {}) },
       { label: "Share of orders", value: ready ? `${(current.report.discountedShare * 100).toFixed(1)}%` : "–", note: ready ? "used a discount" : undefined },
     ]} />
@@ -61,13 +61,13 @@ export function HomeDashboard({ current, previous, activeCount }: { current: Ord
           <div><s-button href={appUrl(card.path)} variant="secondary">{card.action}</s-button></div>
         </s-stack>
       </s-section>)}
-      <s-section heading="Top discounts, last 30 days">
+      <s-section heading="Top discounts by revenue, last 30 days">
         {top.length === 0
           ? <s-text color="subdued">{ready ? "No orders used a discount in this period." : "Figures appear once your orders have been read."}</s-text>
           : <s-stack direction="block" gap="small-200">
             {top.map(discount => <s-stack key={discount.key} direction="inline" gap="base" justifyContent="space-between" alignItems="center">
               <s-text type="strong">{discount.label}</s-text>
-              <s-text color="subdued">{discount.orders} {discount.orders === 1 ? "order" : "orders"} · {money(discount.discountCents)} off</s-text>
+              <s-text color="subdued">{money(discount.valueCents)} · {discount.orders} {discount.orders === 1 ? "order" : "orders"}</s-text>
             </s-stack>)}
           </s-stack>}
       </s-section>

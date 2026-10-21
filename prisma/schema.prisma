@@ -97,15 +97,14 @@ model PromotionCodeBatch {
   @@index([shop, shopifyDiscountId])
 }
 
-// A group in the Reports page: discounts whose code or title matches a pattern are counted together, for example
-// every code starting SIGNUP- as "Signup". One row per group, in the order the merchant arranged them.
+// A group in the Reports page: discounts whose code or title matches any of its rules are counted together, for example
+// every code starting WELCOME- or CART10- as "Dotdigital". One row per group, in the order the merchant arranged them.
+// `rules` is a JSON list of { matchOn, matchType, pattern }.
 model ReportGroup {
   id        Int      @id @default(autoincrement())
   shop      String
   name      String
-  matchOn   String   @default("either")
-  matchType String   @default("starts_with")
-  pattern   String
+  rules     String   @default("[]")
   position  Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

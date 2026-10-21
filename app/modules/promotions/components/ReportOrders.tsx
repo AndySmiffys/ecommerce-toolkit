@@ -41,7 +41,7 @@ function Metrics({ data, totals, exact }: { data: OrderReportData; totals: Total
   const { report } = data;
   return <s-grid gridTemplateColumns="repeat(auto-fit, minmax(170px, 1fr))" gap="base">
     <Metric label={exact ? "Orders with a discount" : "Orders using these discounts"} value={count.format(totals.orders)} note={exact ? `${percent(report.discountedShare)} of ${count.format(report.all.orders)} orders` : undefined} />
-    <Metric label="Order value" value={money(totals.valueCents)} note="What customers paid, including shipping and tax" />
+    <Metric label="Revenue" value={money(totals.valueCents)} note="What customers paid, including shipping and tax" />
     <Metric label="Discount given away" value={money(totals.discountCents)} note={average.discountRate === null ? undefined : `${percent(average.discountRate)} of the value before discount`} />
     <Metric label="Average order value" value={money(average.orderValueCents)} />
     <Metric label="Average discount per order" value={money(average.discountPerOrderCents)} />
@@ -71,7 +71,7 @@ function Table({ lines, heading, money, empty }: { lines: Array<Totals & { key: 
     <s-table-header-row>
       <s-table-header>{heading}</s-table-header>
       <s-table-header format="numeric">Orders</s-table-header>
-      <s-table-header format="numeric">Order value</s-table-header>
+      <s-table-header format="numeric">Revenue</s-table-header>
       <s-table-header format="numeric">Discount given</s-table-header>
       <s-table-header format="numeric">Average order</s-table-header>
       <s-table-header format="numeric">Average discount</s-table-header>
@@ -160,7 +160,7 @@ export function OrderDrilldown({ data }: { data: OrderReportData }) {
         <Metrics data={data} totals={report.selected} exact={report.exact} />
         <s-text color="subdued">
           {narrowed ? "An order that used two of the selected discounts is counted under each, so the totals can add up to more than the number of orders. " : "Orders using more than one discount are counted once. "}
-          Order value is the whole order, not just the discounted items. Read from Shopify {when(data.syncedAt)}.
+          Revenue is the whole order, not just the discounted items. Read from Shopify {when(data.syncedAt)}.
         </s-text>
       </s-stack>
     </s-section>}

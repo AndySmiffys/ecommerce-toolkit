@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import db from "../../../db.server";
 import { promotionDiscountId } from "../design/discountIdentity";
-import { buildReport, maxGroups, validateGroup, type GroupDef, type Report, type UsageRow } from "../design/reports";
+import { buildReport, maxGroups, validateGroup, validateRule, type GroupDef, type GroupRule, type Report, type UsageRow } from "../design/reports";
 import { creatorOf } from "./discountIndex.server";
 import type { ShopifyAdminClient } from "./discount.server";
 
@@ -146,7 +146,7 @@ export type ReportData = {
 
 export async function listReportGroups(shop: string, database: Pick<PrismaClient, "reportGroup"> = db): Promise<GroupDef[]> {
   const rows = await database.reportGroup.findMany({ where: { shop }, orderBy: [{ position: "asc" }, { id: "asc" }] });
-  return rows.map(row => ({ id: row.id, name: row.name, matchOn: row.matchOn as GroupDef["matchOn"], matchType: row.matchType as GroupDef["matchType"], pattern: row.pattern }));
+  return rows.map(row => ({ id: row.id, name: row.name, rules: readRules(row.rules) }));
 }
 
 /** The latest figures, and for a period the figures from the newest snapshot at least that old. */
@@ -174,8 +174,17 @@ export async function snapshotIsStale(shop: string, hours: number, database: Dat
 
 // ---- The merchant's groups ----
 
-export async function saveReportGroup(shop: string, input: { id?: unknown; name?: unknown; matchOn?: unknown; matchType?: unknown; pattern?: unknown }, database: Database = db): Promise<void> {
-  const values = validateGroup(input);
+/** The rules saved with a group. Anything unreadable is dropped, so a damaged row never breaks the page. */
+function readRules(text: string): GroupRule[] {
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.flatMap(rule => { try { return [validateRule(rule)]; } catch { return []; } }) : [];
+  } catch { return []; }
+}
+
+export async function saveReportGroup(shop: string, input: { id?: unknown; name?: unknown; rules?: unknown }, database: Database = db): Promise<void> {
+  const checked = validateGroup(input);
+  const values = { name: checked.name, rules: JSON.stringify(checked.rules) };
   const id = typeof input.id === "string" && /^\d+$/.test(input.id) ? Number(input.id) : typeof input.id === "number" ? input.id : null;
   if (id !== null) {
     const updated = await database.reportGroup.updateMany({ where: { id, shop }, data: values });

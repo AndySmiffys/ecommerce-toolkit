@@ -33,7 +33,7 @@ const file = [
   line(5, 51, [[0, "5.00"], [1, "3.00"]]),
 ];
 
-const signup = { id: 1, name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "WELCOME-" } as GroupDef;
+const signup: GroupDef = { id: 1, name: "Signup", rules: [{ matchOn: "code", matchType: "starts_with", pattern: "WELCOME-" }] };
 const find = (rows: DayRow[], day: string, key: string) => rows.find(row => row.day === day && row.key === key);
 
 test("an order export is totalled per day and discount: orders, value, refunds and what each discount took off", async () => {

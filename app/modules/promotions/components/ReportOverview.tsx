@@ -64,16 +64,16 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
   const go = (nextDays: string, nextCompare: boolean) => navigate(appUrl(`/app/reports?days=${nextDays}&compare=${nextCompare ? 1 : 0}`));
 
   const metrics: Array<{ label: string; value: string; trend: React.ReactNode; values: number[]; previous: number[] | null }> = [
+    { label: "Revenue", value: money(now.valueCents), trend: change(now.valueCents, was?.valueCents, "up"), values: series(item => item.valueCents), previous: previousSeries(item => item.valueCents) },
     { label: "Orders with a discount", value: count.format(now.orders), trend: change(now.orders, was?.orders, "up"), values: series(item => item.orders), previous: previousSeries(item => item.orders) },
-    { label: "Order value", value: money(now.valueCents), trend: change(now.valueCents, was?.valueCents, "up"), values: series(item => item.valueCents), previous: previousSeries(item => item.valueCents) },
-    { label: "Discount given away", value: money(now.discountCents), trend: change(now.discountCents, was?.discountCents, "none"), values: series(item => item.discountCents), previous: previousSeries(item => item.discountCents) },
     { label: "Average order value", value: average.orderValueCents === null ? "–" : money(average.orderValueCents), trend: average.orderValueCents !== null && averageBefore?.orderValueCents ? change(average.orderValueCents, averageBefore.orderValueCents, "up") : null, values: series(item => item.orders ? item.valueCents / item.orders : 0), previous: previous && before ? before.map(item => item.orders ? item.valueCents / item.orders : 0) : null },
+    { label: "Discount given away", value: money(now.discountCents), trend: change(now.discountCents, was?.discountCents, "none"), values: series(item => item.discountCents), previous: previousSeries(item => item.discountCents) },
   ];
 
   const preDiscount = now.valueCents + now.discountCents;
-  const groups = slicesOf(report.groups, line => line.discountCents);
-  const topPrefixes = report.prefixes.slice(0, 6).map(line => ({ label: line.name, value: line.orders, note: `${money(line.discountCents)} off` }));
-  const topDiscounts = report.discounts.slice(0, 6).map(item => ({ label: item.label, value: item.orders, note: `${money(item.discountCents)} off` }));
+  const groups = slicesOf(report.groups, line => line.valueCents);
+  const topPrefixes = [...report.prefixes].sort((a, b) => b.valueCents - a.valueCents).slice(0, 6).map(line => ({ label: line.name, value: line.valueCents, note: `${count.format(line.orders)} ${line.orders === 1 ? "order" : "orders"}` }));
+  const topDiscounts = [...report.discounts].sort((a, b) => b.valueCents - a.valueCents).slice(0, 6).map(item => ({ label: item.label, value: item.valueCents, note: `${count.format(item.orders)} ${item.orders === 1 ? "order" : "orders"}` }));
   const rowOf = (label: string, cents: number, strong = false) => <s-table-row key={label}>
     <s-table-cell>{strong ? <s-text type="strong">{label}</s-text> : label}</s-table-cell>
     <s-table-cell>{strong ? <s-text type="strong">{money(cents)}</s-text> : money(cents)}</s-table-cell>
@@ -115,11 +115,11 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
         </s-grid>
 
         <s-grid gridTemplateColumns="repeat(auto-fit, minmax(320px, 1fr))" gap="base">
-          <Card heading="Order value over time">
-            <AreaChart values={series(item => item.valueCents)} previous={compare ? previousSeries(item => item.valueCents) : null} labels={labels} previousLabels={previousLabels} format={money} axisFormat={compactMoney} label={`Order value by day for orders that used a discount, ${money(now.valueCents)} in all`} />
+          <Card heading="Revenue over time">
+            <AreaChart values={series(item => item.valueCents)} previous={compare ? previousSeries(item => item.valueCents) : null} labels={labels} previousLabels={previousLabels} format={money} axisFormat={compactMoney} label={`Revenue by day from orders that used a discount, ${money(now.valueCents)} in all`} />
           </Card>
-          <Card heading="Discount given by group">
-            {groups.length ? <Donut slices={groups} centreLabel="Given away" centreValue={compactMoney(now.discountCents)} format={compactMoney} label="Discount given away by group" /> : <s-text color="subdued">No discounts were given in this period.</s-text>}
+          <Card heading="Revenue by group">
+            {groups.length ? <Donut slices={groups} centreLabel="Revenue" centreValue={compactMoney(groups.reduce((sum, slice) => sum + slice.value, 0))} format={compactMoney} label="Revenue by group" /> : <s-text color="subdued">No orders used a discount in this period.</s-text>}
           </Card>
         </s-grid>
 
@@ -131,23 +131,23 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
             <s-table>
               <s-table-header-row><s-table-header>Item</s-table-header><s-table-header format="currency">Amount</s-table-header></s-table-header-row>
               <s-table-body>
-                {rowOf("Order value before discounts", preDiscount)}
+                {rowOf("Revenue before discounts", preDiscount)}
                 {rowOf("Discounts", -now.discountCents)}
-                {rowOf("Order value", now.valueCents, true)}
+                {rowOf("Revenue", now.valueCents, true)}
                 {rowOf("Refunds", -now.refundCents)}
                 {rowOf("After refunds", now.valueCents - now.refundCents, true)}
               </s-table-body>
             </s-table>
-            <s-text color="subdued">Orders that used a discount. Order value includes shipping and tax.</s-text>
+            <s-text color="subdued">Revenue is what customers paid on orders that used a discount, including shipping and tax.</s-text>
           </Card>
         </s-grid>
 
         <s-grid gridTemplateColumns="repeat(auto-fit, minmax(320px, 1fr))" gap="base">
-          <Card heading="Orders by code prefix" action={<s-button variant="tertiary" href={appUrl("/app/reports/groups")}>View all</s-button>}>
-            <BarList items={topPrefixes} format={value => count.format(value)} empty="No generated codes (like WELCOME-1A2B-3C4D5E) were used in this period." />
+          <Card heading="Revenue by code prefix" action={<s-button variant="tertiary" href={appUrl("/app/reports/groups")}>View all</s-button>}>
+            <BarList items={topPrefixes} format={money} empty="No generated codes (like WELCOME-1A2B-3C4D5E) were used in this period." />
           </Card>
-          <Card heading="Top discounts" action={<s-button variant="tertiary" href={appUrl("/app/reports/discounts")}>View all</s-button>}>
-            <BarList items={topDiscounts} format={value => count.format(value)} empty="No orders used a discount in this period." />
+          <Card heading="Top discounts by revenue" action={<s-button variant="tertiary" href={appUrl("/app/reports/discounts")}>View all</s-button>}>
+            <BarList items={topDiscounts} format={money} empty="No orders used a discount in this period." />
           </Card>
         </s-grid>
       </>}

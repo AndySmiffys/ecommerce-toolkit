@@ -1,13 +1,15 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import db from "../../../db.server";
 import { isOtherApp, type SourceChoice } from "../design/discountSource";
-import { matchesGroup, maxGroups, validateGroup, type GroupDef } from "../design/reports";
+import { matchesRule, maxGroups, validateName, validateRule, type GroupRule } from "../design/reports";
 import { promotionDiscountId } from "../design/discountIdentity";
 import { discountsPerPage, type DiscountsPage } from "./discounts.server";
 import type { ShopifyAdminClient } from "./discount.server";
 
 type Database = Pick<PrismaClient, "discountIndex" | "discountIndexState" | "discountSourceRule" | "$transaction">;
-type SourceRule = Pick<GroupDef, "name" | "matchOn" | "matchType" | "pattern">;
+/** A rule for what counts as another app: a name and one way of matching. */
+export type SourceRule = GroupRule & { name: string };
+export type SourceRuleDef = SourceRule & { id: number };
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // The index is built by reading every discount in pages, oldest first, which can take minutes when other apps have made
@@ -67,7 +69,7 @@ export function indexRow(shop: string, node: IndexNode, rules: SourceRule[] = []
   return {
     shop, discountId: id, numericId: BigInt(numeric),
     kind: discount.__typename.startsWith("DiscountCode") ? "code" : "automatic",
-    title, code, createdBy, other: isOtherApp(createdBy), ruleName: rules.find(rule => matchesGroup(rule, { code, title }))?.name ?? null,
+    title, code, createdBy, other: isOtherApp(createdBy), ruleName: rules.find(rule => matchesRule(rule, { code, title }))?.name ?? null,
     startsAt: asDate(discount.startsAt), endsAt: asDate(discount.endsAt),
   };
 }
@@ -221,9 +223,9 @@ export async function madeByOtherApps(shop: string, ids: string[], database: Pic
 
 export const maxSourceRules = maxGroups;
 
-export async function listSourceRules(shop: string, database: Pick<PrismaClient, "discountSourceRule"> = db): Promise<GroupDef[]> {
+export async function listSourceRules(shop: string, database: Pick<PrismaClient, "discountSourceRule"> = db): Promise<SourceRuleDef[]> {
   const rows = await database.discountSourceRule.findMany({ where: { shop }, orderBy: { id: "asc" } });
-  return rows.map(row => ({ id: row.id, name: row.name, matchOn: row.matchOn as GroupDef["matchOn"], matchType: row.matchType as GroupDef["matchType"], pattern: row.pattern }));
+  return rows.map(row => ({ id: row.id, name: row.name, matchOn: row.matchOn as GroupRule["matchOn"], matchType: row.matchType as GroupRule["matchType"], pattern: row.pattern }));
 }
 
 /** Marks every indexed discount that a rule matches, and clears the mark from the ones no rule matches now. */
@@ -242,7 +244,7 @@ export async function applySourceRules(shop: string, database: Pick<PrismaClient
 }
 
 export async function saveSourceRule(shop: string, input: { name?: unknown; matchOn?: unknown; matchType?: unknown; pattern?: unknown }, database: Pick<PrismaClient, "discountIndex" | "discountSourceRule"> = db): Promise<void> {
-  const values = validateGroup(input);
+  const values = { name: validateName(input.name, "rule"), ...validateRule(input) };
   if ((await database.discountSourceRule.count({ where: { shop } })) >= maxSourceRules) throw new Error(`You can have up to ${maxSourceRules} rules.`);
   await database.discountSourceRule.create({ data: { shop, ...values } });
   await applySourceRules(shop, database);

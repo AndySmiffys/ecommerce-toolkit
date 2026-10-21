@@ -381,7 +381,7 @@ export default function PromotionsPage() {
           <MetricStrip caption="Last 30 days" metrics={[
             { label: "Active promotions", value: stats.activeCount === null ? "–" : String(stats.activeCount) },
             { label: "Orders with a discount", value: stats.orders === null ? "–" : String(stats.orders), note: stats.share === null ? undefined : `${(stats.share * 100).toFixed(1)}% of orders` },
-            { label: "Order value", value: stats.valueCents === null ? "–" : formatMoney(stats.valueCents, stats.currency) },
+            { label: "Revenue", value: stats.valueCents === null ? "–" : formatMoney(stats.valueCents, stats.currency) },
             { label: "Discount given away", value: stats.discountCents === null ? "–" : formatMoney(stats.discountCents, stats.currency) },
           ]} />
 

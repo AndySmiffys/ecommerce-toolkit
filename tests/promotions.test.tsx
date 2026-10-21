@@ -720,24 +720,37 @@ test("each environment passes the app the same access scopes its Shopify config 
 
 // ---- Reports: redemptions by group and by creating app ----
 const used = (id: number, title: string, code: string, createdBy: string, uses: number, kind: "code" | "automatic" = "code"): UsageRow => ({ id: `gid://shopify/DiscountNode/${id}`, title, code, kind, createdBy, uses });
-const signup: GroupDef = { id: 1, name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" };
-const cart: GroupDef = { id: 2, name: "Cart abandonment", matchOn: "either", matchType: "contains", pattern: "abandon" };
+const signup: GroupDef = { id: 1, name: "Signup", rules: [{ matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }] };
+const cart: GroupDef = { id: 2, name: "Cart abandonment", rules: [{ matchOn: "either", matchType: "contains", pattern: "abandon" }] };
+const only = (rule: GroupDef["rules"][number]) => ({ rules: [rule] });
 
 test("a group matches by the start, middle or end of the code or title, in any case, and an empty pattern matches nothing", () => {
   const row = { title: "Cart Abandonment 10%", code: "signup-4F9K" };
   assert.equal(matchesGroup(signup, row), true, "code starts with, ignoring case");
-  assert.equal(matchesGroup({ ...signup, matchOn: "title" }, row), false, "only the title is looked at");
-  assert.equal(matchesGroup({ ...cart, matchOn: "title" }, row), true, "title contains, ignoring case");
-  assert.equal(matchesGroup({ ...cart, matchOn: "code" }, row), false);
-  assert.equal(matchesGroup({ matchOn: "either", matchType: "ends_with", pattern: "4f9k" }, row), true);
-  assert.equal(matchesGroup({ matchOn: "either", matchType: "starts_with", pattern: "  " }, row), false);
+  assert.equal(matchesGroup(only({ ...signup.rules[0], matchOn: "title" }), row), false, "only the title is looked at");
+  assert.equal(matchesGroup(only({ ...cart.rules[0], matchOn: "title" }), row), true, "title contains, ignoring case");
+  assert.equal(matchesGroup(only({ ...cart.rules[0], matchOn: "code" }), row), false);
+  assert.equal(matchesGroup(only({ matchOn: "either", matchType: "ends_with", pattern: "4f9k" }), row), true);
+  assert.equal(matchesGroup(only({ matchOn: "either", matchType: "starts_with", pattern: "  " }), row), false);
   assert.equal(describeGroup(signup), "Code starts with “SIGNUP-”");
 });
-test("a report group is checked: it needs a name and text to look for, and sensible choices", () => {
-  assert.deepEqual(validateGroup({ name: " Signup ", matchOn: "code", matchType: "starts_with", pattern: " SIGNUP- " }), { name: "Signup", matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" });
-  for (const [change, message] of [[{ name: "" }, /name/], [{ pattern: " " }, /text to look for/], [{ name: "x".repeat(61) }, /60/], [{ matchOn: "everything" }, /code, the title or either/], [{ matchType: "regex" }, /how the text should match/]] as const) {
-    assert.throws(() => validateGroup(Object.assign({ name: "A", matchOn: "code", matchType: "contains", pattern: "A" }, change)), message);
+test("a group can have several ways to match and a discount belongs to it when any one fits", () => {
+  const dotdigital: GroupDef = { id: 3, name: "Dotdigital", rules: ["WELCOME-", "CART10-", "CART15-"].map(pattern => ({ matchOn: "code" as const, matchType: "starts_with" as const, pattern })) };
+  for (const code of ["WELCOME-558B-7CPF4N", "cart10-ABCD-123456", "CART15-1111-222222"]) assert.equal(matchesGroup(dotdigital, { title: "", code }), true, code);
+  assert.equal(matchesGroup(dotdigital, { title: "WELCOME-COUPON", code: "HALLOWEEN" }), false, "the title is not looked at by a code rule");
+  assert.equal(matchesGroup(dotdigital, { title: "", code: "CART20-AAAA-BBBBBB" }), false, "a prefix that is not listed yet");
+  assert.equal(describeGroup(dotdigital), "Code starts with “WELCOME-” or Code starts with “CART10-” or Code starts with “CART15-”");
+  const rows = [used(1, "a", "WELCOME-AAAA-BBBBBB", "Dotdigital", 4), used(2, "b", "CART15-AAAA-BBBBBB", "Dotdigital", 3), used(3, "c", "CART20-AAAA-BBBBBB", "Dotdigital", 2)];
+  const report = buildReport([dotdigital], rows, null);
+  assert.deepEqual(report.groups.map(line => [line.name, line.redemptions]), [["Dotdigital", 7], ["Other discounts", 2]]);
+});
+test("a report group is checked: it needs a name, at least one way to match with text to look for, and sensible choices", () => {
+  const rule = { matchOn: "code", matchType: "starts_with", pattern: " SIGNUP- " };
+  assert.deepEqual(validateGroup({ name: " Signup ", rules: [rule] }), { name: "Signup", rules: [{ matchOn: "code", matchType: "starts_with", pattern: "SIGNUP-" }] });
+  for (const [change, message] of [[{ name: "" }, /name/], [{ name: "x".repeat(61) }, /60/], [{ rules: [] }, /at least one way/], [{ rules: [{ ...rule, pattern: " " }] }, /text to look for/], [{ rules: [{ ...rule, matchOn: "everything" }] }, /code, the title or either/], [{ rules: [{ ...rule, matchType: "regex" }] }, /how the text should match/], [{ rules: Array.from({ length: 21 }, () => rule) }, /up to 20 ways/]] as const) {
+    assert.throws(() => validateGroup(Object.assign({ name: "A", rules: [rule] }, change)), message);
   }
+  assert.throws(() => validateGroup({ name: "A", rules: [rule, { ...rule, pattern: "" }] }), /Way to match 2: Enter the text/, "with several, the message says which one");
 });
 test("every used discount lands in one group or in Other discounts, so the totals always add up, whoever created them", () => {
   const rows = [used(1, "SIGNUP-1", "SIGNUP-AAA", "Dotdigital", 10), used(2, "Welcome", "SIGNUP-BBB", "Dotdigital", 5), used(3, "Cart abandonment", "CART-1", "Dotdigital", 7), used(4, "Halloween", "HALLOWEEN", "Shopify Web", 3), used(5, "Spring", "", "A new app nobody set up", 2, "automatic"), used(6, "Both", "SIGNUP-X", "Dotdigital", 1)];
