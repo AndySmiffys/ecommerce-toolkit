@@ -37,7 +37,7 @@ function Card({ heading, action, children }: { heading: string; action?: React.R
 export const otherHint = "Discounts used in this period that none of your groups matches. Add a group, or another way to match to a group, to break it down. The Revenue by group page lists them.";
 export const everythingElseHint = "The smaller groups beyond the five biggest, added together so the chart stays readable. The Revenue by group page lists every group separately.";
 
-function slicesOf(lines: Array<Totals & { name: string; key?: string }>, pick: (line: Totals) => number): Slice[] {
+export function slicesOf(lines: Array<Totals & { name: string; key?: string }>, pick: (line: Totals) => number): Slice[] {
   const sorted = lines.filter(line => pick(line) > 0).sort((a, b) => pick(b) - pick(a));
   const head = sorted.slice(0, 5).map(line => ({ label: line.name, value: pick(line), hint: line.key === "other" ? otherHint : undefined }));
   const rest = sorted.slice(5).reduce((sum, line) => sum + pick(line), 0);

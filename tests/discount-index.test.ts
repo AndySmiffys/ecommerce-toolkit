@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { withDatabase } from "./helpers/database";
 import { discountStatusAt, isOtherApp, sourceFromParam } from "../app/modules/promotions/design/discountSource";
+import { loadHomeStats } from "../app/modules/promotions/services/homeStats.server";
 import { buildIndex, creatorOf, creatorsOf, deleteSourceRule, forgetDiscounts, listSourceRules, saveSourceRule, indexIsDue, indexState, listFromIndex, madeByOtherApps, otherApps } from "../app/modules/promotions/services/discountIndex.server";
 import { bulkDiscountAction } from "../app/modules/promotions/services/bulkPromotions.server";
 
@@ -169,4 +170,29 @@ test("a rule hides discounts by pattern even when Shopify names no app, and remo
   assert.deepEqual(await ids(none), ["4", "3", "2", "1"], "removing the rule brings them back");
   await assert.rejects(saveSourceRule(shop, { name: "", matchOn: "title", matchType: "contains", pattern: "x" }, database), /name/);
   await assert.rejects(saveSourceRule(shop, { name: "X", matchOn: "title", matchType: "contains", pattern: " " }, database), /text to look for/);
+}));
+
+test("the home page's counts come from what the app keeps: running, scheduled and ending soon, only the merchant's own, plus the website and Google counts", async () => withDatabase(async database => {
+  const now = new Date("2026-10-21T12:00:00Z");
+  const day = 86400000;
+  assert.equal((await loadHomeStats(shop, database, now)).promotions, null, "nothing is counted until the discounts have been read");
+  const make = (id: number, change: Record<string, unknown> = {}) => ({ shop, discountId: `gid://shopify/DiscountNode/${id}`, numericId: BigInt(id), kind: "code", title: `P${id}`, code: `C${id}`, createdBy: "Shopify Web", other: false, startsAt: null, endsAt: null, ...change });
+  await database.discountIndex.createMany({ data: [
+    make(1),
+    make(2, { endsAt: new Date(now.getTime() + 3 * day) }),
+    make(3, { endsAt: new Date(now.getTime() + 30 * day) }),
+    make(4, { startsAt: new Date(now.getTime() + 5 * day) }),
+    make(5, { endsAt: new Date(now.getTime() - day) }),
+    make(6, { other: true, createdBy: "Dotdigital" }),
+    make(7, { ruleName: "Loox" }),
+    make(8, { endsAt: new Date(now.getTime() + 2 * day), other: true, createdBy: "Dotdigital" }),
+  ] });
+  await database.discountIndexState.create({ data: { shop, scanDone: true } });
+  await database.promotionSettings.create({ data: { shop, shopifyDiscountId: "gid://shopify/DiscountNode/1", websiteEnabled: true, priority: 1 } });
+  await database.googlePromotion.createMany({ data: [{ shop, discountId: "gid://shopify/DiscountNode/1", status: "ready" }, { shop, discountId: "gid://shopify/DiscountNode/2", status: "issues" }, { shop, discountId: "gid://shopify/DiscountNode/3", status: "pending" }] });
+  const stats = await loadHomeStats(shop, database, now);
+  assert.deepEqual(stats.promotions, { active: 3, scheduled: 1, endingSoon: 1 }, "1, 2 and 3 are running; 4 is scheduled; 5 has ended; other apps' discounts are not counted");
+  assert.equal(stats.websiteEnabled, 1);
+  assert.deepEqual(stats.google, { chosen: 3, ready: 1, issues: 1 });
+  assert.deepEqual((await loadHomeStats("other.myshopify.com", database, now)).google, { chosen: 0, ready: 0, issues: 0 }, "another shop has its own counts");
 }));
