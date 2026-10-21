@@ -9,6 +9,7 @@ import { describeGroup, matchOnLabels, matchOptions, matchTypeLabels, matchTypes
 import type { OrderReportData, UngroupedDiscount } from "../services/orderReport.server";
 import { ModalOverlay } from "./ModalOverlay";
 import { PolarisSelect } from "./PolarisControls";
+import { otherHint } from "./ReportOverview";
 import { ReportStatus } from "./ReportOrders";
 import { useCsvDownload } from "./useCsvDownload";
 
@@ -94,7 +95,13 @@ export function ReportGroups({ groups, orders, ungrouped, refreshing }: { groups
                 return <s-table-row key={line.key}>
                   <s-table-cell>
                     <s-stack direction="block" gap="small-300">
-                      <s-text type="strong">{line.name}</s-text>
+                      {group
+                        ? <s-text type="strong">{line.name}</s-text>
+                        : <s-stack direction="inline" gap="small-300" alignItems="center">
+                          <s-text type="strong">{line.name}</s-text>
+                          <s-button type="button" variant="tertiary" icon="info" interestFor="other-discounts-hint" accessibilityLabel="About Other discounts" />
+                          <s-tooltip id="other-discounts-hint">{otherHint}</s-tooltip>
+                        </s-stack>}
                       <s-text color="subdued">{group ? describeGroup(group) : "Used discounts that are in none of the groups above"}</s-text>
                     </s-stack>
                   </s-table-cell>

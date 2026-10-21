@@ -34,11 +34,14 @@ function Card({ heading, action, children }: { heading: string; action?: React.R
   </s-section>;
 }
 
-function slicesOf(lines: Array<Totals & { name: string }>, pick: (line: Totals) => number): Slice[] {
+export const otherHint = "Discounts used in this period that none of your groups matches. Add a group, or another way to match to a group, to break it down. The Revenue by group page lists them.";
+export const everythingElseHint = "The smaller groups beyond the five biggest, added together so the chart stays readable. The Revenue by group page lists every group separately.";
+
+function slicesOf(lines: Array<Totals & { name: string; key?: string }>, pick: (line: Totals) => number): Slice[] {
   const sorted = lines.filter(line => pick(line) > 0).sort((a, b) => pick(b) - pick(a));
-  const head = sorted.slice(0, 5).map(line => ({ label: line.name, value: pick(line) }));
+  const head = sorted.slice(0, 5).map(line => ({ label: line.name, value: pick(line), hint: line.key === "other" ? otherHint : undefined }));
   const rest = sorted.slice(5).reduce((sum, line) => sum + pick(line), 0);
-  return rest > 0 ? [...head, { label: "Everything else", value: rest }] : head;
+  return rest > 0 ? [...head, { label: "Everything else", value: rest, hint: everythingElseHint }] : head;
 }
 
 /** The Reports home: headline figures with trends, charts, a breakdown, and the way into each fuller report. */

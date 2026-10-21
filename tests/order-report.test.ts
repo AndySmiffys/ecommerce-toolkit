@@ -232,6 +232,9 @@ test("the charts draw for normal, single-day, empty and all-zero data without br
   const donut = renderToStaticMarkup(createElement(Donut, { slices: [{ label: "Signup", value: 300 }, { label: "Other", value: 100 }], centreLabel: "Given", centreValue: "£4", format: money, label: "x" }));
   assert.match(donut, /75%/);
   assert.match(donut, /25%/);
+  const hinted = renderToStaticMarkup(createElement(Donut, { slices: [{ label: "Signup", value: 300 }, { label: "Other discounts", value: 100, hint: "Discounts no group matches." }], centreLabel: "Given", centreValue: "£4", format: money, label: "x" }));
+  assert.match(hinted, /<s-tooltip[^>]*>Discounts no group matches\.<\/s-tooltip>/, "a catch-all slice explains itself on hover");
+  assert.equal((hinted.match(/<s-tooltip/g) ?? []).length, 1, "and a plain group does not get one");
   assert.doesNotMatch(renderToStaticMarkup(createElement(Donut, { slices: [], centreLabel: "Given", centreValue: "£0", format: money, label: "x" })), /NaN/);
   const bars = renderToStaticMarkup(createElement(BarList, { items: [{ label: "WELCOME-", value: 40, note: "£4 off" }, { label: "CART10-", value: 10 }], format: value => String(value), empty: "None" }));
   assert.match(bars, /WELCOME-/);

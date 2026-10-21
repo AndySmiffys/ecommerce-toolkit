@@ -80,10 +80,12 @@ export function AreaChart({ values, previous, labels, previousLabels, format, ax
   </svg>;
 }
 
-export type Slice = { label: string; value: number; note?: string };
+/** A slice of a donut. `hint` explains it on hover, for a slice that is not a plain name (such as a catch-all). */
+export type Slice = { label: string; value: number; note?: string; hint?: string };
 
 /** A donut with its legend: each slice's value and share. */
 export function Donut({ slices, centreLabel, centreValue, format, label }: { slices: Slice[]; centreLabel: string; centreValue: string; format: (value: number) => string; label: string }) {
+  const tipBase = useId().replace(/:/g, "");
   const total = slices.reduce((sum, slice) => sum + Math.max(0, slice.value), 0);
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
@@ -103,7 +105,13 @@ export function Donut({ slices, centreLabel, centreValue, format, label }: { sli
     <div style={{ flex: "1 1 160px", minWidth: 0, display: "grid", gap: 8 }}>
       {slices.map((slice, index) => <div key={slice.label} style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto auto", gap: 8, alignItems: "center", fontSize: 13 }}>
         <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: chartColors[index % chartColors.length] }} />
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={slice.label}>{slice.label}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={slice.hint ? undefined : slice.label}>{slice.label}</span>
+          {slice.hint && <>
+            <s-button type="button" variant="tertiary" icon="info" interestFor={`${tipBase}-tip-${index}`} accessibilityLabel={`About ${slice.label}`} />
+            <s-tooltip id={`${tipBase}-tip-${index}`}>{slice.hint}</s-tooltip>
+          </>}
+        </span>
         <span style={{ fontWeight: 600 }}>{format(slice.value)}</span>
         <span style={{ color: "#616161", minWidth: 40, textAlign: "right" }}>{total > 0 ? `${((Math.max(0, slice.value) / total) * 100).toFixed(0)}%` : "–"}</span>
       </div>)}
