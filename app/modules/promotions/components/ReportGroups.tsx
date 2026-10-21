@@ -9,7 +9,8 @@ import { describeGroup, matchOnLabels, matchOptions, matchTypeLabels, matchTypes
 import type { OrderReportData, UngroupedDiscount } from "../services/orderReport.server";
 import { ModalOverlay } from "./ModalOverlay";
 import { PolarisSelect } from "./PolarisControls";
-import { otherHint } from "./ReportOverview";
+import { otherHint, slicesOf } from "./ReportOverview";
+import { Donut } from "./charts/Charts";
 import { ReportStatus } from "./ReportOrders";
 import { useCsvDownload } from "./useCsvDownload";
 
@@ -75,6 +76,16 @@ export function ReportGroups({ groups, orders, ungrouped, refreshing }: { groups
           </PolarisSelect>
         </s-box>
       </s-section>
+
+      {ready && <s-section heading="Revenue by group">
+        {(() => {
+          const slices = slicesOf(report.groups, line => line.valueCents);
+          const compact = (cents: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: orders.currency, notation: "compact", maximumFractionDigits: 1 }).format(cents / 100);
+          return slices.length
+            ? <Donut slices={slices} centreLabel="Revenue" centreValue={compact(slices.reduce((sum, slice) => sum + slice.value, 0))} format={compact} label="Revenue by group" />
+            : <s-text color="subdued">No orders used a discount in this period.</s-text>;
+        })()}
+      </s-section>}
 
       <s-section heading="Groups">
         <s-stack direction="block" gap="base">

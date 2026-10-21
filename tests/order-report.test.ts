@@ -230,6 +230,8 @@ test("the charts draw for normal, single-day, empty and all-zero data without br
   assert.doesNotMatch(renderToStaticMarkup(createElement(Sparkline, { values: [0, 0], label: "x" })), /NaN/);
   assert.doesNotMatch(renderToStaticMarkup(createElement(Sparkline, { values: [5], label: "x" })), /NaN/);
   const donut = renderToStaticMarkup(createElement(Donut, { slices: [{ label: "Signup", value: 300 }, { label: "Other", value: 100 }], centreLabel: "Given", centreValue: "£4", format: money, label: "x" }));
+  assert.ok(donut.indexOf("<svg") < donut.indexOf("donut-legend"), "the chart comes before its legend, so on a phone it sits above the list");
+  assert.match(donut, /container-type: inline-size/, "and moves beside the legend only when the card is wide enough");
   assert.match(donut, /75%/);
   assert.match(donut, /25%/);
   const hinted = renderToStaticMarkup(createElement(Donut, { slices: [{ label: "Signup", value: 300 }, { label: "Other discounts", value: 100, hint: "Discounts no group matches." }], centreLabel: "Given", centreValue: "£4", format: money, label: "x" }));

@@ -81,6 +81,16 @@ export function AreaChart({ values, previous, labels, previousLabels, format, ax
 }
 
 /** A slice of a donut. `hint` explains it on hover, for a slice that is not a plain name (such as a catch-all). */
+const donutStyles = `
+.donut-wrap { container-type: inline-size; }
+.donut { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.donut .donut-legend { width: 100%; min-width: 0; }
+@container (min-width: 420px) {
+  .donut { flex-direction: row; gap: 20px; }
+  .donut .donut-legend { flex: 1 1 160px; width: auto; }
+}
+`;
+
 export type Slice = { label: string; value: number; note?: string; hint?: string };
 
 /** A donut with its legend: each slice's value and share. */
@@ -90,7 +100,8 @@ export function Donut({ slices, centreLabel, centreValue, format, label }: { sli
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
-  return <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+  // The chart sits above its legend, centred, and moves beside it only when the card is wide enough for both.
+  return <div className="donut-wrap"><style>{donutStyles}</style><div className="donut">
     <svg viewBox="0 0 140 140" role="img" aria-label={label} style={{ width: 150, height: 150, flex: "0 0 auto" }}>
       <circle cx="70" cy="70" r={radius} fill="none" stroke="#f1f1f1" strokeWidth="18" />
       {total > 0 && slices.map((slice, index) => {
@@ -102,7 +113,7 @@ export function Donut({ slices, centreLabel, centreValue, format, label }: { sli
       <text x="70" y="66" textAnchor="middle" fontSize="11" fill="#616161">{centreLabel}</text>
       <text x="70" y="86" textAnchor="middle" fontSize="18" fontWeight="650" fill="#303030">{centreValue}</text>
     </svg>
-    <div style={{ flex: "1 1 160px", minWidth: 0, display: "grid", gap: 8 }}>
+    <div className="donut-legend" style={{ display: "grid", gap: 8 }}>
       {slices.map((slice, index) => <div key={slice.label} style={{ display: "grid", gridTemplateColumns: "12px minmax(0, 1fr) auto auto", gap: 8, alignItems: "center", fontSize: 13 }}>
         <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: chartColors[index % chartColors.length] }} />
         <span style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
@@ -116,7 +127,7 @@ export function Donut({ slices, centreLabel, centreValue, format, label }: { sli
         <span style={{ color: "#616161", minWidth: 40, textAlign: "right" }}>{total > 0 ? `${((Math.max(0, slice.value) / total) * 100).toFixed(0)}%` : "–"}</span>
       </div>)}
     </div>
-  </div>;
+  </div></div>;
 }
 
 export type BarItem = { label: string; value: number; note?: string };
