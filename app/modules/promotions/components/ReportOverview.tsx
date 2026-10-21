@@ -152,6 +152,18 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
         </s-grid>
       </>}
 
+      {ready && <s-section heading="Manual discounts">
+        <s-stack direction="block" gap="base">
+          <s-text color="subdued">Discounts added by hand, such as replacement orders after a dispatch or shipping error. They are left out of the figures above.</s-text>
+          <s-grid gridTemplateColumns="repeat(auto-fit, minmax(170px, 1fr))" gap="base">
+            <s-stack direction="block" gap="small-300"><s-text color="subdued">Orders</s-text><s-heading>{count.format(report.manual.totals.orders)}</s-heading></s-stack>
+            <s-stack direction="block" gap="small-300"><s-text color="subdued">Share of all orders</s-text><s-heading>{`${(report.manual.share * 100).toFixed(1)}%`}</s-heading></s-stack>
+            <s-stack direction="block" gap="small-300"><s-text color="subdued">Discount given</s-text><s-heading>{money(report.manual.totals.discountCents)}</s-heading></s-stack>
+          </s-grid>
+          <div><s-button variant="secondary" href={appUrl("/app/reports/manual")}>Open manual discounts</s-button></div>
+        </s-stack>
+      </s-section>}
+
       <s-section heading="More reports">
         <s-stack direction="block" gap="base">
           {reportLinks.map(item => <s-stack key={item.path} direction="inline" gap="base" alignItems="center" justifyContent="space-between">
@@ -168,6 +180,7 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
 }
 
 export const reportLinks = [
+  { path: "/app/reports/manual", title: "Manual discounts", description: "Orders with a discount added by hand, such as replacements for dispatch or shipping errors, kept apart from your promotions." },
   { path: "/app/reports/discounts", title: "Discount returns", description: "Orders, order value and discounts for every code and automatic discount, with filters and a CSV download." },
   { path: "/app/reports/groups", title: "Revenue by group", description: "What each of your groups of discounts returned, with the controls to add and change groups and the discounts that no group catches yet." },
   { path: "/app/reports/prefixes", title: "Code prefixes and apps", description: "Redemptions of generated codes by prefix, such as Dotdigital's, and of every discount by the app that made it." },

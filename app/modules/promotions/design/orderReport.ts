@@ -5,13 +5,15 @@ import { codePrefix, matchesGroup, otherKey, type GroupDef } from "./reports";
 
 export const allKey = "*all";
 export const discountedKey = "*discounted";
+/** Orders that carry a manual discount: one a person added by hand, such as on a replacement order. Kept apart from promotions. */
+export const manualKey = "*manual";
 export type DiscountKind = "code" | "automatic" | "manual";
 
 /** One day's totals for one discount (or for a special key). Money is in minor units. */
 export type DayRow = { day: string; key: string; kind: string; label: string; orders: number; valueCents: number; refundCents: number; discountCents: number };
 
 type Application = { index: number; kind: DiscountKind; label: string };
-type OrderRecord = { createdAt: string; valueCents: number; currentCents: number; discountCents: number; applications: Application[]; allocated: Map<number, number> };
+type OrderRecord = { name: string; createdAt: string; valueCents: number; currentCents: number; discountCents: number; applications: Application[]; allocated: Map<number, number> };
 
 const cents = (amount: unknown) => Math.round(Number(amount ?? 0) * 100) || 0;
 const money = (set: unknown) => (set as { shopMoney?: { amount?: string } } | undefined)?.shopMoney?.amount;
@@ -21,7 +23,10 @@ const money = (set: unknown) => (set as { shopMoney?: { amount?: string } } | un
  * into one total per day and discount. Each discount's share of an order is the sum of what it took off that order's
  * line items and shipping. An order that used two discounts counts once under each, and once in the order's own totals.
  */
-export async function aggregateOrderLines(lines: Iterable<string> | AsyncIterable<string>): Promise<{ rows: DayRow[]; currency: string | null; orders: number }> {
+/** An order that carried a manual discount, for the list on the Manual discounts report. Nothing here identifies a customer. */
+export type ManualOrder = { orderId: string; name: string; day: string; createdAt: string; reasons: string; valueCents: number; discountCents: number };
+
+export async function aggregateOrderLines(lines: Iterable<string> | AsyncIterable<string>): Promise<{ rows: DayRow[]; currency: string | null; orders: number; manualOrders: ManualOrder[] }> {
   const orders = new Map<string, OrderRecord>();
   let currency: string | null = null;
   for await (const line of lines) {
@@ -33,14 +38,14 @@ export async function aggregateOrderLines(lines: Iterable<string> | AsyncIterabl
       if (typeof item.id !== "string" || typeof item.createdAt !== "string" || item.cancelledAt) continue;
       const total = (item.totalPriceSet as { shopMoney?: { currencyCode?: string } } | undefined)?.shopMoney;
       currency = currency ?? total?.currencyCode ?? null;
-      orders.set(item.id, { createdAt: item.createdAt, valueCents: cents(money(item.totalPriceSet)), currentCents: cents(money(item.currentTotalPriceSet) ?? money(item.totalPriceSet)), discountCents: cents(money(item.totalDiscountsSet)), applications: [], allocated: new Map() });
+      orders.set(item.id, { name: String(item.name ?? ""), createdAt: item.createdAt, valueCents: cents(money(item.totalPriceSet)), currentCents: cents(money(item.currentTotalPriceSet) ?? money(item.totalPriceSet)), discountCents: cents(money(item.totalDiscountsSet)), applications: [], allocated: new Map() });
       continue;
     }
     const order = orders.get(parent);
     if (!order) continue;
     const type = String(item.__typename ?? "");
     if (type.endsWith("Application") && type.includes("Discount")) {
-      const label = String(item.code ?? item.title ?? "").trim();
+      const label = String(item.code ?? item.title ?? item.description ?? "").trim();
       if (!label) continue;
       order.applications.push({ index: typeof item.index === "number" ? item.index : order.applications.length, kind: type === "DiscountCodeApplication" ? "code" : type === "ManualDiscountApplication" ? "manual" : "automatic", label });
     } else if (Array.isArray(item.discountAllocations)) {
@@ -57,11 +62,11 @@ export async function aggregateOrderLines(lines: Iterable<string> | AsyncIterabl
     row.orders++; row.valueCents += order.valueCents; row.refundCents += Math.max(0, order.valueCents - order.currentCents); row.discountCents += discountCents;
     rows.set(id, row);
   };
-  for (const order of orders.values()) {
+  const manualOrders: ManualOrder[] = [];
+  for (const [orderId, order] of orders) {
     const day = order.createdAt.slice(0, 10);
     add(day, allKey, "all", "All orders", order, order.discountCents);
     if (!order.applications.length) continue;
-    add(day, discountedKey, "all", "Orders with a discount", order, order.discountCents);
     const mine = new Map<string, { kind: DiscountKind; label: string; cents: number }>();
     for (const application of order.applications) {
       const key = `${application.kind === "code" ? "c" : application.kind === "manual" ? "m" : "a"}:${application.kind === "code" ? application.label.toUpperCase() : application.label}`;
@@ -69,9 +74,20 @@ export async function aggregateOrderLines(lines: Iterable<string> | AsyncIterabl
       entry.cents += order.allocated.get(application.index) ?? 0;
       mine.set(key, entry);
     }
+    const promotions = [...mine.values()].filter(entry => entry.kind !== "manual");
+    const manual = [...mine.values()].filter(entry => entry.kind === "manual");
+    // What each side took off: the whole discount when the order has only that side, else what its lines allocated.
+    const share = (entries: typeof promotions) => entries.reduce((sum, entry) => sum + entry.cents, 0);
+    // An order counts as a promotion order only if a promotion or code was used. Replacement orders (manual only) are kept apart.
+    if (promotions.length) add(day, discountedKey, "all", "Orders with a discount", order, manual.length ? share(promotions) : order.discountCents);
+    if (manual.length) {
+      const given = promotions.length ? share(manual) : order.discountCents;
+      add(day, manualKey, "all", "Orders with a manual discount", order, given);
+      manualOrders.push({ orderId, name: order.name, day, createdAt: order.createdAt, reasons: manual.map(entry => entry.label).join(", "), valueCents: order.valueCents, discountCents: given });
+    }
     for (const [key, entry] of mine) add(day, key, entry.kind, entry.label, order, entry.cents);
   }
-  return { rows: [...rows.values()], currency, orders: orders.size };
+  return { rows: [...rows.values()], currency, orders: orders.size, manualOrders };
 }
 
 // ---- Filtering and totalling ----
@@ -95,7 +111,10 @@ export type OrderReport = {
   discountCount: number;
   /** The prefixes found in the period, for the filter. */
   prefixChoices: string[];
+  /** Orders with a manual discount, such as replacements. They are not in any figure above. */
+  manual: ManualReport;
 };
+export type ManualReport = { totals: Totals; days: Array<Totals & { day: string }>; reasons: OrderDiscount[]; /** Share of all orders in the period, 0 to 1. */ share: number };
 
 const zero = (): Totals => ({ orders: 0, valueCents: 0, refundCents: 0, discountCents: 0 });
 const plus = (into: Totals, row: Totals) => { into.orders += row.orders; into.valueCents += row.valueCents; into.refundCents += row.refundCents; into.discountCents += row.discountCents; };
@@ -119,6 +138,9 @@ export function buildOrderReport(rows: DayRow[], groups: GroupDef[], filter: Ord
   const byDay = new Map<string, Totals & { day: string }>();
   const discountedByDay = new Map<string, Totals & { day: string }>();
   const prefixes = new Set<string>();
+  const manualTotals = zero();
+  const manualByDay = new Map<string, Totals & { day: string }>();
+  const byReason = new Map<string, OrderDiscount>();
   const search = filter.search.trim().toLowerCase();
   const narrowed = Boolean(filter.group || filter.prefix || filter.kind || search);
   const bump = (map: Map<string, Totals & { day: string }>, row: DayRow) => { const entry = map.get(row.day) ?? { day: row.day, ...zero() }; plus(entry, row); map.set(row.day, entry); };
@@ -126,6 +148,13 @@ export function buildOrderReport(rows: DayRow[], groups: GroupDef[], filter: Ord
     if (row.day < filter.from || row.day > filter.to) continue;
     if (row.key === allKey) { plus(all, row); continue; }
     if (row.key === discountedKey) { plus(discounted, row); bump(discountedByDay, row); continue; }
+    if (row.key === manualKey) { plus(manualTotals, row); bump(manualByDay, row); continue; }
+    if (row.kind === "manual") {
+      const reason = byReason.get(row.key) ?? { key: row.key, label: row.label, kind: row.kind, ...zero() };
+      plus(reason, row);
+      byReason.set(row.key, reason);
+      continue;
+    }
     const prefix = row.kind === "code" ? codePrefix(row.label) : null;
     if (prefix) prefixes.add(prefix);
     if (filter.kind && row.kind !== filter.kind) continue;
@@ -154,6 +183,7 @@ export function buildOrderReport(rows: DayRow[], groups: GroupDef[], filter: Ord
     discounts: discounts.slice(0, limit),
     discountCount: discounts.length,
     prefixChoices: [...prefixes].sort(),
+    manual: { totals: manualTotals, days: [...manualByDay.values()].sort((a, b) => a.day.localeCompare(b.day)), reasons: [...byReason.values()].sort((a, b) => b.orders - a.orders || b.discountCents - a.discountCents), share: all.orders ? manualTotals.orders / all.orders : 0 },
   };
 }
 
@@ -216,5 +246,5 @@ export function filterFromParams(params: URLSearchParams, now = Date.now()): Ord
   if (to > latest) to = latest;
   if (from > to) from = to;
   const kind = params.get("kind") ?? "";
-  return { from, to, group: params.get("group") ?? "", prefix: (params.get("prefix") ?? "").toUpperCase(), kind: ["code", "automatic", "manual"].includes(kind) ? kind : "", search: (params.get("q") ?? "").slice(0, 60) };
+  return { from, to, group: params.get("group") ?? "", prefix: (params.get("prefix") ?? "").toUpperCase(), kind: ["code", "automatic"].includes(kind) ? kind : "", search: (params.get("q") ?? "").slice(0, 60) };
 }

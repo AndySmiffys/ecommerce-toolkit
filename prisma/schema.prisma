@@ -208,3 +208,21 @@ model DiscountSourceRule {
 
   @@index([shop])
 }
+
+// Orders that carried a manual discount (added by hand, such as on a replacement order for a dispatch or shipping
+// error), for the Manual discounts report. Only the order number, date, the reason typed and the amounts: nothing
+// that identifies a customer.
+model ReportManualOrder {
+  id            Int      @id @default(autoincrement())
+  shop          String
+  orderId       String
+  name          String
+  day           String
+  createdAt     DateTime
+  reasons       String
+  valueCents    Int      @default(0)
+  discountCents Int      @default(0)
+
+  @@unique([shop, orderId])
+  @@index([shop, day])
+}

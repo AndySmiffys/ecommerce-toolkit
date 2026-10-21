@@ -7,7 +7,7 @@ import { withDatabase } from "./helpers/database";
 import { aggregateOrderLines, averages, buildOrderReport, dailySeries, datesBetween, emptyFilter, filterFromParams, previousRange, spanDays, type DayRow } from "../app/modules/promotions/design/orderReport";
 import type { GroupDef } from "../app/modules/promotions/design/reports";
 import { decimal, toCsv } from "../app/modules/promotions/design/csv";
-import { driveOrderSync, exportOrderTable, firstDayToRead, linesOf, loadOrderReport, loadUngrouped, orderSyncIsDue, stepOrderSync } from "../app/modules/promotions/services/orderReport.server";
+import { driveOrderSync, exportOrderTable, firstDayToRead, linesOf, loadManualOrders, loadOrderReport, loadUngrouped, orderSyncIsDue, stepOrderSync, storeOrderDays } from "../app/modules/promotions/services/orderReport.server";
 
 const shop = "orders-test.myshopify.com";
 const money = (amount: string, currencyCode = "GBP") => ({ shopMoney: { amount, currencyCode } });
@@ -67,17 +67,17 @@ test("the report filters by period, group, prefix, type and search, and totals w
   assert.deepEqual(everything.days.map(day => [day.day, day.orders]), [["2026-10-10", 2], ["2026-10-11", 1]]);
   assert.deepEqual(everything.prefixChoices, ["CART10", "WELCOME"]);
   const names = Object.fromEntries(everything.groups.map(item => [item.name, item.orders]));
-  assert.deepEqual(names, { Signup: 2, "Other discounts": 3 }, "WELCOME x2; CART10, Spring sale and Staff discount are others");
+  assert.deepEqual(names, { Signup: 2, "Other discounts": 2 }, "WELCOME x2; CART10 and Spring sale are others, and the manual Staff discount is kept out of promotions");
   const prefix = buildOrderReport(rows, [signup], { ...base, prefix: "WELCOME" });
   assert.equal(prefix.selected.orders, 2);
   assert.equal(prefix.exact, false);
   assert.equal(prefix.discounts[0].orders, 2, "the same code on two days is one line");
   assert.equal(buildOrderReport(rows, [signup], { ...base, group: "group-1" }).selected.discountCents, 1500);
   assert.equal(buildOrderReport(rows, [signup], { ...base, kind: "automatic" }).discounts[0].label, "Spring sale");
-  assert.equal(buildOrderReport(rows, [signup], { ...base, search: "staff" }).discountCount, 1);
+  assert.equal(buildOrderReport(rows, [signup], { ...base, search: "spring" }).discountCount, 1);
   assert.equal(buildOrderReport(rows, [signup], { ...base, from: "2026-10-11" }).all.orders, 2, "a shorter period");
   assert.equal(buildOrderReport(rows, [signup], base, 1).discounts.length, 1, "the list is capped but the count is not");
-  assert.equal(buildOrderReport(rows, [signup], base, 1).discountCount, 4);
+  assert.equal(buildOrderReport(rows, [signup], base, 1).discountCount, 3);
 });
 
 test("averages are worked out from the totals and are empty when there is nothing to divide", () => {
@@ -261,8 +261,66 @@ test("discounts in no group are listed by revenue with a status wherever the app
     index(3, "code", "Later", "mystery".toUpperCase(), stamp(5), null),
   ] });
   const result = await loadUngrouped(shop, emptyFilter("2026-10-01", "2026-10-20"), database, stamp(0));
-  assert.deepEqual(result.rows.map(item => [item.label, item.status]), [["Spring sale", "active"], ["LXZ-CNQ23GT", "expired"], ["mystery", "scheduled"], ["Staff discount", null]], "most revenue first; a code is matched whatever its case; a discount the app does not know has no status");
-  assert.equal(result.count, 4);
+  assert.deepEqual(result.rows.map(item => [item.label, item.status]), [["Spring sale", "active"], ["LXZ-CNQ23GT", "expired"], ["mystery", "scheduled"]], "most revenue first; a code is matched whatever its case; a manual discount is not a promotion so it is not listed");
+  assert.equal(result.count, 3);
   assert.equal(result.rows.some(item => item.label.startsWith("WELCOME")), false, "a discount a group catches is not listed");
   assert.equal(result.rows[0].valueCents, 8000);
+}));
+
+const manualFile = [
+  order(1, "2026-10-12T09:00:00Z", "8.00", "8.00", "40.00", { name: "#1001" }),
+  application(1, 0, "ManualDiscountApplication", "title", "Replacement: dispatch error"),
+  line(1, 11, [[0, "40.00"]]),
+  order(2, "2026-10-12T10:00:00Z", "30.00", "30.00", "8.00", { name: "#1002" }),
+  application(2, 0, "DiscountCodeApplication", "code", "WELCOME-1A2B3C4D-9XY8ZQ"),
+  application(2, 1, "ManualDiscountApplication", "title", "Goodwill"),
+  line(2, 21, [[0, "5.00"], [1, "3.00"]]),
+  order(3, "2026-10-12T11:00:00Z", "20.00", "20.00", "2.00", { name: "#1003" }),
+  application(3, 0, "AutomaticDiscountApplication", "title", "Spring sale"),
+  line(3, 31, [[0, "2.00"]]),
+  order(4, "2026-10-12T12:00:00Z", "15.00", "15.00", "0.00", { name: "#1004" }),
+];
+
+test("manual discounts, such as replacement orders, are counted apart from promotions", async () => {
+  const { rows, manualOrders } = await aggregateOrderLines(manualFile);
+  const key = (name: string) => find(rows, "2026-10-12", name);
+  assert.equal(key("*all")!.orders, 4);
+  assert.deepEqual([key("*discounted")!.orders, key("*discounted")!.discountCents], [2, 700], "a replacement order is not a promotion order; one that also used a code counts, with only the code's and the automatic discount's share");
+  assert.deepEqual([key("*manual")!.orders, key("*manual")!.discountCents], [2, 4300], "both orders with a manual discount, with what the manual discounts took off");
+  assert.deepEqual(manualOrders.map(item => [item.name, item.reasons, item.valueCents, item.discountCents]), [["#1001", "Replacement: dispatch error", 800, 4000], ["#1002", "Goodwill", 3000, 300]]);
+
+  const report = buildOrderReport(rows, [signup], emptyFilter("2026-10-12", "2026-10-12"));
+  assert.equal(report.selected.orders, 2, "promotions only");
+  assert.equal(report.selected.discountCents, 700);
+  assert.equal(report.discountedShare, 0.5);
+  assert.equal(report.discounts.some(item => item.kind === "manual"), false, "not among the discounts");
+  assert.equal(report.groups.reduce((sum, line) => sum + line.orders, 0), 2, "not in any group, not even Other discounts");
+  assert.equal(report.days.reduce((sum, item) => sum + item.orders, 0), 2);
+  assert.deepEqual([report.manual.totals.orders, report.manual.totals.discountCents, report.manual.share], [2, 4300, 0.5]);
+  assert.deepEqual(report.manual.reasons.map(item => [item.label, item.orders, item.discountCents]), [["Replacement: dispatch error", 1, 4000], ["Goodwill", 1, 300]], "by the reason typed, most orders first and then the most given away");
+  assert.deepEqual(report.manual.days.map(item => [item.day, item.orders]), [["2026-10-12", 2]]);
+  assert.equal(buildOrderReport(rows, [signup], emptyFilter("2026-10-01", "2026-10-11")).manual.totals.orders, 0, "outside the period");
+});
+
+test("manual orders are stored, replaced on a re-read, listed newest first and downloadable", async () => withDatabase(async database => {
+  const { rows, manualOrders } = await aggregateOrderLines(manualFile);
+  const t0 = Date.parse("2026-10-13T08:00:00Z");
+  await storeOrderDays(shop, rows, "2026-10-01", database, t0, manualOrders);
+  const filter = emptyFilter("2026-10-01", "2026-10-13");
+  const listed = await loadManualOrders(shop, filter, database);
+  assert.deepEqual(listed.orders.map(item => item.name), ["#1002", "#1001"], "newest first");
+  assert.equal(listed.count, 2);
+  assert.equal((await loadManualOrders(shop, emptyFilter("2026-10-13", "2026-10-13"), database)).count, 0, "only the period asked for");
+  // Reading the same days again replaces them rather than adding to them.
+  await storeOrderDays(shop, rows, "2026-10-12", database, t0, manualOrders);
+  assert.equal((await loadManualOrders(shop, filter, database)).count, 2);
+  await storeOrderDays(shop, [], "2026-10-12", database, t0, []);
+  assert.equal((await loadManualOrders(shop, filter, database)).count, 0, "a discount removed in Shopify disappears");
+  await storeOrderDays(shop, rows, "2026-10-01", database, t0, manualOrders);
+  const reasons = await exportOrderTable(shop, "manual", filter, database);
+  assert.deepEqual(reasons.headers.slice(0, 2), ["Reason", "Orders"]);
+  assert.equal(reasons.rows.length, 2);
+  const orders = await exportOrderTable(shop, "manual-orders", filter, database);
+  assert.deepEqual(orders.headers, ["Order", "Date", "Reason", "Order total", "Discount given"]);
+  assert.deepEqual(orders.rows.map(row => [row[0], row[3], row[4]]).sort(), [["#1001", "8.00", "40.00"], ["#1002", "30.00", "3.00"]]);
 }));

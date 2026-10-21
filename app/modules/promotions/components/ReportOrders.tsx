@@ -95,7 +95,7 @@ function Table({ lines, heading, money, empty }: { lines: Array<Totals & { key: 
 }
 
 const presets = [{ value: "7", label: "Last 7 days" }, { value: "14", label: "Last 14 days" }, { value: "30", label: "Last 30 days" }, { value: "60", label: "Last 60 days" }, { value: "custom", label: "Choose dates" }];
-const kinds = [{ value: "", label: "All types" }, { value: "code", label: "Discount codes" }, { value: "automatic", label: "Automatic discounts" }, { value: "manual", label: "Manual (staff) discounts" }];
+const kinds = [{ value: "", label: "All types" }, { value: "code", label: "Discount codes" }, { value: "automatic", label: "Automatic discounts" }];
 
 /** The filters. They live in the address, so a filtered report can be bookmarked or shared. */
 function Filters({ data }: { data: OrderReportData }) {
@@ -160,7 +160,7 @@ export function OrderDrilldown({ data }: { data: OrderReportData }) {
         <Metrics data={data} totals={report.selected} exact={report.exact} />
         <s-text color="subdued">
           {narrowed ? "An order that used two of the selected discounts is counted under each, so the totals can add up to more than the number of orders. " : "Orders using more than one discount are counted once. "}
-          Revenue is the whole order, not just the discounted items. Read from Shopify {when(data.syncedAt)}.
+          Revenue is the whole order, not just the discounted items. Manual discounts, such as replacement orders, are not included: see Manual discounts. Read from Shopify {when(data.syncedAt)}.
         </s-text>
       </s-stack>
     </s-section>}
