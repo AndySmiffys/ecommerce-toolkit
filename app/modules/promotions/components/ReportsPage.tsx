@@ -15,7 +15,7 @@ const whenDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(
 export function ReportsPage({ data, orders, counts, period, refreshing, view }: { data: ReportData; orders: OrderReportData; counts: DiscountCounts | null; period: string; refreshing: boolean; view: "discounts" | "prefixes" | "redemptions" }) {
   const { busy: downloading, exportUrl, download } = useCsvDownload();
   const path = `/app/reports/${view}`;
-  const titles = { discounts: "Discount returns", prefixes: "Code prefixes and apps", redemptions: "Redemptions" };
+  const titles = { discounts: "Revenue by discount", prefixes: "Code prefixes and apps", redemptions: "Redemptions" };
   const appUrl = useEmbeddedAppUrl();
   const navigate = useNavigate();
   const fetcher = useFetcher<{ ok: boolean; error: string | null; intent?: string }>();

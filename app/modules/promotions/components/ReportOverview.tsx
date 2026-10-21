@@ -184,7 +184,7 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
 
 export const reportLinks = [
   { path: "/app/reports/manual", title: "Manual discounts", description: "Orders with a discount added by hand, such as replacements for dispatch or shipping errors, kept apart from your promotions." },
-  { path: "/app/reports/discounts", title: "Discount returns", description: "Orders, order value and discounts for every code and automatic discount, with filters and a CSV download." },
+  { path: "/app/reports/discounts", title: "Revenue by discount", description: "Orders, revenue and discounts for every code and automatic discount, with filters and a CSV download." },
   { path: "/app/reports/groups", title: "Revenue by group", description: "What each of your groups of discounts returned, with the controls to add and change groups and the discounts that no group catches yet." },
   { path: "/app/reports/prefixes", title: "Code prefixes and apps", description: "Redemptions of generated codes by prefix, such as Dotdigital's, and of every discount by the app that made it." },
   { path: "/app/reports/redemptions", title: "Redemptions", description: "How often every discount has been used over its lifetime, including codes made by other apps." },

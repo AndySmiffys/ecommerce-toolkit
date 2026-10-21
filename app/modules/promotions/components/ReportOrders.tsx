@@ -53,7 +53,7 @@ function Metrics({ data, totals, exact }: { data: OrderReportData; totals: Total
 export function OrderOverview({ data }: { data: OrderReportData }) {
   const appUrl = useEmbeddedAppUrl();
   const { report } = data;
-  return <s-section heading="Discount returns, last 30 days">
+  return <s-section heading="Revenue by discount, last 30 days">
     <s-stack direction="block" gap="base">
       <ReportStatus data={data} />
       {data.syncedAt && <>
@@ -149,7 +149,7 @@ export function OrderDrilldown({ data }: { data: OrderReportData }) {
   const groups: Array<Totals & { key: string; name: string; sub?: string }> = report.groups.map((line: OrderLine) => ({ ...line, sub: undefined }));
   return <>
     <ReportStatus data={data} />
-    <s-section heading="Returns by discount">
+    <s-section heading="Revenue by discount">
       <s-stack direction="block" gap="base">
         <s-paragraph>What orders that used a discount were worth, and what the discounts gave away, from your Shopify orders for {day(filter.from)} to {day(filter.to)}. The last 60 days are kept, and the app reads orders daily. Days are counted in UTC.</s-paragraph>
         <Filters key={`${filter.from}${filter.to}${filter.group}${filter.prefix}${filter.kind}${filter.search}`} data={data} />
