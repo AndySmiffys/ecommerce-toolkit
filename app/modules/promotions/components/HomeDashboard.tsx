@@ -20,6 +20,7 @@ function trend(current: number, previous: number): Pick<Metric, "note" | "tone">
 const cards = [
   { title: "Promotions", description: "Create discounts, set who sees them on your website, and manage them in bulk.", path: "/app/promotions", action: "Open promotions" },
   { title: "Storefront priority", description: "Drag promotions into the order they are shown in when more than one qualifies.", path: "/app/storefront-priorities", action: "Set the order" },
+  { title: "Google Merchant Center", description: "Choose promotions to send to Google, and see which ones pass Google's rules and what to change for the ones that don't.", path: "/app/google", action: "Open Google" },
   { title: "Reports", description: "See what each discount, code prefix and group returned, including codes made by other apps.", path: "/app/reports", action: "Open reports" },
 ];
 

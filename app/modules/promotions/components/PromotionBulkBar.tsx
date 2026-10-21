@@ -36,6 +36,8 @@ export function PromotionBulkBar({ titles, busy, onAction, onClear }: { titles: 
       <s-button type="button" disabled={busy || undefined} onClick={() => ask("deactivate")}>Deactivate</s-button>
       <s-button type="button" disabled={busy || undefined} onClick={() => onAction("website-enable")}>Enable on website</s-button>
       <s-button type="button" disabled={busy || undefined} onClick={() => onAction("website-draft")}>Set website to Draft</s-button>
+      <s-button type="button" disabled={busy || undefined} onClick={() => onAction("google-send")}>Send to Google</s-button>
+      <s-button type="button" disabled={busy || undefined} onClick={() => onAction("google-stop")}>Stop sending to Google</s-button>
       <s-button type="button" tone="critical" disabled={busy || undefined} onClick={() => ask("delete")}>Delete</s-button>
       <s-button type="button" variant="tertiary" disabled={busy || undefined} onClick={onClear}>Clear selection</s-button>
       {busy && <s-spinner accessibilityLabel="Working" size="base" />}

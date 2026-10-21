@@ -226,3 +226,30 @@ model ReportManualOrder {
   @@unique([shop, orderId])
   @@index([shop, day])
 }
+
+// A promotion the merchant chose to send to Google Merchant Center. The feed only ever holds the ones that pass
+// Google's rules; `status` and `issues` (a JSON list of plain sentences) say how the last check went. `title` is an
+// optional shorter title for Google (it allows 60 characters); `label` is the discount's own title, for the page.
+model GooglePromotion {
+  shop       String
+  discountId String
+  label      String    @default("")
+  title      String    @default("")
+  status     String    @default("pending")
+  issues     String    @default("[]")
+  checkedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@id([shop, discountId])
+}
+
+// The promotions file Merchant Center collects on a schedule. `token` is part of the private address, so only
+// someone who has it can read the file; `feedText` is the last file built, served without asking Shopify.
+model GoogleFeed {
+  shop      String    @id
+  token     String    @unique
+  feedText  String    @default("")
+  count     Int       @default(0)
+  builtAt   DateTime?
+  updatedAt DateTime  @updatedAt
+}

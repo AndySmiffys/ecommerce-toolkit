@@ -3,12 +3,19 @@ import db from "../db.server";
 import { authenticate } from "../shopify.server";
 import { promotionDiscountAliases } from "../modules/promotions/design/discountIdentity";
 import { forgetDiscounts } from "../modules/promotions/services/discountIndex.server";
+import { buildGoogleFeed, isSentToGoogle } from "../modules/promotions/services/googleFeed.server";
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   const { admin, shop, topic, payload } = await authenticate.webhook(request);
   const id = typeof (payload as { admin_graphql_api_id?: unknown })?.admin_graphql_api_id === "string" ? (payload as { admin_graphql_api_id: string }).admin_graphql_api_id : null;
-  if (id && /delete/i.test(String(topic))) await forgetDiscounts(shop, [id]);
+  const deleted = /delete/i.test(String(topic));
+  if (id && deleted) {
+    await forgetDiscounts(shop, [id]);
+    await db.googlePromotion.deleteMany({ where: { shop, discountId: { in: promotionDiscountAliases(id) } } });
+  }
+  // A change to a promotion sent to Google (its dates, value or products) rebuilds the file, in the background.
+  if (id && admin && (await isSentToGoogle(shop, id))) void buildGoogleFeed(admin, shop).catch(error => console.error("The Google promotions file could not be built:", error instanceof Error ? error.message : error));
   // Other apps (Dotdigital) change thousands of discounts. The storefront data only covers discounts that have website
   // settings saved here, so a change to any other discount cannot alter it and is not worth a resync.
   if (id && !(await db.promotionSettings.count({ where: { shop, shopifyDiscountId: { in: promotionDiscountAliases(id) } } }))) return new Response(null, { status: 200 });

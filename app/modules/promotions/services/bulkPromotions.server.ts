@@ -4,12 +4,13 @@ import { promotionDiscountAliases, promotionDiscountId } from "../design/discoun
 import { getDiscount, type ShopifyAdminClient } from "./discount.server";
 import { getPromotionCodeBatch } from "./promotionCodeBatches.server";
 import { madeByOtherApps } from "./discountIndex.server";
+import { setGoogleSelection } from "./googleFeed.server";
 import { priorityForSave } from "./promotionSettings.server";
 
 /** Most promotions one action may change. Each one is a request to Shopify, made one after another. */
 export const bulkLimit = 50;
-export type BulkIntent = "activate" | "deactivate" | "delete" | "website-enable" | "website-draft";
-export const bulkIntents: readonly BulkIntent[] = ["activate", "deactivate", "delete", "website-enable", "website-draft"];
+export type BulkIntent = "activate" | "deactivate" | "delete" | "website-enable" | "website-draft" | "google-send" | "google-stop";
+export const bulkIntents: readonly BulkIntent[] = ["activate", "deactivate", "delete", "website-enable", "website-draft", "google-send", "google-stop"];
 export type BulkOutcome = { done: string[]; failed: Array<{ id: string; message: string }> };
 
 const idPattern = /^gid:\/\/shopify\/(?:DiscountNode|DiscountCodeNode|DiscountAutomaticNode)\/\d+$/;
@@ -25,7 +26,7 @@ export function parseBulkIds(raw: unknown): string[] {
 }
 
 type Kind = "code" | "automatic";
-type Database = Pick<PrismaClient, "promotionSettings" | "promotionCodeBatch" | "discountIndex">;
+type Database = Pick<PrismaClient, "promotionSettings" | "promotionCodeBatch" | "discountIndex" | "googlePromotion" | "googleFeed">;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const mutation = (name: string, result: string) => `mutation PromotionBulk($id: ID!) { ${name}(id: $id) { ${result} userErrors { field message code } } }`;
@@ -84,6 +85,7 @@ export async function bulkDiscountAction(admin: ShopifyAdminClient, shop: string
         const aliases = promotionDiscountAliases(id);
         await database.promotionSettings.deleteMany({ where: { shop, shopifyDiscountId: { in: aliases } } });
         await database.promotionCodeBatch.deleteMany({ where: { shop, shopifyDiscountId: { in: aliases } } });
+        await database.googlePromotion.deleteMany({ where: { shop, discountId: id } });
       }
       outcome.done.push(id);
     } catch (error) {
@@ -124,8 +126,24 @@ export async function bulkWebsiteStatus(admin: ShopifyAdminClient, shop: string,
   return outcome;
 }
 
+/** Chooses promotions to send to Google Merchant Center, or stops sending them. Another app's discounts are never sent. */
+export async function bulkGoogle(shop: string, on: boolean, ids: string[], database: Database = db): Promise<BulkOutcome> {
+  const outcome: BulkOutcome = { done: [], failed: [] };
+  const others = on ? await madeByOtherApps(shop, ids, database) : {};
+  const allowed: string[] = [];
+  for (const id of ids) {
+    if (others[id]) outcome.failed.push({ id, message: `${others[id]} made this discount, so it is not sent to Google from here.` });
+    else allowed.push(id);
+  }
+  try { await setGoogleSelection(shop, allowed, on, database); outcome.done.push(...allowed); }
+  catch (error) { for (const id of allowed) outcome.failed.push({ id, message: error instanceof Error ? error.message : "This could not be changed." }); }
+  return outcome;
+}
+
 export async function runBulkAction(admin: ShopifyAdminClient, shop: string, intent: BulkIntent, ids: string[], database: Database = db): Promise<BulkOutcome> {
-  return intent === "website-enable" ? bulkWebsiteStatus(admin, shop, true, ids, database)
+  return intent === "google-send" ? bulkGoogle(shop, true, ids, database)
+    : intent === "google-stop" ? bulkGoogle(shop, false, ids, database)
+    : intent === "website-enable" ? bulkWebsiteStatus(admin, shop, true, ids, database)
     : intent === "website-draft" ? bulkWebsiteStatus(admin, shop, false, ids, database)
       : bulkDiscountAction(admin, shop, intent, ids, database);
 }

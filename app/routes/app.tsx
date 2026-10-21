@@ -73,6 +73,10 @@ export default function App() {
         <Link to={appUrl("/app/reports")}>
           Reports
         </Link>
+
+        <Link to={appUrl("/app/google")}>
+          Google Merchant Center
+        </Link>
       </NavMenu>
 
       {storefrontSyncError && <div style={{ padding: 20 }}><s-banner tone="warning">{storefrontSyncError}</s-banner></div>}

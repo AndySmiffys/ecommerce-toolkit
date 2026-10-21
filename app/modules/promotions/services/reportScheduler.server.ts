@@ -3,6 +3,7 @@ import { unauthenticated } from "../../../shopify.server";
 import { snapshotIsStale, takeSnapshot } from "./reports.server";
 import { driveOrderSync, orderSyncIsDue } from "./orderReport.server";
 import { buildIndex, indexIsDue } from "./discountIndex.server";
+import { buildGoogleFeed, googleFeedIsDue } from "./googleFeed.server";
 
 /**
  * Takes the usage snapshot for every shop that has the app installed and has none from the last day. The Reports page
@@ -13,6 +14,8 @@ export async function takeDueSnapshots(): Promise<void> {
   const shops = await db.session.findMany({ where: { isOnline: false }, select: { shop: true }, distinct: ["shop"] });
   for (const { shop } of shops) {
     try {
+      // The Google file is checked every hour, so a promotion that has ended or been changed leaves it promptly.
+      if (await googleFeedIsDue(shop, 55)) void unauthenticated.admin(shop).then(({ admin }) => buildGoogleFeed(admin, shop)).catch(error => console.error("The Google promotions file could not be built:", error instanceof Error ? error.message : error));
       if (await indexIsDue(shop, 23 * 3600)) void buildIndex(async () => (await unauthenticated.admin(shop)).admin, shop);
       if (await orderSyncIsDue(shop, 23)) void driveOrderSync(async () => (await unauthenticated.admin(shop)).admin, shop);
       if (!(await snapshotIsStale(shop, 23))) continue;

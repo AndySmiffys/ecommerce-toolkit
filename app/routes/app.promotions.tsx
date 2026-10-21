@@ -13,6 +13,7 @@ import { PolarisCheckbox, PolarisSelect } from "../modules/promotions/components
 import { PromotionBulkBar } from "../modules/promotions/components/PromotionBulkBar";
 import { SourceRulesModal } from "../modules/promotions/components/SourceRulesModal";
 import { MetricStrip } from "../modules/promotions/components/MetricStrip";
+import { buildGoogleFeed, googleStatuses } from "../modules/promotions/services/googleFeed.server";
 import { emptyFilter, lastDays } from "../modules/promotions/design/orderReport";
 import { loadOrderReport } from "../modules/promotions/services/orderReport.server";
 import { formatMoney } from "../modules/promotions/design/formatMoney";
@@ -54,6 +55,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     page = await getDiscountsPage(admin, { after, before, query: discountSearch(q, status) });
   }
   const creators = await creatorsOf(session.shop, page.nodes.map(node => node.id));
+  const google = await googleStatuses(session.shop, page.nodes.map(node => node.id));
   const apps = index.ready ? await otherApps(session.shop) : [];
   const rules = await listSourceRules(session.shop);
   // The figures across the top: what is running, and what discounts did in the last 30 days.
@@ -67,7 +69,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!after && !before && !q && !status && source === "") {
     try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `Promotions loaded, but storefront sync failed: ${error instanceof Error ? error.message : "Please retry."}`; }
   }
-  return { promotions, syncError, pageInfo: page.pageInfo, total: page.total, filters: { q, status, source, app }, creators, apps, rules, stats, indexing: !index.ready, indexError: index.error };
+  return { promotions, syncError, pageInfo: page.pageInfo, total: page.total, filters: { q, status, source, app }, creators, google, apps, rules, stats, indexing: !index.ready, indexError: index.error };
 }
 
 // Bulk changes from the list: Shopify discount status, website status, and deleting. See bulkPromotions.server.ts.
@@ -90,6 +92,8 @@ export async function action({ request }: ActionFunctionArgs) {
   try { ids = parseBulkIds(form.get("ids")); }
   catch (error) { return { intent, error: error instanceof Error ? error.message : "Select at least one promotion.", done: [] as string[], failed: [] as Array<{ id: string; message: string }>, syncError: null as string | null }; }
   const outcome = await runBulkAction(admin, session.shop, intent as BulkIntent, ids);
+  // The promotions file for Google is checked and rebuilt in the background after a change to what is sent.
+  if (outcome.done.length && intent.startsWith("google-")) void buildGoogleFeed(admin, session.shop).catch(error => console.error("The Google promotions file could not be built:", error instanceof Error ? error.message : error));
   let syncError: string | null = null;
   // The storefront data follows whatever changed.
   if (outcome.done.length) { try { await syncStorefrontSnapshot(admin, session.shop); } catch (error) { syncError = `The change was made, but storefront sync failed: ${error instanceof Error ? error.message : "Please reopen the app to retry."}`; } }
@@ -248,7 +252,7 @@ const discountTypes: { type: string; title: string; description: string; icon: D
 
 export default function PromotionsPage() {
   const appUrl = useEmbeddedAppUrl();
-  const { promotions, syncError, pageInfo, total, filters, creators, apps, rules, stats, indexing, indexError } = useLoaderData<typeof loader>();
+  const { promotions, syncError, pageInfo, total, filters, creators, google, apps, rules, stats, indexing, indexError } = useLoaderData<typeof loader>();
   const [rulesOpen, setRulesOpen] = useState(false);
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -316,7 +320,7 @@ export default function PromotionsPage() {
     if (fetcher.state !== "idle" || !data || !data.done.length) return;
     setSelected(current => current.filter(id => !data.done.includes(id)));
     const count = data.done.length;
-    const what = data.intent === "delete" ? "deleted" : data.intent === "activate" ? "activated" : data.intent === "deactivate" ? "deactivated" : data.intent === "website-enable" ? "enabled on the website" : "set to Draft on the website";
+    const what = data.intent === "delete" ? "deleted" : data.intent === "activate" ? "activated" : data.intent === "deactivate" ? "deactivated" : data.intent === "website-enable" ? "enabled on the website" : data.intent === "google-send" ? "chosen for Google" : data.intent === "google-stop" ? "taken off Google" : "set to Draft on the website";
     shopify.toast.show(`${count} promotion${count === 1 ? "" : "s"} ${what}`);
   }, [fetcher.data, fetcher.state, shopify]);
 
@@ -411,6 +415,7 @@ export default function PromotionsPage() {
                   <s-table-header listSlot="secondary">Value</s-table-header>
                   <s-table-header>Type</s-table-header>
                   <s-table-header>Dates</s-table-header>
+                  <s-table-header>Google</s-table-header>
                   <s-table-header>Created by</s-table-header>
                 </s-table-header-row>
                 <s-table-body>
@@ -448,6 +453,7 @@ export default function PromotionsPage() {
                             <s-text color="subdued">{promotion.shopify.schedule.endsAt ? `Ends ${formatDate(promotion.shopify.schedule.endsAt)}` : "No end date"}</s-text>
                           </s-stack>
                         </s-table-cell>
+                        <s-table-cell>{google[promotion.id] === "ready" ? <s-badge tone="success">Sent</s-badge> : google[promotion.id] === "issues" ? <s-badge tone="warning">Not ready</s-badge> : google[promotion.id] ? <s-badge>Checking</s-badge> : <s-text color="subdued">–</s-text>}</s-table-cell>
                         <s-table-cell>{creators[promotion.id] ?? "–"}</s-table-cell>
                       </s-table-row>
                     );

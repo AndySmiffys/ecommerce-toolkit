@@ -567,6 +567,8 @@ function fakeDatabase(settings: FakeRow[], batches: Array<{ shop: string; shopif
     },
     // The index of who created each discount: nothing here was made by another app.
     discountIndex: { findMany: async () => [] },
+    // What is sent to Google: nothing here.
+    googlePromotion: { deleteMany: async () => ({ count: 0 }), count: async () => 0, createMany: async () => ({ count: 0 }) },
   };
   return { database: database as never, settings, batches };
 }
