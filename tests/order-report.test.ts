@@ -7,7 +7,7 @@ import { withDatabase } from "./helpers/database";
 import { aggregateOrderLines, averages, buildOrderReport, dailySeries, datesBetween, emptyFilter, filterFromParams, previousRange, spanDays, type DayRow } from "../app/modules/promotions/design/orderReport";
 import type { GroupDef } from "../app/modules/promotions/design/reports";
 import { decimal, toCsv } from "../app/modules/promotions/design/csv";
-import { driveOrderSync, exportOrderTable, firstDayToRead, linesOf, loadOrderReport, orderSyncIsDue, stepOrderSync } from "../app/modules/promotions/services/orderReport.server";
+import { driveOrderSync, exportOrderTable, firstDayToRead, linesOf, loadOrderReport, loadUngrouped, orderSyncIsDue, stepOrderSync } from "../app/modules/promotions/services/orderReport.server";
 
 const shop = "orders-test.myshopify.com";
 const money = (amount: string, currencyCode = "GBP") => ({ shopMoney: { amount, currencyCode } });
@@ -241,3 +241,28 @@ test("the charts draw for normal, single-day, empty and all-zero data without br
   assert.equal(niceMax(130), 200);
   assert.equal(niceMax(2400), 5000);
 });
+
+test("discounts in no group are listed by revenue with a status wherever the app can match them", async () => withDatabase(async database => {
+  const day = "2026-10-10";
+  const row = (key: string, kind: string, label: string, orders: number, valueCents: number) => ({ shop, day, key, kind, label, orders, valueCents, refundCents: 0, discountCents: Math.round(valueCents / 10) });
+  await database.reportGroup.create({ data: { shop, name: "Signup", rules: JSON.stringify(signup.rules), position: 0 } });
+  await database.reportOrderDay.createMany({ data: [
+    row("c:WELCOME-AAAA-BBBB", "code", "WELCOME-AAAA-BBBB", 5, 9000),
+    row("c:LXZ-CNQ23GT", "code", "LXZ-CNQ23GT", 2, 3000),
+    row("a:Spring sale", "automatic", "Spring sale", 4, 8000),
+    row("c:MYSTERY", "code", "mystery", 1, 500),
+    row("m:Staff discount", "manual", "Staff discount", 1, 100),
+  ] });
+  const stamp = (offsetDays: number) => new Date(Date.parse("2026-10-20T12:00:00Z") + offsetDays * 86400000);
+  const index = (id: number, kind: string, title: string, code: string, startsAt: Date | null, endsAt: Date | null) => ({ shop, discountId: `gid://shopify/DiscountNode/${id}`, numericId: BigInt(id), kind, title, code, createdBy: "Loox", other: true, startsAt, endsAt });
+  await database.discountIndex.createMany({ data: [
+    index(1, "code", "Loox Referrals - LXZ-CNQ23GT", "LXZ-CNQ23GT", null, stamp(-30)),
+    index(2, "automatic", "Spring sale", "", null, null),
+    index(3, "code", "Later", "mystery".toUpperCase(), stamp(5), null),
+  ] });
+  const result = await loadUngrouped(shop, emptyFilter("2026-10-01", "2026-10-20"), database, stamp(0));
+  assert.deepEqual(result.rows.map(item => [item.label, item.status]), [["Spring sale", "active"], ["LXZ-CNQ23GT", "expired"], ["mystery", "scheduled"], ["Staff discount", null]], "most revenue first; a code is matched whatever its case; a discount the app does not know has no status");
+  assert.equal(result.count, 4);
+  assert.equal(result.rows.some(item => item.label.startsWith("WELCOME")), false, "a discount a group catches is not listed");
+  assert.equal(result.rows[0].valueCents, 8000);
+}));

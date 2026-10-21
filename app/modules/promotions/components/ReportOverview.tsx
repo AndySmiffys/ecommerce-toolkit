@@ -118,7 +118,7 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
           <Card heading="Revenue over time">
             <AreaChart values={series(item => item.valueCents)} previous={compare ? previousSeries(item => item.valueCents) : null} labels={labels} previousLabels={previousLabels} format={money} axisFormat={compactMoney} label={`Revenue by day from orders that used a discount, ${money(now.valueCents)} in all`} />
           </Card>
-          <Card heading="Revenue by group">
+          <Card heading="Revenue by group" action={<s-button variant="tertiary" href={appUrl("/app/reports/groups")}>Manage groups</s-button>}>
             {groups.length ? <Donut slices={groups} centreLabel="Revenue" centreValue={compactMoney(groups.reduce((sum, slice) => sum + slice.value, 0))} format={compactMoney} label="Revenue by group" /> : <s-text color="subdued">No orders used a discount in this period.</s-text>}
           </Card>
         </s-grid>
@@ -143,7 +143,7 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
         </s-grid>
 
         <s-grid gridTemplateColumns="repeat(auto-fit, minmax(320px, 1fr))" gap="base">
-          <Card heading="Revenue by code prefix" action={<s-button variant="tertiary" href={appUrl("/app/reports/groups")}>View all</s-button>}>
+          <Card heading="Revenue by code prefix" action={<s-button variant="tertiary" href={appUrl("/app/reports/prefixes")}>View all</s-button>}>
             <BarList items={topPrefixes} format={money} empty="No generated codes (like WELCOME-1A2B-3C4D5E) were used in this period." />
           </Card>
           <Card heading="Top discounts by revenue" action={<s-button variant="tertiary" href={appUrl("/app/reports/discounts")}>View all</s-button>}>
@@ -169,7 +169,8 @@ export function ReportOverview({ data, compare, refreshing, onRefresh }: { data:
 
 export const reportLinks = [
   { path: "/app/reports/discounts", title: "Discount returns", description: "Orders, order value and discounts for every code and automatic discount, with filters and a CSV download." },
-  { path: "/app/reports/groups", title: "Groups, prefixes and apps", description: "Your own groups of codes, generated-code prefixes such as Dotdigital's, and discounts by the app that made them." },
+  { path: "/app/reports/groups", title: "Revenue by group", description: "What each of your groups of discounts returned, with the controls to add and change groups and the discounts that no group catches yet." },
+  { path: "/app/reports/prefixes", title: "Code prefixes and apps", description: "Redemptions of generated codes by prefix, such as Dotdigital's, and of every discount by the app that made it." },
   { path: "/app/reports/redemptions", title: "Redemptions", description: "How often every discount has been used over its lifetime, including codes made by other apps." },
 ];
 

@@ -1,12 +1,13 @@
 import type { PrismaClient } from "@prisma/client";
 import db from "../../../db.server";
-import { aggregateOrderLines, averages, buildOrderReport, daysAgo, orderHistoryDays, previousRange, today, type DayRow, type OrderFilter, type OrderReport } from "../design/orderReport";
+import { aggregateOrderLines, averages, buildOrderReport, daysAgo, orderHistoryDays, previousRange, today, type DayRow, type OrderDiscount, type OrderFilter, type OrderReport } from "../design/orderReport";
+import { discountStatusAt, type DiscountStatus } from "../design/discountSource";
 import { decimal, type Cell } from "../design/csv";
 import { describeGroup } from "../design/reports";
 import { listReportGroups } from "./reports.server";
 import type { ShopifyAdminClient } from "./discount.server";
 
-type Database = Pick<PrismaClient, "reportOrderDay" | "reportOrderSync" | "reportGroup" | "$transaction">;
+type Database = Pick<PrismaClient, "reportOrderDay" | "reportOrderSync" | "reportGroup" | "discountIndex" | "$transaction">;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Orders are read with Shopify's bulk export: one request names what is wanted, Shopify prepares a file in the
@@ -199,4 +200,33 @@ export async function exportOrderTable(shop: string, kind: ExportKind, filter: O
   if (kind === "groups") return { filename: `discounts-by-group-${range}.csv`, headers: ["Group", "Rule", ...totalsHeaders], rows: report.groups.map(line => [line.name, groups.find(group => `group-${group.id}` === line.key) ? describeGroup(groups.find(group => `group-${group.id}` === line.key)!) : "Discounts in no group", ...totalsCells(line)]) };
   if (kind === "prefixes") return { filename: `discounts-by-code-prefix-${range}.csv`, headers: ["Code prefix", ...totalsHeaders], rows: report.prefixes.map(line => [line.name, ...totalsCells(line)]) };
   return { filename: `discounts-${range}.csv`, headers: ["Discount", "Type", ...totalsHeaders], rows: report.discounts.map(item => [item.label, item.kind === "code" ? "Discount code" : item.kind === "manual" ? "Manual discount" : "Automatic discount", ...totalsCells(item)]) };
+}
+
+// ---- Discounts that no group catches ----
+
+export type UngroupedDiscount = OrderDiscount & { status: DiscountStatus | null };
+
+/**
+ * The discounts used in the period that belong to none of the merchant's groups, most revenue first, each with its
+ * status where the app can match it to a discount it knows: a code by the code, an automatic or manual discount by
+ * its title. A code that cannot be matched (for example one of many in a discount) has no status.
+ */
+export async function loadUngrouped(shop: string, filter: OrderFilter, database: Database = db, now = new Date()): Promise<{ rows: UngroupedDiscount[]; count: number }> {
+  const groups = await listReportGroups(shop, database);
+  const days = await database.reportOrderDay.findMany({ where: { shop, day: { gte: filter.from, lte: filter.to } } });
+  const report = buildOrderReport(days, groups, { ...filter, group: "other" }, 200);
+  const found = [...report.discounts].sort((a, b) => b.valueCents - a.valueCents || b.orders - a.orders);
+  const codes = found.filter(item => item.kind === "code").map(item => item.label);
+  const titles = found.filter(item => item.kind !== "code").map(item => item.label);
+  const variants = [...new Set(codes.flatMap(code => [code, code.toUpperCase(), code.toLowerCase()]))];
+  const indexed = codes.length || titles.length
+    ? await database.discountIndex.findMany({ where: { shop, OR: [...(variants.length ? [{ code: { in: variants } }] : []), ...(titles.length ? [{ kind: "automatic", title: { in: titles } }] : [])] }, select: { code: true, title: true, kind: true, startsAt: true, endsAt: true } })
+    : [];
+  const byCode = new Map(indexed.filter(row => row.kind === "code").map(row => [row.code.toLowerCase(), row]));
+  const byTitle = new Map(indexed.filter(row => row.kind !== "code").map(row => [row.title, row]));
+  const rows = found.map(item => {
+    const match = item.kind === "code" ? byCode.get(item.label.toLowerCase()) : byTitle.get(item.label);
+    return { ...item, status: match ? discountStatusAt(match.startsAt, match.endsAt, now) : null };
+  });
+  return { rows, count: report.discountCount };
 }

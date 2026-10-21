@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useNavigate } from "react-router";
 import { useEmbeddedAppUrl } from "../../navigation/embeddedAppUrl";
-import { matchOnLabels, matchOptions, matchTypeLabels, matchTypes, maxGroups, maxRulesPerGroup, otherKey, reportPeriods, type GroupDef, type GroupRule, type MatchOn, type MatchType, type ReportLine } from "../design/reports";
+import { reportPeriods, type ReportLine } from "../design/reports";
 import type { DiscountCounts, ReportData } from "../services/reports.server";
 import type { OrderReportData } from "../services/orderReport.server";
-import { ModalOverlay } from "./ModalOverlay";
 import { OrderDrilldown } from "./ReportOrders";
 import { useCsvDownload } from "./useCsvDownload";
 import { PolarisSelect } from "./PolarisControls";
@@ -13,18 +12,13 @@ const number = new Intl.NumberFormat("en-GB");
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
 const whenDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("en-GB", { dateStyle: "medium" }) : "";
 
-type Draft = { id: string; name: string; rules: GroupRule[] };
-const blankRule: GroupRule = { matchOn: "either", matchType: "starts_with", pattern: "" };
-const blankDraft: Draft = { id: "", name: "", rules: [blankRule] };
-
-export function ReportsPage({ data, orders, counts, period, refreshing, view }: { data: ReportData; orders: OrderReportData; counts: DiscountCounts | null; period: string; refreshing: boolean; view: "discounts" | "groups" | "redemptions" }) {
+export function ReportsPage({ data, orders, counts, period, refreshing, view }: { data: ReportData; orders: OrderReportData; counts: DiscountCounts | null; period: string; refreshing: boolean; view: "discounts" | "prefixes" | "redemptions" }) {
   const { busy: downloading, exportUrl, download } = useCsvDownload();
   const path = `/app/reports/${view}`;
-  const titles = { discounts: "Discount returns", groups: "Groups, prefixes and apps", redemptions: "Redemptions" };
+  const titles = { discounts: "Discount returns", prefixes: "Code prefixes and apps", redemptions: "Redemptions" };
   const appUrl = useEmbeddedAppUrl();
   const navigate = useNavigate();
   const fetcher = useFetcher<{ ok: boolean; error: string | null; intent?: string }>();
-  const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submitted = useRef<string | null>(null);
   const action = appUrl("/app/reports");
@@ -37,52 +31,37 @@ export function ReportsPage({ data, orders, counts, period, refreshing, view }: 
     submitted.current = null;
     if (!fetcher.data.ok) { setError(fetcher.data.error); return; }
     setError(null);
-    if (intent === "saveGroup") setDraft(null);
     if (intent === "refresh") shopify.toast.show("Reading the discounts from Shopify");
   }, [fetcher.state, fetcher.data]);
 
-  const setRule = (index: number, change: Partial<GroupRule>) => setDraft(current => current && { ...current, rules: current.rules.map((rule, position) => position === index ? { ...rule, ...change } : rule) });
   const send = (values: Record<string, string>) => {
     submitted.current = values.intent;
     fetcher.submit(values, { method: "post", action });
   };
 
-  const { report, groups } = data;
+  const { report } = data;
   const compared = data.days !== null;
   const heading = compared ? "Redemptions" : "Redemptions (all time)";
-  const groupById = (key: string): GroupDef | undefined => groups.find(group => `group-${group.id}` === key);
 
-  const table = (lines: ReportLine[], nameHeading: string, withActions: boolean) => <s-table>
+  const table = (lines: ReportLine[], nameHeading: string) => <s-table>
     <s-table-header-row>
       <s-table-header>{nameHeading}</s-table-header>
       <s-table-header format="numeric">{heading}</s-table-header>
       <s-table-header format="numeric">Discounts used</s-table-header>
       {compared && <s-table-header format="numeric">All time</s-table-header>}
-      {withActions && <s-table-header><span /></s-table-header>}
     </s-table-header-row>
     <s-table-body>
-      {lines.map((line, index) => {
-        const group = groupById(line.key);
-        return <s-table-row key={line.key}>
-          <s-table-cell>
-            <s-stack direction="block" gap="small-300">
-              <s-text type="strong">{line.name}</s-text>
-              <s-text color="subdued">{line.description}</s-text>
-            </s-stack>
-          </s-table-cell>
-          <s-table-cell>{number.format(line.redemptions)}</s-table-cell>
-          <s-table-cell>{number.format(line.discounts)}</s-table-cell>
-          {compared && <s-table-cell>{number.format(line.allTime)}</s-table-cell>}
-          {withActions && <s-table-cell>
-            {group && <s-stack direction="inline" gap="small-300" justifyContent="end">
-              <s-button type="button" variant="tertiary" icon="arrow-up" accessibilityLabel={`Move ${line.name} up`} disabled={index === 0 || busy || undefined} onClick={() => send({ intent: "moveGroup", id: String(group.id), direction: "up" })} />
-              <s-button type="button" variant="tertiary" icon="arrow-down" accessibilityLabel={`Move ${line.name} down`} disabled={index >= groups.length - 1 || busy || undefined} onClick={() => send({ intent: "moveGroup", id: String(group.id), direction: "down" })} />
-              <s-button type="button" variant="tertiary" onClick={() => { setError(null); setDraft({ id: String(group.id), name: group.name, rules: group.rules.map(rule => ({ ...rule })) }); }}>Edit</s-button>
-              <s-button type="button" variant="tertiary" tone="critical" disabled={busy || undefined} onClick={() => send({ intent: "deleteGroup", id: String(group.id) })}>Delete</s-button>
-            </s-stack>}
-          </s-table-cell>}
-        </s-table-row>;
-      })}
+      {lines.map(line => <s-table-row key={line.key}>
+        <s-table-cell>
+          <s-stack direction="block" gap="small-300">
+            <s-text type="strong">{line.name}</s-text>
+            <s-text color="subdued">{line.description}</s-text>
+          </s-stack>
+        </s-table-cell>
+        <s-table-cell>{number.format(line.redemptions)}</s-table-cell>
+        <s-table-cell>{number.format(line.discounts)}</s-table-cell>
+        {compared && <s-table-cell>{number.format(line.allTime)}</s-table-cell>}
+      </s-table-row>)}
     </s-table-body>
   </s-table>;
 
@@ -129,77 +108,19 @@ export function ReportsPage({ data, orders, counts, period, refreshing, view }: 
           </s-stack>
         </s-stack>
       </s-section>}
-      {view === "groups" && report && <s-section heading="Groups">
+      {view === "prefixes" && report && report.prefixes.length > 0 && <s-section heading="By code prefix">
         <s-stack direction="block" gap="base">
-          <s-paragraph>Groups gather discounts whose code or title follows a pattern, for example the single-use codes another app creates. A discount counts in the first group it matches, so the order matters. Anything that matches no group is counted under Other discounts, so nothing is left out.</s-paragraph>
-          {table(report.groups, "Group", true)}
-          <div><s-button type="button" variant="secondary" disabled={groups.length >= maxGroups || undefined} onClick={() => { setError(null); setDraft({ ...blankDraft, rules: [{ ...blankRule }] }); }}>Add group</s-button></div>
+          <s-paragraph>Generated codes shaped PREFIX-UNIQUE-UNIQUE are totalled by their prefix automatically, so a new campaign appears here as soon as one of its codes is used. Prefixes are not groups: a code can count here and in a group too.</s-paragraph>
+          {table(report.prefixes, "Prefix")}
         </s-stack>
       </s-section>}
-      {view === "groups" && report && report.prefixes.length > 0 && <s-section heading="By code prefix">
-        <s-stack direction="block" gap="base">
-          <s-paragraph>Generated codes shaped PREFIX-UNIQUE-UNIQUE are totalled by their prefix automatically, so a new campaign appears here as soon as one of its codes is used. Prefixes are not groups: a code can count here and in a group above.</s-paragraph>
-          {table(report.prefixes, "Prefix", false)}
-        </s-stack>
-      </s-section>}
-      {view === "groups" && report && <s-section heading="By app">
+      {view === "prefixes" && report && <s-section heading="By app">
         <s-stack direction="block" gap="base">
           <s-paragraph>The same redemptions by whoever created the discount. A new app’s discounts appear here without any set-up.</s-paragraph>
-          {report.creators.length ? table(report.creators, "Created by", false) : <s-text color="subdued">No discounts have been used yet.</s-text>}
-        </s-stack>
-      </s-section>}
-      {view === "groups" && report && report.unmatched.length > 0 && <s-section heading="Discounts in no group">
-        <s-stack direction="block" gap="base">
-          <s-paragraph>The most used discounts that no group catches. If several share a pattern, add a group for them.</s-paragraph>
-          <s-table>
-            <s-table-header-row>
-              <s-table-header>Discount</s-table-header>
-              <s-table-header>Code</s-table-header>
-              <s-table-header>Created by</s-table-header>
-              <s-table-header format="numeric">{heading}</s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {report.unmatched.map(row => <s-table-row key={row.id}>
-                <s-table-cell>{row.title}</s-table-cell>
-                <s-table-cell>{row.code || "Automatic"}</s-table-cell>
-                <s-table-cell>{row.createdBy}</s-table-cell>
-                <s-table-cell>{number.format(compared && data.comparedWith ? row.redemptions : row.allTime)}</s-table-cell>
-              </s-table-row>)}
-            </s-table-body>
-          </s-table>
+          {report.creators.length ? table(report.creators, "Created by") : <s-text color="subdued">No discounts have been used yet.</s-text>}
         </s-stack>
       </s-section>}
     </s-stack>
-    <ModalOverlay open={Boolean(draft)} heading={draft?.id ? "Edit group" : "Add group"} size="base" onClose={() => setDraft(null)}>
-      {draft && <s-stack direction="block" gap="base">
-        {error && <s-banner tone="critical">{error}</s-banner>}
-        <s-text-field label="Name" value={draft.name} maxLength={60} onInput={event => setDraft({ ...draft, name: event.currentTarget.value })} details="For example: Dotdigital sign-up codes" />
-        <s-text color="subdued">A discount belongs to this group when it fits any one of these ways of matching. Add one for each prefix or pattern, and add more whenever a new one appears.</s-text>
-        {draft.rules.map((rule, index) => <s-box key={index} border="base" borderRadius="base" padding="base">
-          <s-stack direction="block" gap="base">
-            <s-stack direction="inline" gap="base" justifyContent="space-between" alignItems="center">
-              <s-text type="strong">Way to match {index + 1}</s-text>
-              {draft.rules.length > 1 && <s-button type="button" variant="tertiary" tone="critical" onClick={() => setDraft({ ...draft, rules: draft.rules.filter((_, position) => position !== index) })}>Remove</s-button>}
-            </s-stack>
-            <s-grid gridTemplateColumns="repeat(auto-fit, minmax(160px, 1fr))" gap="base">
-              <PolarisSelect label="Look in" value={rule.matchOn} onChange={event => setRule(index, { matchOn: event.currentTarget.value as MatchOn })}>
-                {matchOptions.map(value => <s-option key={value} value={value}>{matchOnLabels[value]}</s-option>)}
-              </PolarisSelect>
-              <PolarisSelect label="Matches when it" value={rule.matchType} onChange={event => setRule(index, { matchType: event.currentTarget.value as MatchType })}>
-                {matchTypes.map(value => <s-option key={value} value={value}>{matchTypeLabels[value]}</s-option>)}
-              </PolarisSelect>
-              <s-text-field label="Text to look for" value={rule.pattern} maxLength={60} onInput={event => setRule(index, { pattern: event.currentTarget.value })} />
-            </s-grid>
-          </s-stack>
-        </s-box>)}
-        <div><s-button type="button" variant="secondary" disabled={draft.rules.length >= maxRulesPerGroup || undefined} onClick={() => setDraft({ ...draft, rules: [...draft.rules, { ...blankRule }] })}>Add another way to match</s-button></div>
-        <s-text color="subdued">Not case sensitive. A discount with many codes matches on its first code or its title.</s-text>
-      </s-stack>}
-      <s-button slot="secondary-actions" type="button" onClick={() => setDraft(null)}>Cancel</s-button>
-      <s-button slot="primary-actions" type="button" variant="primary" disabled={busy || undefined} onClick={() => draft && send({ intent: "saveGroup", id: draft.id, name: draft.name, rules: JSON.stringify(draft.rules) })}>Save group</s-button>
-    </ModalOverlay>
   </s-page>;
 }
 
-// The key of the line that holds everything in no group, for tests and callers that need it.
-export { otherKey };
