@@ -53,6 +53,15 @@ For the architecture and the rules to follow when changing the code, see `CLAUDE
 
 ## Needs doing
 
+### Google Merchant Center: first live test (waiting for an active promotion on the live site)
+The feature is released on live but has not been tried against Merchant Center yet. Do this when a suitable promotion is running: a code for all customers, a percentage or amount off, with an end date no more than 183 days after its start.
+1. On Promotions, tick that one promotion and choose **Send to Google**. Open **Google Merchant Center** in the app and check it says Ready (or fix what it lists).
+2. Open the file (Open the file button) and check it has a header line and one promotion line.
+3. In Merchant Center (Marketing, Promotions) add a promotions source for the United Kingdom in English, choose Scheduled fetch, paste the address from the app, and run a fetch.
+4. If Merchant Center reports an error, send the exact message: the file layout comes from Google's attribute list (no published example), so a small fix may be needed.
+5. Once one promotion is accepted, send the rest. Google reviews each promotion, which can take up to a day.
+Later: Buy X get Y promotions, a Google product filter for promotions over 1,000 SKUs, and more territories (one file per country, each with its own currency).
+
 ### Needs checking in a browser
 None of the following has been seen in a real browser by the assistant, only tested in a simulated one: the priority page and dragging, the overview card and the status control, the stepped form, the preview and its modals, and the native event wiring on the Shopify components. Please try them in the dev store. Start with a new promotion, Enabled and Draft, and the priority page.
 
