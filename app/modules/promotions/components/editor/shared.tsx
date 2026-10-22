@@ -65,4 +65,4 @@ children: ReactNode;
 return <section aria-label={title} style={{ display: "grid", gap: 12, minWidth: 0 }}>{heading && <s-heading>{title}</s-heading>}{children}</section>;
 }
 
-export const stepOrder: string[] = ["type", "value", "who", "schedule", "advanced", "website"];
+export const stepOrder: string[] = ["type", "value", "who", "schedule", "advanced", "website", "google"];

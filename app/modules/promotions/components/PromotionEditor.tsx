@@ -4,6 +4,8 @@ import { ValueStep } from "./editor/ValueStep";
 import { WhoStep } from "./editor/WhoStep";
 import { ScheduleStep } from "./editor/ScheduleStep";
 import { AdvancedStep } from "./editor/AdvancedStep";
+import { GoogleStep, type GoogleChoice, type GoogleSaved } from "./editor/GoogleStep";
+import { googleDraftIssues } from "../design/googlePromotion";
 import { EligibilityPickerModal } from "./editor/EligibilityPickerModal";
 import { editorCss } from "./editor/editorStyles";
 import { formatPreviewPrice, stepOrder } from "./editor/shared";
@@ -33,10 +35,12 @@ import type { action as previewAction } from "../../../routes/app.promotion-prev
 
 
 
-export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries, priorityInfo }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null; priorityInfo?: PriorityInfo }) {
+export function PromotionEditor({ products, initialDiscount, initialWebsite, promotionId, shopifyStatus, codeBatch, shippingCountries, priorityInfo, initialGoogle }: { products: LinkResource[]; initialDiscount?: EditorDiscountDraft; initialWebsite?: WebsiteDraft; promotionId?: string; shopifyStatus?: string; codeBatch?: CodeBatchSummary | null; shippingCountries?: ShippingCountries | null; priorityInfo?: PriorityInfo; initialGoogle?: GoogleSaved }) {
 const form = useDiscountForm({ initialDiscount, initialWebsite });
 const { shopify, discountType, config, method, setMethod, discountCode, setDiscountCode, codeMode, setCodeMode, codeCount, setCodeCount, codePrefix, setCodePrefix, codeSuffix, setCodeSuffix, codeListTitle, setCodeListTitle, isCodeList, automaticTitle, setAutomaticTitle, valueType, setValueType, discountValue, setDiscountValue, appliesTo, setAppliesTo, setResourceSearch, selectedProducts, setSelectedProducts, selectedCollections, setSelectedCollections, buySelection, setBuySelection, getSelection, setGetSelection, usesPerOrder, setUsesPerOrder, countryMode, setCountryMode, countryCodes, setCountryCodes, excludeShippingPrice, setExcludeShippingPrice, maximumShippingPrice, setMaximumShippingPrice, buyRequirement, setBuyRequirement, buyQuantity, setBuyQuantity, buyAmount, setBuyAmount, buyAppliesTo, setBuyAppliesTo, getQuantity, setGetQuantity, getAppliesTo, setGetAppliesTo, rewardType, setRewardType, rewardValue, setRewardValue, maxUsesPerOrder, setMaxUsesPerOrder, minimumRequirement, setMinimumRequirement, minimumPurchaseAmount, setMinimumPurchaseAmount, minimumQuantity, setMinimumQuantity, limitTotalUses, setLimitTotalUses, totalUsageLimit, setTotalUsageLimit, limitOncePerCustomer, setLimitOncePerCustomer, combineProductDiscounts, setCombineProductDiscounts, combineOrderDiscounts, setCombineOrderDiscounts, combineShippingDiscounts, setCombineShippingDiscounts, productCombinationMode, setProductCombinationMode, selectedCombinationTags, setSelectedCombinationTags, startDateTime, setStartDateTime, hasEndDate, setHasEndDate, endDateTime, setEndDateTime, eligibility, setEligibility, setEligibilitySearch, selectedEligibility, setSelectedEligibility, setShowEligibilityPicker, websiteEnabled, showProductPage, showCollectionPage, showProductBadge, showHeaderBanner, websiteDraft, updateWebsite, discountDraft } = form;
 const creationRequestKey = useRef<string>();
+// Whether this promotion is sent to Google Merchant Center, and the title Google shows.
+const [google, setGoogle] = useState<GoogleChoice>({ enabled: Boolean(initialGoogle?.enabled), title: initialGoogle?.title ?? "" });
 // Whether the saved promotion is in the priority order, so a save that puts it there can take the merchant to place it.
 const wasRanked = useRef(Boolean(promotionId && initialWebsite && canRank({ endsAt: initialDiscount?.endsAt ?? null, website: initialWebsite })));
 const submittedRankable = useRef(false);
@@ -61,12 +65,14 @@ const codeListLocked = Boolean(createdDiscountId || createFetcher.data?.codeList
 
 const summary = summarisePromotion({ discountType, method, discountCode, codeMode, codeCount, automaticTitle, valueType, discountValue, appliesTo, productCount: selectedProducts.length, collectionCount: selectedCollections.length, buyRequirement, buyQuantity, buyAmount, getQuantity, rewardType, rewardValue, countryMode, countryCount: countryCodes.split(",").map(code => code.trim()).filter(Boolean).length, minimumRequirement, minimumPurchaseAmount, minimumQuantity, limitTotalUses, totalUsageLimit, limitOncePerCustomer, combines: combineProductDiscounts || combineOrderDiscounts || combineShippingDiscounts, eligibility, eligibilityCount: selectedEligibility.length, startDateTime, hasEndDate, endDateTime });
 const selectedBlocks = [showHeaderBanner, showCollectionPage, showProductPage, showProductBadge].filter(Boolean).length;
+const googleIssues = googleDraftIssues({ discountType, isCode: method === "code", isCodeList, code: discountCode, title: method === "code" ? discountCode : automaticTitle, googleTitle: google.title, valueType, value: discountValue, startsAt: startDateTime ? new Date(startDateTime).toISOString() : null, endsAt: hasEndDate && endDateTime ? new Date(endDateTime).toISOString() : null, eligibility, now: new Date() });
+const googleSummary = !google.enabled || isCodeList ? "Not sent to Google" : googleIssues.length ? "Sending, but needs attention" : "Sending to Google";
 const websiteSummary = selectedBlocks ? `${websiteEnabled ? "Enabled" : "Draft"}, ${selectedBlocks} ${selectedBlocks === 1 ? "block" : "blocks"} selected` : "Not set up yet";
 const [openStep, setOpenStep] = useState<string | null>("type");
 // A step only shows Complete or Needs attention once it has been opened. A saved promotion already has every step filled in.
 const [visitedSteps, setVisitedSteps] = useState<string[]>(() => promotionId ? stepOrder : ["type"]);
 useEffect(() => { if (openStep) setVisitedSteps(current => current.includes(openStep) ? current : [...current, openStep]); }, [openStep]);
-const stepTitles: Record<string, string> = { type: "Type and method", value: discountType === "shipping" ? "Countries" : "Discount value", who: "Who can use it", schedule: "Schedule", advanced: "Advanced options", website: "Website promotion" };
+const stepTitles: Record<string, string> = { type: "Type and method", value: discountType === "shipping" ? "Countries" : "Discount value", who: "Who can use it", schedule: "Schedule", advanced: "Advanced options", website: "Website promotion", google: "Google Merchant Center" };
 const stepProps = (id: string) => {
   const index = stepOrder.indexOf(id); const following = stepOrder[index + 1];
   return { id, number: index + 1, title: stepTitles[id], status: !visitedSteps.includes(id) ? undefined : issuesByStep[id as keyof typeof issuesByStep] ? (openStep === id ? undefined : "attention" as const) : ["type", "value", "who", "schedule"].includes(id) ? "complete" as const : undefined, locked: firstBlockedStep !== -1 && index > firstBlockedStep, open: openStep === id, onToggle: (open: boolean) => setOpenStep(current => open ? id : current === id ? null : current), next: following ? { label: `Continue to ${stepTitles[following].toLowerCase()}`, onClick: () => setOpenStep(following), disabled: Boolean(issuesByStep[id as keyof typeof issuesByStep]), hint: issuesByStep[id as keyof typeof issuesByStep] ? `Complete this step to continue: ${issuesByStep[id as keyof typeof issuesByStep]}` : undefined } : undefined };
@@ -93,7 +99,7 @@ const [savedDiscountSnapshot, setSavedDiscountSnapshot] = useState(discountSnaps
 const submittedDiscountSnapshot = useRef(discountSnapshot);
 // Include inactive fields so Discard restores the complete form as well as the saved payload.
 const editorFields = { method, discountCode, codeMode, codeCount, codePrefix, codeSuffix, codeListTitle, automaticTitle, valueType, discountValue, appliesTo, selectedProducts, selectedCollections, buySelection, getSelection, usesPerOrder, countryMode, countryCodes, excludeShippingPrice, maximumShippingPrice, buyRequirement, buyQuantity, buyAmount, buyAppliesTo, getQuantity, getAppliesTo, rewardType, rewardValue, maxUsesPerOrder, minimumRequirement, minimumPurchaseAmount, minimumQuantity, limitTotalUses, totalUsageLimit, limitOncePerCustomer, combineProductDiscounts, combineOrderDiscounts, combineShippingDiscounts, productCombinationMode, selectedCombinationTags, startDateTime, hasEndDate, endDateTime, eligibility, selectedEligibility };
-const snapshot = JSON.stringify({ discount: discountDraft, website: websiteDraft, fields: editorFields });
+const snapshot = JSON.stringify({ discount: discountDraft, website: websiteDraft, google, fields: editorFields });
 const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
 const submittedSnapshot = useRef(snapshot);
 const handledResponse = useRef<PromotionActionData | undefined>();
@@ -105,7 +111,7 @@ if (assetsBusy || createFetcher.state !== "idle" || (!promotionId && codeListLoc
 await saveBarRef.current?.hide();
 // A partially created discount already exists in Shopify. Discard only its unsaved design.
 if (!promotionId && createdDiscountId) { navigate(appUrl(`/app/promotions/${createdDiscountId.split("/").pop()}`)); return; }
-const saved = JSON.parse(savedSnapshot) as { fields: typeof editorFields; website: WebsiteDraft };
+const saved = JSON.parse(savedSnapshot) as { fields: typeof editorFields; website: WebsiteDraft; google: GoogleChoice };
 setMethod(saved.fields.method);
 setDiscountCode(saved.fields.discountCode);
 setCodeMode(saved.fields.codeMode);
@@ -152,6 +158,7 @@ setEndDateTime(saved.fields.endDateTime);
 setEligibility(saved.fields.eligibility);
 setSelectedEligibility(saved.fields.selectedEligibility);
 updateWebsite(saved.website);
+setGoogle(saved.google);
 setDismissedResponse(createFetcher.data);
 setSubmissionError("");
 setResourceSearch("");
@@ -210,7 +217,7 @@ submittedSnapshot.current = snapshot;
 submittedDiscountSnapshot.current = discountSnapshot;
 submittedRankable.current = rankable;
 submittedDraft.current = !websiteEnabled && !isCodeList;
-createFetcher.submit({ intent: promotionId ? "updatePromotion" : "createPromotion", payload:JSON.stringify({ requestKey: creationRequestKey.current, discount, website:websiteDraft, savedId:createdDiscountId, updateRules: discountSnapshot !== savedDiscountSnapshot, rankEntry: rankable && !wasRanked.current }) }, { method:"post" });
+createFetcher.submit({ intent: promotionId ? "updatePromotion" : "createPromotion", payload:JSON.stringify({ requestKey: creationRequestKey.current, discount, website:websiteDraft, google: { enabled: google.enabled && !isCodeList, title: google.title }, savedId:createdDiscountId, updateRules: discountSnapshot !== savedDiscountSnapshot, rankEntry: rankable && !wasRanked.current }) }, { method:"post" });
 }
 
 return (
@@ -293,6 +300,9 @@ alignSelf: "start",
 
 <FormStep {...stepProps("website")} optional summary={websiteSummary}>
 <PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} value={websiteDraft} onChange={value => updateWebsite(isCodeList ? { ...value, websiteEnabled: false } : value)} endsAt={hasEndDate ? endDateTime : null} onBusyChange={setAssetsBusy} />
+</FormStep>
+<FormStep {...stepProps("google")} optional summary={googleSummary}>
+<GoogleStep choice={google} onChange={setGoogle} issues={googleIssues} isCodeList={isCodeList} saved={initialGoogle ?? null} />
 </FormStep>
 {previewFetcher.data?.error && <s-banner tone="warning">{previewFetcher.data.error}</s-banner>}
 {!promotionId && createdDiscountId && <s-button href={appUrl(`/app/promotions/${createdDiscountId.split("/").pop()}`)} variant="secondary">Open saved promotion</s-button>}

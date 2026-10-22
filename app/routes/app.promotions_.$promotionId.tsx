@@ -11,6 +11,9 @@ import { discountToEditorDraft, toLocalDateTime, type EditorDiscountDraft } from
 import { getPromotionEditorResources } from "../modules/promotions/services/promotionEditorResources.server";
 import { promotionEditorAction } from "../modules/promotions/services/promotionEditorAction.server";
 import { updateShopifyPromotion } from "../modules/promotions/services/updatePromotion.server";
+import { buildGoogleFeed, saveGoogleChoice } from "../modules/promotions/services/googleFeed.server";
+import { promotionDiscountId } from "../modules/promotions/design/discountIdentity";
+import db from "../db.server";
 import type { CreateDiscountDraft } from "../modules/promotions/services/createPromotion.server";
 import { useEmbeddedAppUrl } from "../modules/navigation/embeddedAppUrl";
 import {
@@ -128,7 +131,9 @@ export async function loader({
   const resources = editorDiscount ? await getPromotionEditorResources(admin) : { products: [], collections: [] };
   const shippingCountries = editorDiscount?.discountType === "shipping" ? await getShippingCountries(admin) : null;
   const priorityInfo = isRanked(promotion) ? await getPriorityPosition(admin, session.shop, promotion.id) : null;
-  return { promotion, priorityInfo, previewProducts, editorDiscount, editRulesMessage, products: resources.products, codeBatch, shippingCountries };
+  const googleRow = await db.googlePromotion.findUnique({ where: { shop_discountId: { shop: session.shop, discountId: promotionDiscountId(promotion.id) } } });
+  const google = googleRow ? { enabled: true, title: googleRow.title, status: googleRow.status, issues: JSON.parse(googleRow.issues) as string[], checkedAt: googleRow.checkedAt?.toISOString() ?? null } : null;
+  return { promotion, priorityInfo, google, previewProducts, editorDiscount, editRulesMessage, products: resources.products, codeBatch, shippingCountries };
 }
 export async function action({
   request,
@@ -168,6 +173,7 @@ export async function action({
       const rankEntry = payload.rankEntry === true;
       await updatePromotionWebsiteSettings(session.shop, node.id, { ...websiteStorage(website), priority: await priorityForSave(session.shop, node.id, rankEntry) });
       await syncStorefrontSnapshot(admin, session.shop);
+      if (await saveGoogleChoice(session.shop, node.id, payload.google)) void buildGoogleFeed(admin, session.shop).catch(error => console.error("The Google promotions file could not be built:", error instanceof Error ? error.message : error));
       return { success: true, savedId: node.id, rankEntry };
     } catch (error) {
       return { success: false, error: (discountUpdated ? "The Shopify discount was updated, but website saving or storefront sync did not finish. Retry saving to finish. " : "") + (error instanceof Error ? error.message : "The promotion could not be saved.") };
@@ -220,7 +226,7 @@ export async function action({
 
 export default function PromotionDetailsPage() {
   const appUrl = useEmbeddedAppUrl();
-  const { promotion, priorityInfo, previewProducts, editorDiscount, editRulesMessage, products, codeBatch, shippingCountries } =
+  const { promotion, priorityInfo, google, previewProducts, editorDiscount, editRulesMessage, products, codeBatch, shippingCountries } =
     useLoaderData<typeof loader>();
 
   const general = promotion.shopify.general;
@@ -273,7 +279,7 @@ export default function PromotionDetailsPage() {
     if (actionData && "rankEntry" in actionData && actionData.rankEntry) navigate(appUrl(`/app/storefront-priorities?highlight=${promotion.routeId}`));
   }, [actionData, appUrl, navigate, promotion.routeId]);
 
-  if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} priorityInfo={priorityInfo} />;
+  if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} priorityInfo={priorityInfo} initialGoogle={google ?? undefined} />;
 
   const startsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.startsAt));
   const endsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.endsAt));

@@ -157,3 +157,46 @@ export function googleFeed(rows: GoogleRow[]): string {
   const clean = (value: string) => value.replace(/[\t\r\n]+/g, " ").trim();
   return [googleColumns.join("\t"), ...rows.map(row => googleColumns.map(column => clean(row[column])).join("\t"))].join("\n") + "\n";
 }
+
+/** What the editor knows about a promotion before it is saved. */
+export type GoogleDraft = {
+  discountType: string; isCode: boolean; isCodeList: boolean; code: string;
+  /** The title of the discount (its code or automatic title), and the shorter one chosen for Google, if any. */
+  title: string; googleTitle: string;
+  valueType: string; value: string;
+  startsAt: string | null; endsAt: string | null;
+  eligibility: string;
+  now: Date;
+};
+
+/**
+ * Google's rules as far as they can be checked while the promotion is still being written. What it can't know yet is
+ * how many products the promotion covers, which is checked once it is saved.
+ */
+export function googleDraftIssues(draft: GoogleDraft): string[] {
+  const issues: string[] = [];
+  if (draft.isCodeList) return ["A list of individual codes can’t be sent to Google. Google needs one shared code."];
+  if (draft.discountType === "bxgy") issues.push("Buy X get Y promotions can’t be sent to Google yet.");
+  const starts = draft.startsAt ? new Date(draft.startsAt) : null;
+  const ends = draft.endsAt ? new Date(draft.endsAt) : null;
+  if (!starts || Number.isNaN(starts.getTime())) issues.push("Add a start date. Google needs a start and an end date.");
+  if (!ends || Number.isNaN(ends.getTime())) issues.push("Add an end date. Google needs one, and no more than 183 days after the start.");
+  if (starts && ends && !Number.isNaN(starts.getTime()) && !Number.isNaN(ends.getTime())) {
+    if (ends <= draft.now) issues.push("The end date has passed.");
+    else if (ends.getTime() - starts.getTime() > googleLimits.days * 86400000) issues.push(`It runs for more than ${googleLimits.days} days. Google allows up to ${googleLimits.days}.`);
+  }
+  if (draft.eligibility !== "all") issues.push("It is only for certain customers. Google can only show promotions for all customers.");
+  if (draft.isCode) {
+    const code = draft.code.trim();
+    if (!code) issues.push("Add a discount code.");
+    else if (code.length > googleLimits.code) issues.push(`The code is ${code.length} characters. Google allows up to ${googleLimits.code}.`);
+  } else if (draft.discountType === "shipping") issues.push("Free shipping needs a code for Google. This one is automatic.");
+  const title = (draft.googleTitle.trim() || draft.title).trim();
+  if (title.length > googleLimits.title) issues.push(`The title is ${title.length} characters. Google allows up to ${googleLimits.title}, so give it a shorter title for Google.`);
+  if (draft.discountType !== "shipping" && draft.valueType === "percentage" && draft.value.trim()) {
+    const percent = Number(draft.value);
+    if (!Number.isInteger(percent)) issues.push("The percentage isn’t a whole number. Google needs one.");
+    else if (percent < 1 || percent > 99) issues.push("Google can only show percentages from 1 to 99.");
+  }
+  return issues;
+}

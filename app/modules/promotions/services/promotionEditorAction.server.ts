@@ -5,6 +5,7 @@ import { createPromotionCodeBatch } from "./promotionCodeBatches.server";
 import { authenticate } from "../../../shopify.server";
 import { createShopifyPromotion, type CreateDiscountDraft } from "./createPromotion.server";
 import { getDiscount } from "./discount.server";
+import { buildGoogleFeed, saveGoogleChoice } from "./googleFeed.server";
 import { withImageRatios } from "./promotionAssets.server";
 import { priorityForSave, updatePromotionWebsiteSettings } from "./promotionSettings.server";
 import { readWebsite, websiteStorage, validateWebsite } from "../design/design";
@@ -39,6 +40,8 @@ savedId = await createShopifyPromotion(admin, payload.discount as CreateDiscount
 const rankEntry = payload.rankEntry === true;
 await updatePromotionWebsiteSettings(session.shop, savedId!, { ...websiteStorage(website), priority: await priorityForSave(session.shop, savedId!, rankEntry) });
 await syncStorefrontSnapshot(admin, session.shop);
+// The choice about Google is saved after the discount exists, and the file is checked again in the background.
+if (await saveGoogleChoice(session.shop, savedId!, payload.google)) void buildGoogleFeed(admin, session.shop).catch(error => console.error("The Google promotions file could not be built:", error instanceof Error ? error.message : error));
 return { success: true, savedId, redirectId: savedId!.split("/").pop(), rankEntry };
 } catch (error) {
 if (requestKey) { const batch = await db.promotionCodeBatch.findUnique({ where: { shop_requestKey: { shop: session.shop, requestKey } } }); savedId = batch?.shopifyDiscountId ?? undefined; codeListLocked = Boolean(batch); }

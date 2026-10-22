@@ -137,6 +137,18 @@ export async function setGoogleSelection(shop: string, ids: string[], on: boolea
   return database.googlePromotion.count({ where: { shop } });
 }
 
+/**
+ * Saves the choice made in the promotion editor: whether this promotion is sent to Google, and the title Google shows.
+ * Nothing is changed when the editor sent no choice. Returns whether the file needs rebuilding.
+ */
+export async function saveGoogleChoice(shop: string, id: string, choice: { enabled?: unknown; title?: unknown } | null | undefined, database: Database = db): Promise<boolean> {
+  if (!choice || typeof choice.enabled !== "boolean") return false;
+  if (!choice.enabled) { await setGoogleSelection(shop, [id], false, database); return true; }
+  await setGoogleSelection(shop, [id], true, database);
+  await setGoogleTitle(shop, id, typeof choice.title === "string" ? choice.title : "", database);
+  return true;
+}
+
 /** Gives a promotion its own, shorter title for Google. An empty title goes back to the discount's own. */
 export async function setGoogleTitle(shop: string, id: string, title: string, database: Database = db): Promise<void> {
   const cleaned = title.replace(/\s+/g, " ").trim().slice(0, 120);

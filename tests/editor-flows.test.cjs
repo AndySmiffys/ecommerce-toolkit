@@ -485,3 +485,53 @@ test('the list bulk bar changes statuses at once, and asks before deleting or de
     assert.equal(actions.at(-1), 'clear');
   } finally { await view.unmount(); }
 });
+
+test('a promotion is chosen for Google in the editor, with its own title, warnings, and the choice travels with the save and is undone by discard', async () => {
+  const { PromotionEditor, placeholderDraft } = await loaded();
+  const view = await mount(PromotionEditor, savedProps(savedDraft(placeholderDraft)), '/app/promotions/new');
+  const google = step(view.container, 'google');
+  const choose = () => find(google, 's-checkbox[label="Send this promotion to Google Merchant Center"]');
+  assert.ok(choose(), 'the step is there');
+  assert.equal(find(google, 's-text-field[label="Title on Google (optional)"]'), null, 'no title field until it is chosen');
+  assert.ok(saveButton(view).disabled, 'looking at the step changes nothing');
+
+  await check(choose(), true);
+  assert.equal(saveButton(view).disabled, false, 'choosing it is a change that can be saved');
+  assert.ok(find(google, 's-banner[heading="Google would not take this promotion yet"]'), 'a promotion with no dates is warned about at once');
+  assert.match(google.textContent, /start date/);
+  assert.match(view.container.textContent, /Sending, but needs attention/, 'and the step summary says so');
+  await type(find(google, 's-text-field[label="Title on Google (optional)"]'), 'Halloween 20% off');
+
+  await click(discardButton(view));
+  await settle(50);
+  assert.equal(find(google, 's-text-field[label="Title on Google (optional)"]'), null, 'discard takes the choice back');
+  assert.ok(saveButton(view).disabled);
+
+  await check(choose(), true);
+  await type(find(google, 's-text-field[label="Title on Google (optional)"]'), 'Halloween 20% off');
+  await click(saveButton(view));
+  await settle(100);
+  const [request] = view.requests.filter(item => item.intent === 'updatePromotion');
+  assert.deepEqual(request.payload.google, { enabled: true, title: 'Halloween 20% off' }, 'the choice and the title are saved with the promotion');
+  await view.unmount();
+});
+
+test('a promotion already sent to Google shows how its last check went, and a code list cannot be sent', async () => {
+  const { PromotionEditor, placeholderDraft } = await loaded();
+  const sent = { enabled: true, title: 'Spooky offer', status: 'issues', issues: ['It has no end date. Google needs one, and no more than 183 days after the start.'], checkedAt: '2026-10-22T09:00:00.000Z' };
+  const view = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft)), initialGoogle: sent }, '/app/promotions/new');
+  const google = step(view.container, 'google');
+  assert.equal(find(google, 's-text-field[label="Title on Google (optional)"]').getAttribute('value'), 'Spooky offer', 'the saved title is filled in');
+  assert.match(google.textContent, /Last check/);
+  assert.match(google.textContent, /Not ready/);
+  assert.match(google.textContent, /It has no end date/, 'what to change is shown');
+  assert.ok(saveButton(view).disabled, 'showing it is not a change');
+  await view.unmount();
+
+  const list = await mount(PromotionEditor, { ...savedProps(savedDraft(placeholderDraft, { codeMode: 'bulk', codeCount: '50', codeListTitle: 'Welcome list' })) }, '/app/promotions/new');
+  const listStep = step(list.container, 'google');
+  const listBox = find(listStep, 's-checkbox[label="Send this promotion to Google Merchant Center"]');
+  assert.ok(listBox.hasAttribute('disabled'), 'a list of individual codes cannot be chosen');
+  assert.match(listBox.getAttribute('details'), /Google needs one shared code/);
+  await list.unmount();
+});

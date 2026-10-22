@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { withDatabase } from "./helpers/database";
-import { checkGooglePromotion, googleColumns, googleFeed, googleLimits, googlePromotionId, scopeOf, type GoogleRow } from "../app/modules/promotions/design/googlePromotion";
-import { buildGoogleFeed, ensureFeed, feedByToken, googleFeedIsDue, googleStatuses, isSentToGoogle, loadGooglePage, regenerateFeedToken, setGoogleSelection, setGoogleTitle, skusFor } from "../app/modules/promotions/services/googleFeed.server";
+import { checkGooglePromotion, googleColumns, googleDraftIssues, googleFeed, googleLimits, googlePromotionId, scopeOf, type GoogleRow } from "../app/modules/promotions/design/googlePromotion";
+import { buildGoogleFeed, ensureFeed, feedByToken, googleFeedIsDue, googleStatuses, isSentToGoogle, loadGooglePage, regenerateFeedToken, saveGoogleChoice, setGoogleSelection, setGoogleTitle, skusFor } from "../app/modules/promotions/services/googleFeed.server";
 import { bulkGoogle } from "../app/modules/promotions/services/bulkPromotions.server";
 import type { ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
 
@@ -182,4 +182,44 @@ test("choosing promotions for Google is limited, and another app's discounts are
   assert.match(outcome.failed[0].message, /Dotdigital made this discount/);
   assert.equal((await bulkGoogle(shop, false, ["gid://shopify/DiscountNode/51"], database as never)).done.length, 1);
   assert.equal(googleLimits.skus, 1000);
+}));
+
+const draft = (change: Partial<Parameters<typeof googleDraftIssues>[0]> = {}) => googleDraftIssues({ discountType: "order", isCode: true, isCodeList: false, code: "HALLOWEEN15", title: "HALLOWEEN15", googleTitle: "", valueType: "percentage", value: "15", startsAt: "2026-10-20T00:00:00Z", endsAt: "2026-11-02T00:00:00Z", eligibility: "all", now, ...change });
+
+test("the editor says what Google would reject while the promotion is still being written", () => {
+  assert.deepEqual(draft(), [], "a code for everyone with whole percentage and dates in range");
+  const cases: Array<[string, Parameters<typeof draft>[0], RegExp]> = [
+    ["buy X get Y", { discountType: "bxgy" }, /Buy X get Y/],
+    ["no dates", { startsAt: null, endsAt: null }, /start date/],
+    ["no end", { endsAt: null }, /end date/],
+    ["over 183 days", { endsAt: "2027-06-01T00:00:00Z" }, /more than 183 days/],
+    ["ended", { startsAt: "2026-09-01T00:00:00Z", endsAt: "2026-10-01T00:00:00Z" }, /has passed/],
+    ["segments", { eligibility: "segments" }, /certain customers/],
+    ["no code", { code: " " }, /Add a discount code/],
+    ["long code", { code: "A".repeat(21) }, /21 characters/],
+    ["long title", { title: "T".repeat(61) }, /61 characters/],
+    ["fractional percentage", { value: "12.5" }, /whole number/],
+    ["100 percent", { value: "100" }, /1 to 99/],
+    ["automatic free shipping", { discountType: "shipping", isCode: false }, /needs a code/],
+  ];
+  for (const [name, change, message] of cases) assert.match(draft(change).join(" "), message, name);
+  assert.deepEqual(draft({ title: "T".repeat(61), googleTitle: "Short" }), [], "a shorter title for Google fixes a long one");
+  assert.match(draft({ isCodeList: true }).join(" "), /list of individual codes/);
+  assert.equal(draft({ valueType: "fixed", value: "12.5" }).length, 0, "an amount off can have pence");
+  assert.equal(draft({ discountType: "shipping", valueType: "percentage", value: "" }).length, 0, "free shipping has no percentage to check");
+});
+
+test("the choice made in the editor is saved with the promotion: sent with its own title, or taken off, and left alone when none was made", async () => withDatabase(async database => {
+  const id = "gid://shopify/DiscountNode/12";
+  assert.equal(await saveGoogleChoice(shop, id, undefined, database), false, "no choice: nothing changes");
+  assert.equal(await saveGoogleChoice(shop, id, { enabled: "yes" }, database), false, "a choice that is not a yes or no is ignored");
+  assert.equal(await isSentToGoogle(shop, id, database), false);
+  assert.equal(await saveGoogleChoice(shop, id, { enabled: true, title: "  Halloween:   15% off  " }, database), true);
+  assert.equal(await isSentToGoogle(shop, id, database), true);
+  const row = (await loadGooglePage(shop, database)).promotions[0];
+  assert.deepEqual([row.title, row.status], ["Halloween: 15% off", "pending"], "the title is cleaned and the promotion waits for its check");
+  assert.equal(await saveGoogleChoice(shop, id, { enabled: true, title: "" }, database), true);
+  assert.equal((await loadGooglePage(shop, database)).promotions[0].title, "", "an empty title goes back to the promotion's own");
+  assert.equal(await saveGoogleChoice(shop, id, { enabled: false }, database), true);
+  assert.equal(await isSentToGoogle(shop, id, database), false, "taken off");
 }));
