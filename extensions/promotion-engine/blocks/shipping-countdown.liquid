@@ -43,14 +43,19 @@
     <p class="sc-setup-note">Shipping countdown: open the eCommerce Toolkit app, choose Shipping countdown and save its settings to show this block.</p>
   {%- endif -%}
 {%- else -%}
+  {%- assign look = config.style -%}
   <shipping-countdown
     class="sc"
     id="shipping-countdown-{{ block_id }}"
-    data-align="{{ block.settings.text_alignment }}"
+    {%- if look %}
+    data-align="{{ look.align }}"
+    data-padding="{{ look.padding }}"
+    data-border="{{ look.border }}"
+    style="--sc-margin:{{ look.margin }}px;--sc-radius:{{ look.radius }}px;--sc-border-width:{{ look.borderWidth }}px;--sc-size:{{ look.textSize }}px;--sc-weight:{{ look.fontWeight }};--sc-bg:{{ look.background }};--sc-text:{{ look.text }};--sc-accent:{{ look.accent }};--sc-dispatch:{{ look.dispatch }};--sc-muted:{{ look.muted }};--sc-icon:{{ look.icon }}"
+    {%- endif %}
     data-cart-total="{{ cart.total_price }}"
     data-currency="{{ currency }}"
     data-variant-id="{{ variant.id }}"
-    style="--sc-margin:{{ block.settings.margin_vertical }}px;--sc-pad-v:{{ block.settings.padding_vertical }}px;--sc-pad-h:{{ block.settings.padding_horizontal }}px;--sc-radius:{{ block.settings.border_radius }}px;--sc-bg:{{ block.settings.background_color }};--sc-text:{{ block.settings.text_color }};--sc-highlight:{{ block.settings.highlight_color }};--sc-dispatch:{{ block.settings.dispatch_color }};--sc-secondary:{{ block.settings.secondary_text_color }};--sc-icon:{{ block.settings.icon_color }};--sc-expired:{{ block.settings.expired_text_color }};--sc-size:{{ block.settings.font_size }}px;--sc-secondary-size:{{ block.settings.secondary_font_size }}px;--sc-weight:{{ block.settings.font_weight }};--sc-icon-size:{{ block.settings.icon_size }}px"
     {{ block.shopify_attributes }}
   >
     {%- if warning.enabled and warning.message != blank -%}
@@ -63,7 +68,7 @@
     {%- endif -%}
 
     <div class="sc__content">
-      {%- if block.settings.show_icon -%}
+      {%- if look == blank or look.showIcon -%}
         <svg class="sc__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <circle cx="12" cy="12" r="10"/>
           <polyline points="12,6 12,12 16,14"/>
@@ -99,160 +104,7 @@
   "settings": [
     {
       "type": "paragraph",
-      "content": "What this block says (cut-off time, shipping days, bank holidays, free shipping and the warning notice) is managed in the eCommerce Toolkit app under Shipping countdown. Only its look is set here."
-    },
-    {
-      "type": "header",
-      "content": "Style"
-    },
-    {
-      "type": "select",
-      "id": "text_alignment",
-      "label": "Text alignment",
-      "options": [
-        { "value": "left", "label": "Left" },
-        { "value": "center", "label": "Center" },
-        { "value": "right", "label": "Right" }
-      ],
-      "default": "center"
-    },
-    {
-      "type": "checkbox",
-      "id": "show_icon",
-      "label": "Show countdown icon",
-      "default": true
-    },
-    {
-      "type": "range",
-      "id": "icon_size",
-      "min": 16,
-      "max": 40,
-      "step": 2,
-      "unit": "px",
-      "label": "Icon size",
-      "default": 24
-    },
-    {
-      "type": "range",
-      "id": "font_size",
-      "min": 12,
-      "max": 24,
-      "step": 1,
-      "unit": "px",
-      "label": "Main text size",
-      "default": 16
-    },
-    {
-      "type": "range",
-      "id": "secondary_font_size",
-      "min": 10,
-      "max": 18,
-      "step": 1,
-      "unit": "px",
-      "label": "Shipping days text size",
-      "default": 14
-    },
-    {
-      "type": "select",
-      "id": "font_weight",
-      "label": "Font weight",
-      "options": [
-        { "value": "400", "label": "Normal" },
-        { "value": "500", "label": "Medium" },
-        { "value": "600", "label": "Semibold" },
-        { "value": "700", "label": "Bold" }
-      ],
-      "default": "500"
-    },
-    {
-      "type": "header",
-      "content": "Colors"
-    },
-    {
-      "type": "color",
-      "id": "background_color",
-      "label": "Background",
-      "default": "#f8f9fa"
-    },
-    {
-      "type": "color",
-      "id": "text_color",
-      "label": "Text",
-      "default": "#333333"
-    },
-    {
-      "type": "color",
-      "id": "highlight_color",
-      "label": "Countdown highlight",
-      "default": "#d63384"
-    },
-    {
-      "type": "color",
-      "id": "dispatch_color",
-      "label": "Dispatch day",
-      "default": "#28a745"
-    },
-    {
-      "type": "color",
-      "id": "secondary_text_color",
-      "label": "Shipping days text",
-      "default": "#666666"
-    },
-    {
-      "type": "color",
-      "id": "icon_color",
-      "label": "Icon",
-      "default": "#007bff"
-    },
-    {
-      "type": "color",
-      "id": "expired_text_color",
-      "label": "Expired text",
-      "default": "#999999"
-    },
-    {
-      "type": "header",
-      "content": "Spacing"
-    },
-    {
-      "type": "range",
-      "id": "padding_vertical",
-      "min": 8,
-      "max": 40,
-      "step": 2,
-      "unit": "px",
-      "label": "Vertical padding",
-      "default": 16
-    },
-    {
-      "type": "range",
-      "id": "padding_horizontal",
-      "min": 12,
-      "max": 60,
-      "step": 2,
-      "unit": "px",
-      "label": "Horizontal padding",
-      "default": 24
-    },
-    {
-      "type": "range",
-      "id": "margin_vertical",
-      "min": 0,
-      "max": 40,
-      "step": 2,
-      "unit": "px",
-      "label": "Vertical margin",
-      "default": 16
-    },
-    {
-      "type": "range",
-      "id": "border_radius",
-      "min": 0,
-      "max": 20,
-      "step": 1,
-      "unit": "px",
-      "label": "Border radius",
-      "default": 8
+      "content": "Everything about this block, its wording, dispatch rules, free shipping, warning notice and appearance, is set in the eCommerce Toolkit app under Shipping countdown. Add the block where you want it to appear."
     }
   ]
 }

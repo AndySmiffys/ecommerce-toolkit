@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import type { FetcherWithComponents } from "react-router";
 import { useEmbeddedAppUrl } from "../navigation/embeddedAppUrl";
 import { PromotionSaveBar } from "../promotions/components/PromotionSaveBar";
 import { SaveNotices } from "../promotions/components/SaveNotices";
 import { DateField } from "../promotions/components/DateTimeField";
-import { PolarisCheckbox, PolarisCheckboxList, PolarisNumberField, PolarisRadioList } from "../promotions/components/PolarisControls";
-import { dayNames, fromMinorUnits, parseBankHolidays, toMinorUnits, validateShippingConfig, type ShippingCountdownConfig } from "./config";
+import { PolarisCheckbox, PolarisCheckboxList, PolarisNumberField, PolarisRadioList, PolarisSelect } from "../promotions/components/PolarisControls";
+import { contrastRatio } from "../promotions/design/design";
+import blockCss from "../../../extensions/promotion-engine/assets/shipping-countdown.css?raw";
+import { dayNames, defaultShippingConfig, fromMinorUnits, parseBankHolidays, toMinorUnits, validateShippingConfig, type ShippingCountdownConfig } from "./config";
 import { shippingLogic } from "./logic";
+import { styleAttributes } from "./appearance";
 
 export type ShippingResult = { ok: boolean; intent: string; errors: string[]; config?: ShippingCountdownConfig; dates?: string[] };
 
@@ -18,6 +21,7 @@ type Form = {
   freeEnabled: boolean; thresholds: Array<{ code: string; amount: string }>; textUnder: string; textAdd: string; textOver: string;
   preorderMode: "message" | "hide"; preorderMessage: string;
   warnEnabled: boolean; warnStart: string; warnEnd: string; warnMessage: string; warnText: string; warnBackground: string; warnBorder: string;
+  look: { align: string; showIcon: boolean; textSize: string; fontWeight: string; padding: string; margin: string; radius: string; border: string; borderWidth: string; background: string; text: string; accent: string; dispatch: string; muted: string; icon: string };
 };
 
 const toForm = (c: ShippingCountdownConfig): Form => ({
@@ -29,6 +33,7 @@ const toForm = (c: ShippingCountdownConfig): Form => ({
   preorderMode: c.availability.preorderMode, preorderMessage: c.availability.preorderMessage,
   warnEnabled: c.warning.enabled, warnStart: c.warning.startDate, warnEnd: c.warning.endDate, warnMessage: c.warning.message,
   warnText: c.warning.textColor, warnBackground: c.warning.backgroundColor, warnBorder: c.warning.borderColor,
+  look: { ...c.style, textSize: String(c.style.textSize), margin: String(c.style.margin), radius: String(c.style.radius), borderWidth: String(c.style.borderWidth) },
 });
 
 /** The settings the form describes, plus anything in it that cannot even be read as a setting (the rest is checked by the shared validator). */
@@ -54,6 +59,7 @@ function toInput(f: Form) {
       freeShipping: { enabled: f.freeEnabled, thresholds, textUnder: f.textUnder, textAdd: f.textAdd, textOver: f.textOver },
       availability: { preorderMode: f.preorderMode, preorderMessage: f.preorderMessage },
       warning: { enabled: f.warnEnabled, startDate: f.warnStart, endDate: f.warnEnd, message: f.warnMessage, textColor: f.warnText, backgroundColor: f.warnBackground, borderColor: f.warnBorder },
+      style: f.look,
     },
   };
 }
@@ -79,6 +85,44 @@ function ColourField({ label, value, onChange }: { label: string; value: string;
   return <s-color-field ref={ref} label={label} value={value} />;
 }
 
+type Dispatch = ReturnType<typeof shippingLogic.dispatchView>;
+
+/** The block exactly as the product page builds it (same markup, same stylesheet, same variables), so the look can be judged here. */
+function ShippingPreview({ config, view, free, warningShowing }: { config: ShippingCountdownConfig; view: Dispatch; free: [string, number] | undefined; warningShowing: boolean }) {
+  const { data, vars } = styleAttributes(config.style);
+  const days = [1, 2, 3, 4, 5, 6, 0].filter(index => config.shippingDays[index]).map(index => dayNames[index]).join(", ");
+  const warningVars = { "--sc-warn-text": config.warning.textColor, "--sc-warn-bg": config.warning.backgroundColor, "--sc-warn-border": config.warning.borderColor } as CSSProperties;
+  return <>
+    <style>{blockCss}</style>
+    {createElement("shipping-countdown", { className: "sc", ...data, style: vars as CSSProperties },
+      warningShowing && <div className="sc__warning" style={warningVars}>⚠️ {config.warning.message}</div>,
+      <div className="sc__content">
+        {config.style.showIcon && <svg className="sc__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" /></svg>}
+        {free && <p className="sc__free">{shippingLogic.fillThreshold(config.freeShipping.textUnder, free[1], free[0])}</p>}
+        <p className="sc__main">
+          {view.kind === "countdown" && <>{config.countdownPrefix} <span className="sc__countdown">{view.countdown}</span> {config.countdownSuffix} <span className="sc__dispatch">{view.date}</span></>}
+          {view.kind === "delay" && <>{shippingLogic.parseHighlight(config.delayMessage).map((piece, index) => piece.highlight ? <span key={index} className="sc__countdown">{piece.text}</span> : <span key={index}>{piece.text}</span>)} <span className="sc__dispatch">{view.date}</span></>}
+          {view.kind === "none" && <span className="sc__expired">{config.noShippingText}</span>}
+          {view.kind === "error" && config.errorText}
+          {view.kind === "hidden" && "The block is hidden: no dispatch day is available and Hide when unavailable is on."}
+          {view.kind === "preorder" && config.availability.preorderMessage}
+        </p>
+        {config.showShippingDays && days && <p className="sc__days">{config.shippingDaysPrefix} {days}</p>}
+      </div>)}
+  </>;
+}
+
+/** Text that is hard to read on its background, so a colour choice can be questioned before it reaches the shop. */
+function contrastNotes(config: ShippingCountdownConfig) {
+  const { style, warning } = config;
+  const pairs: Array<[string, string, string]> = [
+    ["Text", style.text, style.background], ["Time left", style.accent, style.background], ["Dispatch day", style.dispatch, style.background],
+    ["Secondary text", style.muted, style.background], ...(style.showIcon ? [["Icon", style.icon, style.background] as [string, string, string]] : []),
+    ...(warning.enabled ? [["Warning text", warning.textColor, warning.backgroundColor] as [string, string, string]] : []),
+  ];
+  return pairs.map(([label, foreground, background]) => ({ label, ratio: contrastRatio(foreground, background) })).filter(item => item.ratio < (item.label === "Icon" ? 3 : 4.5));
+}
+
 const when = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /**
@@ -98,6 +142,7 @@ export function ShippingCountdownPage({ initial, saved, today, fetcher }: { init
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => { setNow(Date.now()); }, []);
   const set = (changes: Partial<Form>) => setForm(current => ({ ...current, ...changes }));
+  const setLook = (changes: Partial<Form["look"]>) => setForm(current => ({ ...current, look: { ...current.look, ...changes } }));
 
   const { problems, input } = useMemo(() => toInput(form), [form]);
   const check = useMemo(() => validateShippingConfig(input), [input]);
@@ -152,22 +197,10 @@ export function ShippingCountdownPage({ initial, saved, today, fetcher }: { init
             <DateField label="Date to preview (London). Leave empty for now" value={sampleDate} onChange={setSampleDate} />
             <TextField label="Time to preview (24-hour)" value={sampleTime} onChange={setSampleTime} details="For example 16:30. Used only with a date." />
           </s-grid>
-          {view === null
+          {view === null || config === null
             ? <s-banner tone="warning">Fix the problem above to see a preview.</s-banner>
-            : <div style={{ border: "6px double #28a745", borderRadius: 8, padding: "16px 24px", background: "#f8f9fa", display: "grid", gap: 8, textAlign: "center" }}>
-              {warningShowing && config && <div style={{ border: `6px double ${config.warning.borderColor}`, background: config.warning.backgroundColor, color: config.warning.textColor, padding: "12px 16px", borderRadius: 8 }}>⚠️ {config.warning.message}</div>}
-              {free && <s-text type="strong">{shippingLogic.fillThreshold(config!.freeShipping.textUnder, free[1], free[0])}</s-text>}
-              <s-text>
-                {view.kind === "countdown" && <>{config!.countdownPrefix} <s-text type="strong">{view.countdown}</s-text> {config!.countdownSuffix} <s-text type="strong">{view.date}</s-text></>}
-                {view.kind === "delay" && <>{shippingLogic.parseHighlight(config!.delayMessage).map((piece, index) => piece.highlight ? <s-text key={index} type="strong">{piece.text}</s-text> : <span key={index}>{piece.text}</span>)} <s-text type="strong">{view.date}</s-text></>}
-                {view.kind === "none" && config!.noShippingText}
-                {view.kind === "error" && config!.errorText}
-                {view.kind === "hidden" && "The block is hidden: no dispatch day is available and Hide when unavailable is on."}
-                {view.kind === "preorder" && config!.availability.preorderMessage}
-              </s-text>
-              {config!.showShippingDays && <s-text color="subdued">{config!.shippingDaysPrefix} {[1, 2, 3, 4, 5, 6, 0].filter(index => config!.shippingDays[index]).map(index => dayNames[index]).join(", ")}</s-text>}
-            </div>}
-          <s-text color="subdued">The preview uses the same logic as the product page, with London time. Colours, sizes and spacing are set on the block in the theme editor.</s-text>
+            : <ShippingPreview config={config} view={view} free={free} warningShowing={warningShowing} />}
+          <s-text color="subdued">The preview is the product page&rsquo;s own markup and stylesheet, with the same logic and London time.</s-text>
         </s-stack>
       </s-section>
 
@@ -249,6 +282,42 @@ export function ShippingCountdownPage({ initial, saved, today, fetcher }: { init
               <ColourField label="Border colour" value={form.warnBorder} onChange={value => set({ warnBorder: value })} />
             </s-grid>
           </>}
+        </s-stack>
+      </s-section>
+      <s-section heading="Appearance">
+        <s-stack direction="block" gap="base">
+          <s-text color="subdued">How the block looks on the product page. The theme editor only decides where it goes.</s-text>
+          <s-grid gridTemplateColumns="1fr 1fr" gap="base" alignItems="start">
+            <PolarisSelect label="Text alignment" value={form.look.align} onChange={event => setLook({ align: event.currentTarget.value })}>
+              <s-option value="left">Left</s-option><s-option value="center">Centre</s-option><s-option value="right">Right</s-option>
+            </PolarisSelect>
+            <PolarisSelect label="Font weight" value={form.look.fontWeight} onChange={event => setLook({ fontWeight: event.currentTarget.value })}>
+              <s-option value="400">Normal</s-option><s-option value="500">Medium</s-option><s-option value="600">Semibold</s-option><s-option value="700">Bold</s-option>
+            </PolarisSelect>
+            <PolarisNumberField label="Text size (px)" min={12} max={24} step={1} value={form.look.textSize} details="The days line and the icon scale with it." onInput={event => setLook({ textSize: event.currentTarget.value })} />
+            <PolarisSelect label="Padding" value={form.look.padding} onChange={event => setLook({ padding: event.currentTarget.value })}>
+              <s-option value="compact">Compact</s-option><s-option value="standard">Standard</s-option><s-option value="roomy">Roomy</s-option>
+            </PolarisSelect>
+            <PolarisSelect label="Border" value={form.look.border} onChange={event => setLook({ border: event.currentTarget.value })}>
+              <s-option value="double">Double</s-option><s-option value="solid">Solid</s-option><s-option value="none">None</s-option>
+            </PolarisSelect>
+            <PolarisNumberField label="Border width (px)" min={1} max={10} step={1} disabled={form.look.border === "none"} value={form.look.borderWidth} onInput={event => setLook({ borderWidth: event.currentTarget.value })} />
+            <PolarisNumberField label="Corner radius (px)" min={0} max={20} step={1} value={form.look.radius} onInput={event => setLook({ radius: event.currentTarget.value })} />
+            <PolarisNumberField label="Space above and below (px)" min={0} max={40} step={1} value={form.look.margin} onInput={event => setLook({ margin: event.currentTarget.value })} />
+          </s-grid>
+          <PolarisCheckbox label="Show the clock icon" checked={form.look.showIcon} onChange={event => setLook({ showIcon: event.currentTarget.checked })} />
+          <s-grid gridTemplateColumns="1fr 1fr 1fr" gap="base">
+            <ColourField label="Background" value={form.look.background} onChange={value => setLook({ background: value })} />
+            <ColourField label="Text" value={form.look.text} onChange={value => setLook({ text: value })} />
+            <ColourField label="Time left" value={form.look.accent} onChange={value => setLook({ accent: value })} />
+            <ColourField label="Dispatch day and border" value={form.look.dispatch} onChange={value => setLook({ dispatch: value })} />
+            <ColourField label="Secondary text" value={form.look.muted} onChange={value => setLook({ muted: value })} />
+            <ColourField label="Icon" value={form.look.icon} onChange={value => setLook({ icon: value })} />
+          </s-grid>
+          {config && contrastNotes(config).length > 0 && <s-banner tone="warning" heading="Some text may be hard to read">
+            {contrastNotes(config).map(item => `${item.label} on its background is ${item.ratio.toFixed(1)} to 1`).join("; ")}. Aim for at least 4.5 to 1 for text, or 3 to 1 for the icon.
+          </s-banner>}
+          <div><s-button type="button" variant="tertiary" onClick={() => set({ look: toForm(defaultShippingConfig).look })}>Reset appearance to the original look</s-button></div>
         </s-stack>
       </s-section>
     </s-stack>

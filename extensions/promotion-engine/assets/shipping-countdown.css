@@ -1,10 +1,15 @@
+/* The look comes from the app's Shipping countdown settings: choices as data attributes, values as CSS variables (set on the element). */
 shipping-countdown {
+  --sc-pad-v: 16px;
+  --sc-pad-h: 24px;
   display: block;
   margin: var(--sc-margin, 16px) 0;
   text-align: center;
 }
 shipping-countdown[data-align="left"] { text-align: left; }
 shipping-countdown[data-align="right"] { text-align: right; }
+shipping-countdown[data-padding="compact"] { --sc-pad-v: 12px; --sc-pad-h: 16px; }
+shipping-countdown[data-padding="roomy"] { --sc-pad-v: 24px; --sc-pad-h: 32px; }
 shipping-countdown[hidden] { display: none; }
 
 shipping-countdown .sc__content {
@@ -13,11 +18,13 @@ shipping-countdown .sc__content {
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  padding: var(--sc-pad-v, 16px) var(--sc-pad-h, 24px);
+  padding: var(--sc-pad-v) var(--sc-pad-h);
   background-color: var(--sc-bg, #f8f9fa);
-  border: 6px double var(--sc-dispatch, #28a745);
+  border: var(--sc-border-width, 6px) double var(--sc-dispatch, #28a745);
   border-radius: var(--sc-radius, 8px);
 }
+shipping-countdown[data-border="solid"] .sc__content { border-style: solid; }
+shipping-countdown[data-border="none"] .sc__content { border: 0; }
 shipping-countdown[data-align="left"] .sc__content { align-items: flex-start; }
 shipping-countdown[data-align="right"] .sc__content { align-items: flex-end; }
 
@@ -32,18 +39,18 @@ shipping-countdown .sc__free {
 /* Holds the place of the dispatch line until the script has the time, so the page does not jump. */
 shipping-countdown .sc__main { min-height: 2.8em; }
 shipping-countdown .sc__free[hidden] { display: none; }
-shipping-countdown .sc__countdown { color: var(--sc-highlight, #d63384); font-weight: 600; }
+shipping-countdown .sc__countdown { color: var(--sc-accent, #d63384); font-weight: 600; }
 shipping-countdown .sc__dispatch { color: var(--sc-dispatch, #28a745); font-weight: 700; }
-shipping-countdown .sc__expired { color: var(--sc-expired, #999); font-style: italic; }
+shipping-countdown .sc__expired { color: var(--sc-muted, #666); font-style: italic; }
 shipping-countdown .sc__days {
   margin: 0;
-  color: var(--sc-secondary, #666);
-  font-size: var(--sc-secondary-size, 14px);
+  color: var(--sc-muted, #666);
+  font-size: calc(var(--sc-size, 16px) * 0.875);
   line-height: 1.3;
 }
 shipping-countdown .sc__icon {
-  width: var(--sc-icon-size, 24px);
-  height: var(--sc-icon-size, 24px);
+  width: calc(var(--sc-size, 16px) * 1.5);
+  height: calc(var(--sc-size, 16px) * 1.5);
   margin-bottom: 4px;
   color: var(--sc-icon, #007bff);
 }
@@ -52,22 +59,24 @@ shipping-countdown .sc__warning {
   width: 100%;
   box-sizing: border-box;
   margin-bottom: 12px;
-  padding: var(--sc-pad-v, 16px) var(--sc-pad-h, 24px);
+  padding: var(--sc-pad-v) var(--sc-pad-h);
   color: var(--sc-warn-text, #8a4b00);
   background: var(--sc-warn-bg, #fff4e5);
-  border: 6px double var(--sc-warn-border, #f59e0b);
+  border: var(--sc-border-width, 6px) double var(--sc-warn-border, #f59e0b);
   border-radius: var(--sc-radius, 8px);
   font-size: var(--sc-size, 16px);
   line-height: 1.4;
 }
+shipping-countdown[data-border="solid"] .sc__warning { border-style: solid; }
+shipping-countdown[data-border="none"] .sc__warning { border: 0; }
 shipping-countdown .sc__warning[hidden] { display: none; }
 
 @media screen and (max-width: 749px) {
   shipping-countdown .sc__content,
   shipping-countdown .sc__warning {
-    padding: calc(var(--sc-pad-v, 16px) * 0.8) calc(var(--sc-pad-h, 24px) * 0.8);
+    padding: calc(var(--sc-pad-v) * 0.8) calc(var(--sc-pad-h) * 0.8);
   }
   shipping-countdown .sc__main,
   shipping-countdown .sc__free { font-size: calc(var(--sc-size, 16px) * 0.9); }
-  shipping-countdown .sc__days { font-size: calc(var(--sc-secondary-size, 14px) * 0.9); }
+  shipping-countdown .sc__days { font-size: calc(var(--sc-size, 16px) * 0.875 * 0.9); }
 }

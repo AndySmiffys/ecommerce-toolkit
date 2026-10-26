@@ -20,5 +20,6 @@ type Logic = {
  * browser script that also exports its functions when it finds a CommonJS `module`.
  */
 const holder: { exports: Partial<Logic> } = { exports: {} };
-new Function("module", "exports", script)(holder, holder.exports);
+// HTMLElement and customElements are hidden from it on purpose: the script then only exports its functions and never defines the storefront element here.
+new Function("module", "exports", "HTMLElement", "customElements", script)(holder, holder.exports, undefined, undefined);
 export const shippingLogic = holder.exports as Logic;

@@ -20,18 +20,18 @@ const config = {
   freeShipping: { enabled: true, thresholds: { GBP: 5000, EUR: 6000 }, textUnder: "Free over {threshold}, only {threshold}", textAdd: "Add this item for free delivery", textOver: "Free delivery unlocked" },
   availability: { preorderMode: "message", preorderMessage: "Pre-order: date at checkout" },
   warning: { enabled: true, startDate: "2026-12-01", endDate: "2026-12-24", message: "<b>Last</b> orders", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
+  style: { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" },
 };
 const variants = [
   { id: 1, price: 1000, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 2, price: 4600, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 3, price: 1000, available: false, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 0 },
 ];
-const defaults = Object.fromEntries(schema.settings.filter(s => s.id).map(s => [s.id, s.default]));
 
 async function render({ cartTotal = 0, currency = "GBP", cfg = config, design = false } = {}) {
   return liquid.parseAndRender(blockTemplate, {
     app: { metafields: { shipping_countdown: { config: { value: cfg } } } },
-    block: { id: "template_abc_123", settings: defaults, shopify_attributes: "" },
+    block: { id: "template_abc_123", settings: {}, shopify_attributes: "" },
     cart: { total_price: cartTotal, currency: { iso_code: currency } },
     request: { design_mode: design },
     product: { selected_or_first_available_variant: variants[0], variants },
@@ -54,11 +54,35 @@ async function page(options = {}, instances = 1) {
 const visible = html => html.replace(/<script[\s\S]*?<\/script>/g, "");
 const wait = ms => new Promise(done => setTimeout(done, ms));
 
-test("the block keeps the same presentation settings as the old theme block", () => {
-  assert.deepEqual(Object.keys(defaults).sort(), ["background_color", "border_radius", "dispatch_color", "expired_text_color", "font_size", "font_weight", "highlight_color", "icon_color", "icon_size", "margin_vertical", "padding_horizontal", "padding_vertical", "secondary_font_size", "secondary_text_color", "show_icon", "text_alignment", "text_color"]);
-  assert.deepEqual(defaults, { text_alignment: "center", show_icon: true, icon_size: 24, font_size: 16, secondary_font_size: 14, font_weight: "500", background_color: "#f8f9fa", text_color: "#333333", highlight_color: "#d63384", dispatch_color: "#28a745", secondary_text_color: "#666666", icon_color: "#007bff", expired_text_color: "#999999", padding_vertical: 16, padding_horizontal: 24, margin_vertical: 16, border_radius: 8 });
+test("the theme editor has nothing to set: the look comes from the app's settings", async () => {
+  assert.deepEqual(schema.settings.filter(setting => setting.id), [], "no settings of its own");
   assert.equal(schema.target, "section");
   assert.deepEqual(schema.enabled_on, { templates: ["product"] });
+  const html = visible(await render());
+  assert.match(html, /data-align="center"/);
+  assert.match(html, /data-padding="standard"/);
+  assert.match(html, /data-border="double"/);
+  assert.match(html, /--sc-size:16px/);
+  assert.match(html, /--sc-dispatch:#28a745/);
+  assert.match(html, /<svg class="sc__icon"/);
+});
+
+test("the look follows the saved appearance, including no icon", async () => {
+  const html = visible(await render({ cfg: { ...config, style: { ...config.style, align: "left", padding: "roomy", border: "none", textSize: 20, showIcon: false, accent: "#112233" } } }));
+  assert.match(html, /data-align="left"/);
+  assert.match(html, /data-padding="roomy"/);
+  assert.match(html, /data-border="none"/);
+  assert.match(html, /--sc-size:20px/);
+  assert.match(html, /--sc-accent:#112233/);
+  assert.doesNotMatch(html, /sc__icon/);
+});
+
+test("settings saved before the appearance existed still render, with the stylesheet's own defaults", async () => {
+  const { style, ...old } = config;
+  const html = visible(await render({ cfg: old }));
+  assert.match(html, /class="sc__content"/);
+  assert.doesNotMatch(html, /--sc-size/);
+  assert.match(html, /<svg class="sc__icon"/, "the icon is on by default");
 });
 
 test("the server writes the free-shipping message with every {threshold} replaced, text escaped, and the days listed", async () => {

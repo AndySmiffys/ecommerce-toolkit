@@ -1,6 +1,6 @@
 # Shipping countdown
 
-A product-page block that shows a free-shipping message, a dispatch countdown ("Order in the next 1 hour 21 minutes for dispatch on Monday 26 Oct"), the days you ship, and an optional dated warning notice. It replaces the old "Shipping countdown" theme block. **All business settings live in the app** (Shipping countdown in the app's menu); the block itself only has its look.
+A product-page block that shows a free-shipping message, a dispatch countdown ("Order in the next 1 hour 21 minutes for dispatch on Monday 26 Oct"), the days you ship, and an optional dated warning notice. It replaces the old "Shipping countdown" theme block. **Everything lives in the app** (Shipping countdown in the app's menu): the wording, the rules and the look. The block has no settings in the theme editor; you only choose where it goes.
 
 ## How it fits together
 
@@ -22,7 +22,7 @@ A product-page block that shows a free-shipping message, a dispatch countdown ("
 
 1. Deploy the theme extension to the right app (test first: `shopify app deploy --config test`).
 2. In the app, open **Shipping countdown**, check each section and **Save**. Until it is saved the block shows nothing (the theme editor says so).
-3. In the theme editor, open a product template, **Add block** under the product information and choose **Shipping countdown** (listed under the app). Set its alignment, colours and spacing.
+3. In the theme editor, open a product template, **Add block** under the product information and choose **Shipping countdown** (listed under the app). There is nothing to set there; the look is in the app under **Appearance**.
 4. Remove the old theme block, then the old "Shipping settings" in Theme settings.
 
 ## Moving the old theme settings
@@ -39,11 +39,23 @@ A product-page block that shows a free-shipping message, a dispatch countdown ("
 | `free_shipping_text_under`, `_add_item`, `_over` | Free shipping (`{threshold}` is replaced everywhere it appears) |
 | `warning_notice_*` | Warning notice (the colours are new settings) |
 | `timezone` | Gone: always London |
-| Block style settings (alignment, icon, sizes, colours, spacing, radius) | Unchanged, same ids and defaults, on the block |
+| Block style settings | Appearance in the app, with the same defaults, simplified (below) |
+
+## Appearance
+
+The old block had 17 settings; the app has fewer, better chosen ones, and the defaults reproduce the old look exactly.
+
+- **One text size** (default 16 px). The days line (87.5%) and the icon (1.5 times) scale with it, replacing separate sizes for each.
+- **Padding** is Compact, Standard (16/24 px, as before) or Roomy, replacing two sliders. On phones it is 20% smaller, inside the box.
+- **Border** is Double (as before), Solid or None, with a width.
+- **Colours**: background, text, time left, dispatch day and border, secondary text, icon. The separate "expired text" colour is now the secondary text colour. The warning notice has its own colours.
+- The app warns when text would be hard to read on its background (4.5 to 1 for text, 3 to 1 for the icon).
+- The preview in the app is the block's own markup and stylesheet. A test renders the block's Liquid and checks it writes the same attributes and variables the app's preview does.
+- Settings saved before Appearance existed still work: the block falls back to the stylesheet's defaults until they are saved again.
 
 ## Tests
 
-`tests/shipping-countdown.test.cjs` (the date and message functions with fixed instants: cut-offs, bank holidays, the Christmas run, both clock changes, other visitor time zones, delay mode, thresholds), `tests/shipping-countdown-element.test.cjs` (the real block rendered and driven in a simulated browser) and `tests/shipping-config.test.ts` (validation, the bank-holiday import). Run with `npm test`.
+`tests/shipping-countdown.test.cjs` (the date and message functions with fixed instants: cut-offs, bank holidays, the Christmas run, both clock changes, other visitor time zones, delay mode, thresholds), `tests/shipping-countdown-element.test.cjs` (the real block rendered and driven in a simulated browser) and `tests/shipping-config.test.ts` (validation, the bank-holiday import) and `tests/shipping-appearance.test.ts` (the block and the app agree on the look). Run with `npm test`.
 
 ## Still to check on a real theme
 

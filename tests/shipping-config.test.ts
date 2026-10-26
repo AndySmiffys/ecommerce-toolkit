@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultShippingConfig, fromMinorUnits, isIsoDate, parseBankHolidays, toMinorUnits, validateShippingConfig } from "../app/modules/shipping/config";
+import { defaultShippingConfig, defaultShippingStyle, fromMinorUnits, isIsoDate, parseBankHolidays, toMinorUnits, validateShippingConfig } from "../app/modules/shipping/config";
 import { mergeBankHolidays, upcomingBankHolidays } from "../app/modules/shipping/bankHolidays.server";
 
 const valid = (changes: Record<string, unknown> = {}) => ({ ...defaultShippingConfig, ...changes });
@@ -89,4 +89,20 @@ test("the gov.uk list keeps England and Wales dates from today on, and merges wi
   assert.deepEqual(upcomingBankHolidays(payload, "2026-12-25"), ["2026-12-25", "2026-12-28"], "today counts");
   assert.throws(() => upcomingBankHolidays({}, "2026-10-26"), /format/);
   assert.deepEqual(mergeBankHolidays(["2026-12-28", "2027-01-01"], ["2026-12-25", "2026-12-28"]), ["2026-12-25", "2026-12-28", "2027-01-01"]);
+});
+
+test("the appearance has the old block's look by default and is checked field by field", () => {
+  assert.deepEqual(defaultShippingStyle, { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" });
+  const look = (changes: Record<string, unknown>) => valid({ style: { ...defaultShippingStyle, ...changes } });
+  const good = validateShippingConfig(look({ align: "right", textSize: "20", border: "solid", padding: "compact", background: "#FFFFFF" }));
+  assert.equal(good.ok && good.config.style.textSize, 20, "numbers typed as text are accepted");
+  assert.equal(good.ok && good.config.style.background, "#ffffff", "colours are lower-cased");
+  assert.equal(validateShippingConfig(look({})).ok, true);
+  for (const [field, bad, label] of [["align", "middle", /Alignment/], ["fontWeight", "800", /Font weight/], ["padding", "huge", /Padding/], ["border", "dotted", /Border is/], ["textSize", 11, /Text size/], ["textSize", 25, /Text size/], ["textSize", "", /Text size/], ["margin", -1, /Space above/], ["radius", 21, /Corner radius/], ["borderWidth", 0, /Border width/], ["borderWidth", 11, /Border width/], ["accent", "red", /Countdown colour/], ["icon", "#12345", /Icon colour/]] as const) {
+    assert.match(errorsOf(look({ [field]: bad })).join(" "), label, `${field}=${String(bad)}`);
+  }
+  const old = validateShippingConfig({ ...defaultShippingConfig, style: undefined });
+  assert.deepEqual(old.ok && old.config.style, defaultShippingStyle, "settings saved before the appearance existed get the original look");
+  const stripped = validateShippingConfig(look({ nonsense: "x" }));
+  assert.equal(stripped.ok && "nonsense" in stripped.config.style, false);
 });
