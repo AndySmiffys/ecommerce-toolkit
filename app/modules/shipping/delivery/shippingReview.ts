@@ -1,4 +1,4 @@
-import { formatMinor, type DeliveryProfile, type DeliveryZone, type ShippingSnapshot } from "./deliveryModel";
+import { formatMinor, type DeliveryProfile, type DeliveryZone, type Market, type ShippingSnapshot } from "./deliveryModel";
 import { activeRates, defaultProfile, priceRange, zoneForCountry, zoneFree } from "./freeService";
 
 export type Severity = "problem" | "suggestion" | "info";
@@ -155,3 +155,13 @@ export function summarise(findings: Finding[]) {
   return { problems: findings.filter(f => f.severity === "problem").length, suggestions: findings.filter(f => f.severity === "suggestion").length, info: findings.filter(f => f.severity === "info").length };
 }
 
+
+/** For each Market, the countries in it that no shipping zone with a rate covers in the general profile. */
+export function marketCoverage(snapshot: ShippingSnapshot): Array<{ market: Market; missing: string[] }> | null {
+  if (snapshot.markets === null) return null;
+  const base = defaultProfile(snapshot);
+  return snapshot.markets.map(market => ({
+    market,
+    missing: market.active && base ? market.countries.filter(country => { const zone = zoneForCountry(base, country); return !zone || !activeRates(zone).length; }) : [],
+  }));
+}

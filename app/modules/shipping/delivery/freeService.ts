@@ -1,4 +1,4 @@
-import type { DeliveryProfile, DeliveryRate, DeliveryZone, ShippingSnapshot } from "./deliveryModel";
+import { formatMinor, type DeliveryProfile, type DeliveryRate, type DeliveryZone, type ShippingSnapshot } from "./deliveryModel";
 
 /**
  * Which of a zone's rates is "the free service". Shopify has no such thing as a free-shipping setting: free delivery is a rate that costs
@@ -102,4 +102,19 @@ export function freeDeliveryTable(snapshot: ShippingSnapshot): FreeDeliveryTable
     for (const country of zone.countries) table.countries[country] = found;
   }
   return table;
+}
+
+/** A rate in a line: "Standard: £4.99 (up to £49.99)", "Free delivery: free (from £50)", "Courier: worked out by a carrier". */
+export function describeRate(rate: DeliveryRate, money: (minor: number, currency: string) => string = formatMinor): string {
+  const currency = rate.price?.currency ?? "GBP";
+  const price = rate.kind === "carrier" || !rate.price ? "worked out by a carrier" : rate.price.amount === 0 ? "free" : money(rate.price.amount, currency);
+  let when = "";
+  if (rate.kind === "fixed" && rate.conditions.length) {
+    const range = priceRange(rate);
+    if (!range) when = "depends on weight or other conditions";
+    else if (range.min > 0 && range.max !== Infinity) when = `${money(range.min, currency)} to ${money(range.max, currency)}`;
+    else if (range.min > 0) when = `from ${money(range.min, currency)}`;
+    else if (range.max !== Infinity) when = `up to ${money(range.max, currency)}`;
+  }
+  return `${rate.name}: ${price}${when ? ` (${when})` : ""}${rate.active ? "" : " (switched off)"}`;
 }

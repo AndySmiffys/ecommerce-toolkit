@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { DeliveryProfile, DeliveryRate, DeliveryZone, Market, RateCondition, ShippingSnapshot } from "../app/modules/shipping/delivery/deliveryModel";
-import { describeFree, freeDeliveryTable, freeOption, priceRange, zoneFree, zoneForCountry } from "../app/modules/shipping/delivery/freeService";
-import { priceGaps, reviewShipping, summarise, usualThreshold, type Finding } from "../app/modules/shipping/delivery/shippingReview";
+import { describeFree, describeRate, freeDeliveryTable, freeOption, priceRange, zoneFree, zoneForCountry } from "../app/modules/shipping/delivery/freeService";
+import { marketCoverage, priceGaps, reviewShipping, summarise, usualThreshold, type Finding } from "../app/modules/shipping/delivery/shippingReview";
 import { formatMinor } from "../app/modules/shipping/delivery/deliveryModel";
 import { loadShippingSnapshot, parseMarket, parseRate, parseZone, ShippingAccessError, type RawMarket, type RawRate, type RawZone } from "../app/modules/shipping/delivery/shippingReader.server";
 
@@ -225,6 +225,23 @@ test("the free-delivery table the product page reads comes from the general prof
   assert.deepEqual(mixed.restOfWorld, { thresholdMinor: 10000, rate: "Free delivery" });
   assert.deepEqual(freeDeliveryTable(snapshot([])).countries, {});
   assert.equal(freeDeliveryTable(snapshot([profile([zone("UK", ["GB"], [rate("H", 0, [heavy])])])])).countries.GB, null, "weight-based free delivery gives no figure");
+});
+
+test("rates are described in a line each", () => {
+  assert.equal(describeRate(standard(4999)), "Standard: £4.99 (up to £49.99)");
+  assert.equal(describeRate(free(5000)), "Free delivery: free (from £50)");
+  assert.equal(describeRate(rate("Express", 1299)), "Express: £12.99");
+  assert.equal(describeRate(rate("Band", 100, [atLeast(1000), atMost(5000)])), "Band: £1 (£10 to £50)");
+  assert.equal(describeRate(rate("Courier", null)), "Courier: worked out by a carrier");
+  assert.equal(describeRate(rate("Heavy", 2500, [heavy])), "Heavy: £25 (depends on weight or other conditions)");
+  assert.equal(describeRate(free(5000, false)), "Free delivery: free (from £50) (switched off)");
+});
+
+test("each Market shows what it sells to that has no shipping", () => {
+  const p = profile([zone("UK", ["GB"], [standard(), free()]), zone("Ireland", ["IE"], [rate("Old", 999, [], false)])]);
+  const coverage = marketCoverage(snapshot([p], [market("UK", ["GB"]), market("Europe", ["IE", "FR"]), market("Draft", ["US"], { active: false })]));
+  assert.deepEqual(coverage?.map(item => [item.market.name, item.missing]), [["UK", []], ["Europe", ["IE", "FR"]], ["Draft", []]]);
+  assert.equal(marketCoverage(snapshot([p], null)), null, "without access there is nothing to show");
 });
 
 // ---- reading Shopify
