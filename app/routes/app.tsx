@@ -70,6 +70,10 @@ export default function App() {
           Storefront priority
         </Link>
 
+        <Link to={appUrl("/app/shipping-countdown")}>
+          Shipping countdown
+        </Link>
+
         <Link to={appUrl("/app/reports")}>
           Reports
         </Link>

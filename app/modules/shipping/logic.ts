@@ -1,0 +1,24 @@
+import script from "../../../extensions/promotion-engine/assets/shipping-countdown.js?raw";
+import type { ShippingCountdownConfig } from "./config";
+
+export type DispatchView =
+  | { kind: "countdown"; countdown: string; date: string }
+  | { kind: "delay"; date: string }
+  | { kind: "preorder" | "none" | "error" | "hidden" };
+
+type Logic = {
+  londonParts(ms: number): { date: string; hour: number; minute: number };
+  londonTimeToUtc(date: string, hour: number, minute: number): number;
+  dispatchView(nowMs: number, config: ShippingCountdownConfig, variant: null): DispatchView;
+  warningVisible(nowMs: number, warning: ShippingCountdownConfig["warning"]): boolean;
+  parseHighlight(text: string): Array<{ text: string; highlight: boolean }>;
+  fillThreshold(text: string, thresholdMinor: number, currency: string): string;
+};
+
+/**
+ * The storefront's own date and message logic, run here so the preview in the app can never disagree with the shop. The file is a plain
+ * browser script that also exports its functions when it finds a CommonJS `module`.
+ */
+const holder: { exports: Partial<Logic> } = { exports: {} };
+new Function("module", "exports", script)(holder, holder.exports);
+export const shippingLogic = holder.exports as Logic;

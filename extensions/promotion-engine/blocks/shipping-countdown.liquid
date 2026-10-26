@@ -1,0 +1,259 @@
+{%- liquid
+  assign config = app.metafields.shipping_countdown.config.value
+  assign block_id = block.id | replace: '_', '' | downcase
+  assign variant = product.selected_or_first_available_variant
+  assign currency = cart.currency.iso_code
+  assign free = config.freeShipping
+  assign threshold = free.thresholds[currency]
+  assign show_free = false
+  assign free_text = ''
+  if free.enabled and threshold > 0
+    assign show_free = true
+    assign with_item = cart.total_price | plus: variant.price
+    if cart.total_price >= threshold
+      assign free_text = free.textOver
+    elsif variant.price > 0 and with_item >= threshold
+      assign free_text = free.textAdd
+    else
+      assign free_text = free.textUnder
+    endif
+    assign threshold_text = threshold | money_without_trailing_zeros
+    assign free_text = free_text | replace: '{threshold}', threshold_text
+  endif
+  assign shop_today = 'now' | date: '%Y-%m-%d'
+  assign warning = config.warning
+  assign show_warning = false
+  if warning.enabled and warning.message != blank and shop_today >= warning.startDate and shop_today <= warning.endDate
+    assign show_warning = true
+  endif
+  assign day_names = 'Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday' | split: ','
+  assign day_order = '1,2,3,4,5,6,0' | split: ','
+  assign day_list = ''
+  for day_index in day_order
+    assign day_number = day_index | plus: 0
+    if config.shippingDays[day_number]
+      assign day_list = day_list | append: day_names[forloop.index0] | append: '|'
+    endif
+  endfor
+  assign day_list = day_list | split: '|' | join: ', '
+-%}
+
+{%- if config == blank -%}
+  {%- if request.design_mode -%}
+    <p class="sc-setup-note">Shipping countdown: open the eCommerce Toolkit app, choose Shipping countdown and save its settings to show this block.</p>
+  {%- endif -%}
+{%- else -%}
+  <shipping-countdown
+    class="sc"
+    id="shipping-countdown-{{ block_id }}"
+    data-align="{{ block.settings.text_alignment }}"
+    data-cart-total="{{ cart.total_price }}"
+    data-currency="{{ currency }}"
+    data-variant-id="{{ variant.id }}"
+    style="--sc-margin:{{ block.settings.margin_vertical }}px;--sc-pad-v:{{ block.settings.padding_vertical }}px;--sc-pad-h:{{ block.settings.padding_horizontal }}px;--sc-radius:{{ block.settings.border_radius }}px;--sc-bg:{{ block.settings.background_color }};--sc-text:{{ block.settings.text_color }};--sc-highlight:{{ block.settings.highlight_color }};--sc-dispatch:{{ block.settings.dispatch_color }};--sc-secondary:{{ block.settings.secondary_text_color }};--sc-icon:{{ block.settings.icon_color }};--sc-expired:{{ block.settings.expired_text_color }};--sc-size:{{ block.settings.font_size }}px;--sc-secondary-size:{{ block.settings.secondary_font_size }}px;--sc-weight:{{ block.settings.font_weight }};--sc-icon-size:{{ block.settings.icon_size }}px"
+    {{ block.shopify_attributes }}
+  >
+    {%- if warning.enabled and warning.message != blank -%}
+      <div
+        class="sc__warning"
+        data-role="warning"
+        style="--sc-warn-text:{{ warning.textColor }};--sc-warn-bg:{{ warning.backgroundColor }};--sc-warn-border:{{ warning.borderColor }}"
+        {% unless show_warning %}hidden{% endunless %}
+      >⚠️ {{ warning.message | escape }}</div>
+    {%- endif -%}
+
+    <div class="sc__content">
+      {%- if block.settings.show_icon -%}
+        <svg class="sc__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12,6 12,12 16,14"/>
+        </svg>
+      {%- endif -%}
+
+      {%- if free.enabled -%}
+        <p class="sc__free" data-role="free" aria-live="polite" {% unless show_free %}hidden{% endunless %}>{{ free_text | escape }}</p>
+      {%- endif -%}
+
+      {%- comment -%} The dispatch line is filled in by the script from London's clock; the space is held so nothing jumps. {%- endcomment -%}
+      <p class="sc__main" data-role="dispatch">&nbsp;</p>
+
+      {%- if config.showShippingDays and day_list != blank -%}
+        <p class="sc__days">{{ config.shippingDaysPrefix | escape }} {{ day_list }}</p>
+      {%- endif -%}
+    </div>
+
+    <script type="application/json" data-config>{{ config | json }}</script>
+    <script type="application/json" data-variants>
+      [{%- for v in product.variants limit: 250 -%}{"id":{{ v.id }},"price":{{ v.price }},"available":{{ v.available | json }},"policy":{{ v.inventory_policy | json }},"managed":{% if v.inventory_management %}true{% else %}false{% endif %},"qty":{{ v.inventory_quantity | json }}}{% unless forloop.last %},{% endunless %}{%- endfor -%}]
+    </script>
+  </shipping-countdown>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Shipping countdown",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "javascript": "shipping-countdown.js",
+  "stylesheet": "shipping-countdown.css",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "What this block says (cut-off time, shipping days, bank holidays, free shipping and the warning notice) is managed in the eCommerce Toolkit app under Shipping countdown. Only its look is set here."
+    },
+    {
+      "type": "header",
+      "content": "Style"
+    },
+    {
+      "type": "select",
+      "id": "text_alignment",
+      "label": "Text alignment",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "center", "label": "Center" },
+        { "value": "right", "label": "Right" }
+      ],
+      "default": "center"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_icon",
+      "label": "Show countdown icon",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "icon_size",
+      "min": 16,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "label": "Icon size",
+      "default": 24
+    },
+    {
+      "type": "range",
+      "id": "font_size",
+      "min": 12,
+      "max": 24,
+      "step": 1,
+      "unit": "px",
+      "label": "Main text size",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "secondary_font_size",
+      "min": 10,
+      "max": 18,
+      "step": 1,
+      "unit": "px",
+      "label": "Shipping days text size",
+      "default": 14
+    },
+    {
+      "type": "select",
+      "id": "font_weight",
+      "label": "Font weight",
+      "options": [
+        { "value": "400", "label": "Normal" },
+        { "value": "500", "label": "Medium" },
+        { "value": "600", "label": "Semibold" },
+        { "value": "700", "label": "Bold" }
+      ],
+      "default": "500"
+    },
+    {
+      "type": "header",
+      "content": "Colors"
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background",
+      "default": "#f8f9fa"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text",
+      "default": "#333333"
+    },
+    {
+      "type": "color",
+      "id": "highlight_color",
+      "label": "Countdown highlight",
+      "default": "#d63384"
+    },
+    {
+      "type": "color",
+      "id": "dispatch_color",
+      "label": "Dispatch day",
+      "default": "#28a745"
+    },
+    {
+      "type": "color",
+      "id": "secondary_text_color",
+      "label": "Shipping days text",
+      "default": "#666666"
+    },
+    {
+      "type": "color",
+      "id": "icon_color",
+      "label": "Icon",
+      "default": "#007bff"
+    },
+    {
+      "type": "color",
+      "id": "expired_text_color",
+      "label": "Expired text",
+      "default": "#999999"
+    },
+    {
+      "type": "header",
+      "content": "Spacing"
+    },
+    {
+      "type": "range",
+      "id": "padding_vertical",
+      "min": 8,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "label": "Vertical padding",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "padding_horizontal",
+      "min": 12,
+      "max": 60,
+      "step": 2,
+      "unit": "px",
+      "label": "Horizontal padding",
+      "default": 24
+    },
+    {
+      "type": "range",
+      "id": "margin_vertical",
+      "min": 0,
+      "max": 40,
+      "step": 2,
+      "unit": "px",
+      "label": "Vertical margin",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "min": 0,
+      "max": 20,
+      "step": 1,
+      "unit": "px",
+      "label": "Border radius",
+      "default": 8
+    }
+  ]
+}
+{% endschema %}
