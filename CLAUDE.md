@@ -11,7 +11,7 @@ A Shopify embedded app (React Router 7 + Prisma/SQLite, forked from the Shopify 
 - `npm run dev` — `shopify app dev` (tunnel required; storefront testing does not work with `--use-localhost` because the app proxy is called server-side by Shopify). `shopify.web.toml` predev runs `sync:promotion-ui` + `prisma generate`, and dev runs `prisma migrate deploy`.
 - `npm run build` / `npm run typecheck` (`react-router typegen && tsc --noEmit`) / `npm run lint`
 - `npm test` — runs `scripts/test-promotions.mjs`: esbuild bundles the `.ts/.tsx` tests (with a `?raw` import loader) to a temp dir, then runs everything under `node --test`. The list of test files is **hardcoded in that script** — add new test files there or they won't run. To run one test file, bundle it the same way or run a `.cjs` test directly, e.g. `node --test tests/priority-manager.test.cjs`.
-- `npm run deploy` — `shopify app deploy`. `shopify.app.toml` is the one app config (client ID `c8717906a421013fbf5c47e976637862`); it is the default, so no `--config` flag is needed. Its webhook `api_version` must match `ApiVersion` in `app/shopify.server.ts` (July 2026; the installed `@shopify/shopify-api` supports no newer).
+- `npm run deploy` — `shopify app deploy`. **Two app configs, and the default is LIVE.** `shopify.app.toml` is the live app "eCommerce Toolkit" (client ID `c8717906a421013fbf5c47e976637862`, `shopifyapps.smiffys.com`, on the Smiffys store); `shopify.app.test.toml` is "eCommerce Toolkit (Test)" (client ID `8b1d99591a232b76605beaa021ab0da6`, `shopifyapps-test.smiffys.com`, on the dev store). **Never run `shopify app dev` or `shopify app deploy` without `--config test`**, and deploy live only when Andy asks (a wrong config once pointed the live app at example.com). Test and live are hosted on AWS and released from the `chore/aws` worktree (see memory). Its webhook `api_version` must match `ApiVersion` in `app/shopify.server.ts` (July 2026; the installed `@shopify/shopify-api` supports no newer).
 - `npm run setup` — `prisma generate && prisma migrate deploy`.
 
 ## Architecture
@@ -54,7 +54,7 @@ Point-in-time summary as of commit `7c879d3` on `feature/free-shipping-support`;
 ### Environment and deployment
 - Andy's setup: Windows, Shopify CLI 4.9.2, Node v24.18.0. Update flow: `git pull --ff-only origin feature/free-shipping-support`, `npm ci`, `npm run setup`, `shopify app dev` (needs Node 22.12+; stop any running dev server before `npm ci` or Windows locks `esbuild.exe`). After committed updates, give Andy the local pull/restart command.
 - Production: `npm run setup`, `npm run build`, `npm start`. Theme extension/app config deploys separately via `shopify app deploy`; git updates never activate theme blocks or deploy production.
-- There is one app config, `shopify.app.toml` (client ID `c8717906a421013fbf5c47e976637862`). Earlier there were two files with different app IDs; the other was a template leftover and was removed. The CLI may rewrite `shopify.app.toml` when deploying; check `git diff` afterwards.
+- Two app configs: `shopify.app.toml` (live) and `shopify.app.test.toml` (test); see Commands. The CLI strips `include_config_on_deploy` when deploying; restore with `git checkout <file>` afterwards.
 - `docs/promotion-designs.md` has an obsolete `--use-localhost` instruction in its free-shipping section; follow `docs/storefront-setup.md` (public tunnel).
 
 ### Key behaviours and decisions
