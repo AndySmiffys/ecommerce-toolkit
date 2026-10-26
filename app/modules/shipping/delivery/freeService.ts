@@ -77,12 +77,16 @@ export function zoneForCountry(profile: DeliveryProfile, country: string): Deliv
   return profile.zones.find(zone => zone.countries.includes(country)) ?? profile.zones.find(zone => zone.restOfWorld) ?? null;
 }
 
+/** What one destination gets. `free: false` is written out because the theme's Liquid cannot tell a missing key from a null. */
+export type FreeDeliveryEntry = { free: false } | { free: true; /** 0 means always free. */ thresholdMinor: number; rate: string };
+
 export type FreeDeliveryTable = {
+  version: 1;
   currency: string;
-  /** Free-delivery threshold by country named in a zone, 0 meaning always free, or null when that zone has no free option (it does not fall back to rest of world). */
-  countries: Record<string, { thresholdMinor: number; rate: string } | null>;
-  /** The same for destinations not named in any zone, or null when there is no free option for them. */
-  restOfWorld: { thresholdMinor: number; rate: string } | null;
+  /** By country named in a zone. A zone with no free option says so, and does not borrow the rest-of-world zone's. */
+  countries: Record<string, FreeDeliveryEntry>;
+  /** For destinations not named in any zone, or null when there is no zone for them. */
+  restOfWorld: FreeDeliveryEntry | null;
 };
 
 /**
@@ -90,18 +94,24 @@ export type FreeDeliveryTable = {
  * the review flags a custom profile whose threshold is different.
  */
 export function freeDeliveryTable(snapshot: ShippingSnapshot): FreeDeliveryTable {
-  const table: FreeDeliveryTable = { currency: snapshot.shopCurrency, countries: {}, restOfWorld: null };
+  const table: FreeDeliveryTable = { version: 1, currency: snapshot.shopCurrency, countries: {}, restOfWorld: null };
   const profile = defaultProfile(snapshot);
   if (!profile) return table;
-  const entry = (free: ZoneFree) => free.effective && free.effective.kind !== "other"
-    ? { thresholdMinor: free.effective.kind === "always" ? 0 : free.effective.thresholdMinor, rate: free.effective.rate.name }
-    : null;
+  const entry = (zone: DeliveryZone): FreeDeliveryEntry => {
+    const effective = zoneFree(zone).effective;
+    return effective && effective.kind !== "other" ? { free: true, thresholdMinor: effective.kind === "always" ? 0 : effective.thresholdMinor, rate: effective.rate.name } : { free: false };
+  };
   for (const zone of profile.zones) {
-    const found = entry(zoneFree(zone));
+    const found = entry(zone);
     if (zone.restOfWorld) table.restOfWorld = found;
     for (const country of zone.countries) table.countries[country] = found;
   }
   return table;
+}
+
+/** What a shopper in a country gets from a published table. */
+export function freeDeliveryFor(table: FreeDeliveryTable, country: string): FreeDeliveryEntry | null {
+  return table.countries[country] ?? table.restOfWorld;
 }
 
 /** A rate in a line: "Standard: £4.99 (up to £49.99)", "Free delivery: free (from £50)", "Courier: worked out by a carrier". */

@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useRevalidator } from "react-router";
 import { authenticate } from "../shopify.server";
 import { loadShippingSnapshot, ShippingAccessError } from "../modules/shipping/delivery/shippingReader.server";
+import { publishFreeDelivery } from "../modules/shipping/delivery/freeDeliverySync.server";
 import { reviewShipping } from "../modules/shipping/delivery/shippingReview";
 import { ShippingReviewPage } from "../modules/shipping/ShippingReviewPage";
 
@@ -9,6 +10,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { admin } = await authenticate.admin(request);
   try {
     const snapshot = await loadShippingSnapshot(admin);
+    // What was just read is what the product page should say, so publish it now (nothing is written when it has not changed).
+    try { await publishFreeDelivery(admin, snapshot); } catch (error) { console.error("Free delivery could not be published:", error instanceof Error ? error.message : error); }
     return { ok: true as const, snapshot, findings: reviewShipping(snapshot), checkedAt: new Date().toISOString() };
   } catch (error) {
     const access = error instanceof ShippingAccessError;

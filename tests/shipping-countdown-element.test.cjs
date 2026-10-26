@@ -17,20 +17,28 @@ liquid.registerFilter("date", () => "2026-10-20"); // the shop's own date, as 'n
 const config = {
   version: 1, cutoffTime: "15:00", shippingDays: [false, true, true, true, true, true, false], bankHolidays: [], delayDays: 0, delayMessage: "Delayed [highlight]from[/highlight]",
   hideIfUnavailable: false, showShippingDays: true, shippingDaysPrefix: "We ship on:", noShippingText: "No dispatch", errorText: "Error", countdownPrefix: "Order in the next", countdownSuffix: "for dispatch on",
-  freeShipping: { enabled: true, thresholds: { GBP: 5000, EUR: 6000 }, textUnder: "Free over {threshold}, only {threshold}", textAdd: "Add this item for free delivery", textOver: "Free delivery unlocked" },
+  freeShipping: { enabled: true, textUnder: "Free to {country} over {threshold}, only {threshold}", textAdd: "Add this item for free delivery", textOver: "Free delivery unlocked" },
   availability: { preorderMode: "message", preorderMessage: "Pre-order: date at checkout" },
   warning: { enabled: true, startDate: "2026-12-01", endDate: "2026-12-24", message: "<b>Last</b> orders", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
   style: { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" },
 };
+// What the app publishes from Shopify's shipping settings: a country named in a zone, or everyone else.
+const delivery = {
+  version: 1, currency: "GBP",
+  countries: { GB: { free: true, thresholdMinor: 5000, rate: "Free delivery" }, IE: { free: true, thresholdMinor: 7500, rate: "Free delivery" }, FR: { free: false }, DE: { free: true, thresholdMinor: 0, rate: "Free" } },
+  restOfWorld: { free: true, thresholdMinor: 10000, rate: "Free delivery" },
+};
+const uk = { iso_code: "GB", name: "United Kingdom" };
 const variants = [
   { id: 1, price: 1000, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 2, price: 4600, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 3, price: 1000, available: false, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 0 },
 ];
 
-async function render({ cartTotal = 0, currency = "GBP", cfg = config, design = false } = {}) {
+async function render({ cartTotal = 0, currency = "GBP", cfg = config, design = false, country = uk, table = delivery } = {}) {
   return liquid.parseAndRender(blockTemplate, {
-    app: { metafields: { shipping_countdown: { config: { value: cfg } } } },
+    app: { metafields: { shipping_countdown: { config: { value: cfg }, delivery: { value: table } } } },
+    localization: { country },
     block: { id: "template_abc_123", settings: {}, shopify_attributes: "" },
     cart: { total_price: cartTotal, currency: { iso_code: currency } },
     request: { design_mode: design },
@@ -85,20 +93,37 @@ test("settings saved before the appearance existed still render, with the styles
   assert.match(html, /<svg class="sc__icon"/, "the icon is on by default");
 });
 
-test("the server writes the free-shipping message with every {threshold} replaced, text escaped, and the days listed", async () => {
+test("the server writes the free-shipping message for the shopper's country, with every placeholder replaced, text escaped, and the days listed", async () => {
   const html = await render();
-  assert.match(html, /Free over £50, only £50/);
-  assert.doesNotMatch(visible(html), /\{threshold\}/);
+  assert.match(html, /Free to United Kingdom over £50, only £50/);
+  assert.doesNotMatch(visible(html), /\{threshold\}|\{country\}/);
   assert.match(html, /We ship on: Monday, Tuesday, Wednesday, Thursday, Friday</);
   assert.match(html, /data-currency="GBP"/);
-  assert.match(html, /aria-live="polite"[^>]*>Free over/, "only the free-shipping line is announced");
+  assert.match(html, /data-free-threshold="5000"/);
+  assert.match(html, /data-free-currency="GBP"/);
+  assert.match(html, /data-country="United Kingdom"/);
+  assert.match(html, /aria-live="polite"[^>]*>Free to/, "only the free-shipping line is announced");
   assert.equal((html.match(/aria-live/g) || []).length, 1);
-  assert.equal(await render({ cfg: { ...config, freeShipping: { ...config.freeShipping, thresholds: { GBP: 4950 } } } }).then(h => /over £49\.50, only £49\.50/.test(h)), true, "pence are kept");
+  const pence = { ...delivery, countries: { ...delivery.countries, GB: { free: true, thresholdMinor: 4950, rate: "Free" } } };
+  assert.match(await render({ table: pence }), /over £49\.50, only £49\.50/, "pence are kept");
   assert.match(await render({ cartTotal: 4500 }), /Add this item for free delivery/);
   assert.match(await render({ cartTotal: 6000 }), /Free delivery unlocked/);
-  assert.match(await render({ currency: "EUR" }), /Free over €?60|Free over £60/, "the EUR threshold is used for a EUR cart");
-  const none = await render({ currency: "USD" });
-  assert.match(none, /data-role="free"[^>]*hidden/, "a currency with no threshold gets no message");
+  assert.match(await render({ country: { iso_code: "<b>", name: "<b>Land</b>" } }), /Free to &lt;b&gt;Land&lt;\/b&gt; over £100/, "a country name cannot inject markup");
+});
+
+test("each shopper sees the threshold for their own country: a different one, none, always free, or the rest of the world's", async () => {
+  assert.match(await render({ country: { iso_code: "IE", name: "Ireland" } }), /Free to Ireland over £75, only £75/);
+  const france = await render({ country: { iso_code: "FR", name: "France" } });
+  assert.match(france, /data-role="free"[^>]*hidden/, "a zone with no free rate shows nothing, and does not borrow the rest of the world's");
+  const germany = await render({ country: { iso_code: "DE", name: "Germany" } });
+  assert.match(germany, /Free delivery unlocked/, "where delivery is always free there is nothing to spend");
+  assert.doesNotMatch(germany, /data-role="free"[^>]*hidden/);
+  assert.match(await render({ country: { iso_code: "US", name: "United States" } }), /Free to United States over £100, only £100/, "a country in no zone uses the rest of the world");
+  assert.match(await render({ currency: "EUR" }), /data-role="free"[^>]*hidden/, "a cart in another currency gets no message, nothing is converted");
+  assert.match(await render({ table: null }), /data-role="free"[^>]*hidden/, "before shipping has been read there is nothing to say");
+  assert.match(await render({ table: { ...delivery, restOfWorld: null }, country: { iso_code: "US", name: "United States" } }), /data-role="free"[^>]*hidden/, "no zone for them at all");
+  const off = await render({ cfg: { ...config, freeShipping: { ...config.freeShipping, enabled: false } } });
+  assert.doesNotMatch(off, /data-role="free"/);
 });
 
 test("the warning notice is decided on the server by the shop's date, and its text cannot inject markup", async () => {
@@ -153,9 +178,9 @@ test("the free-shipping line follows the chosen variant and quantity, and uses a
   assert.equal(p.free().textContent, "Add this item for free delivery", "a £10 item takes £45 to £55");
   qty.value = "1"; id.value = "1";
   p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 3000, currency: "GBP" } } }));
-  assert.equal(p.free().textContent, "Free over £50, only £50");
+  assert.equal(p.free().textContent, "Free to United Kingdom over £50, only £50");
   qty.value = "1"; qty.dispatchEvent(new p.window.Event("input", { bubbles: true }));
-  assert.equal(p.free().textContent, "Free over £50, only £50", "£30 + £10 is not enough");
+  assert.equal(p.free().textContent, "Free to United Kingdom over £50, only £50", "£30 + £10 is not enough");
   qty.value = "2"; qty.dispatchEvent(new p.window.Event("input", { bubbles: true }));
   assert.equal(p.free().textContent, "Add this item for free delivery", "£30 + 2 x £10 is exactly £50, which reaches it");
   id.value = "2"; qty.value = "1"; id.dispatchEvent(new p.window.Event("change", { bubbles: true }));
@@ -164,6 +189,21 @@ test("the free-shipping line follows the chosen variant and quantity, and uses a
   assert.equal(p.free().textContent, "Free delivery unlocked");
   assert.deepEqual(p.state.requests, [], "nothing was fetched");
   p.close();
+});
+
+test("a country with no free delivery stays silent in the browser too, and an always-free one needs no spending", async () => {
+  const france = await page({ country: { iso_code: "FR", name: "France" } });
+  france.document.dispatchEvent(new france.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 4500, currency: "GBP" } } }));
+  assert.equal(france.free().hidden, true);
+  france.close();
+  const germany = await page({ country: { iso_code: "DE", name: "Germany" } });
+  germany.document.dispatchEvent(new germany.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 0, currency: "GBP" } } }));
+  assert.equal(germany.free().textContent, "Free delivery unlocked");
+  germany.close();
+  const euro = await page();
+  euro.document.dispatchEvent(new euro.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 4500, currency: "EUR" } } }));
+  assert.equal(euro.free().hidden, true, "a cart in a currency the threshold is not in");
+  euro.close();
 });
 
 test("cart events without a cart cause one debounced fetch, and the answer updates the line", async () => {

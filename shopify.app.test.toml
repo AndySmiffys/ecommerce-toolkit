@@ -35,6 +35,10 @@ api_version = "2026-07"
   uri = "/webhooks/products/update"
   topics = [ "products/update" ]
 
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/profiles/changed"
+  topics = [ "profiles/create", "profiles/update", "profiles/delete" ]
+
 [build]
 
 [app_proxy]

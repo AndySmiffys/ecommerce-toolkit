@@ -12,7 +12,8 @@ type Logic = {
   dispatchView(nowMs: number, config: ShippingCountdownConfig, variant: null): DispatchView;
   warningVisible(nowMs: number, warning: ShippingCountdownConfig["warning"]): boolean;
   parseHighlight(text: string): Array<{ text: string; highlight: boolean }>;
-  fillThreshold(text: string, thresholdMinor: number, currency: string): string;
+  fillThreshold(text: string, thresholdMinor: number, currency: string, country?: string): string;
+  freeShippingMessage(free: ShippingCountdownConfig["freeShipping"], input: { threshold: number | null; thresholdCurrency: string; country: string; cartCurrency: string; cartTotal: number; itemPrice: number; quantity: number }): { state: "hidden" | "under" | "add" | "over"; text: string };
 };
 
 /**

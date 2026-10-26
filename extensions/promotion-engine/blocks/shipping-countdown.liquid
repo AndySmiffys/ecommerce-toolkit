@@ -4,11 +4,19 @@
   assign variant = product.selected_or_first_available_variant
   assign currency = cart.currency.iso_code
   assign free = config.freeShipping
-  assign threshold = free.thresholds[currency]
+  assign delivery = app.metafields.shipping_countdown.delivery.value
+  assign country_code = localization.country.iso_code
+  assign country_name = localization.country.name
+  assign entry = delivery.countries[country_code]
+  if entry == nil
+    assign entry = delivery.restOfWorld
+  endif
+  assign threshold = nil
   assign show_free = false
   assign free_text = ''
-  if free.enabled and threshold > 0
+  if free.enabled and entry.free and currency == delivery.currency
     assign show_free = true
+    assign threshold = entry.thresholdMinor
     assign with_item = cart.total_price | plus: variant.price
     if cart.total_price >= threshold
       assign free_text = free.textOver
@@ -18,7 +26,7 @@
       assign free_text = free.textUnder
     endif
     assign threshold_text = threshold | money_without_trailing_zeros
-    assign free_text = free_text | replace: '{threshold}', threshold_text
+    assign free_text = free_text | replace: '{threshold}', threshold_text | replace: '{country}', country_name
   endif
   assign shop_today = 'now' | date: '%Y-%m-%d'
   assign warning = config.warning
@@ -55,6 +63,9 @@
     {%- endif %}
     data-cart-total="{{ cart.total_price }}"
     data-currency="{{ currency }}"
+    data-free-threshold="{{ threshold }}"
+    data-free-currency="{{ delivery.currency }}"
+    data-country="{{ country_name | escape }}"
     data-variant-id="{{ variant.id }}"
     {{ block.shopify_attributes }}
   >

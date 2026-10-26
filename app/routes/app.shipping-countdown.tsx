@@ -3,13 +3,16 @@ import { useFetcher, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { loadShippingConfig, saveShippingConfig } from "../modules/shipping/config.server";
 import { fetchUpcomingBankHolidays } from "../modules/shipping/bankHolidays.server";
+import { loadPublishedFreeDelivery } from "../modules/shipping/delivery/freeDeliverySync.server";
 import { ShippingCountdownPage, type ShippingResult } from "../modules/shipping/ShippingCountdownPage";
 
 const londonToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { admin } = await authenticate.admin(request);
-  return { ...(await loadShippingConfig(admin)), today: londonToday() };
+  // The free-delivery table is only shown, so a failure to read it must not stop the settings opening.
+  const delivery = await loadPublishedFreeDelivery(admin).catch(() => null);
+  return { ...(await loadShippingConfig(admin)), today: londonToday(), delivery };
 }
 
 export async function action({ request }: ActionFunctionArgs): Promise<ShippingResult> {
@@ -33,5 +36,5 @@ export async function action({ request }: ActionFunctionArgs): Promise<ShippingR
 export default function ShippingCountdown() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher<ShippingResult>();
-  return <ShippingCountdownPage initial={data.config} saved={data.saved} today={data.today} fetcher={fetcher} />;
+  return <ShippingCountdownPage initial={data.config} saved={data.saved} today={data.today} delivery={data.delivery} fetcher={fetcher} />;
 }

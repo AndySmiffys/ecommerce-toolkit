@@ -9,11 +9,20 @@ A product-page block that shows a free-shipping message, a dispatch countdown ("
 - **The script** (`assets/shipping-countdown.js`) holds pure date and message functions, and a single `<shipping-countdown>` element (defined once, however many blocks are on the page). The app's preview loads the same file, so the preview cannot disagree with the shop.
 - **Time**: "now" and every calendar day are London's, taken from `Intl.DateTimeFormat` with `timeZone: "Europe/London"`. The shopper's time zone is never used. Days are `YYYY-MM-DD` strings; day arithmetic is done in UTC on those strings.
 
+## Shipping review
+
+The **Shipping** page reads Shopify's shipping setup (delivery profiles, zones, rates and their conditions, and your Markets) and shows where free delivery is offered and from what order total. Free delivery in Shopify is a rate that costs nothing: either with a minimum order total (the threshold), or with no condition (always free). The page lists problems and suggestions with a link into Shopify's own settings to fix each. It only reads; changes are made in Shopify.
+
+- **Checks:** no rates at all; a zone with none switched on; order totals no rate covers (for example a paid rate stopping at £49.50 and a free rate starting at £50); a free rate switched off; no free service anywhere; always-free zones next to zones that need a minimum; countries in an active Market with no shipping; zones to countries nobody sells to; custom profiles whose threshold differs from the general profile's.
+- **Where the product page gets its figure:** the app publishes a small table, by country, from the **general (default) profile** to the app metafield `shipping_countdown.delivery`, and the block reads it with the shopper's country. A custom profile with a different threshold is flagged, because the message follows the general profile.
+- **Staying current:** the app republishes when the Shipping page is opened (only writes if something changed), the first time the app is opened, and when Shopify sends `profiles/create`, `profiles/update` or `profiles/delete`.
+- **Permissions:** `read_shipping` (already granted) and `read_markets`. Without Markets the review still works and says what it could not check.
+
 ## Rules
 
 - Dispatch is today when today is a shipping day, not a bank holiday, and before the cut-off; otherwise the next such day (searched up to 30 days ahead). The countdown is the real time to that day's cut-off: under 24 hours "X hours Y minutes", from 24 hours "X days Y hours".
 - **Delay** (delay days above 0) replaces the countdown with dispatch from the Nth shipping day after today, whatever the time of day. Wrap words in `[highlight]` and `[/highlight]` to colour them.
-- **Free shipping** thresholds are entered per currency in that currency (pounds as `50` or `49.50`). Nothing is converted: a cart in a currency with no threshold shows no free-shipping message, so adding a market means adding a row. "This item reaches it" uses the chosen variant's price times the chosen quantity.
+- **Free shipping** is read from Shopify's shipping settings, never typed in (see Shipping review below). Each shopper gets the free-delivery rule for their own country: free from an order total, always free, or nothing. The message only shows for a cart in the shop's currency, and nothing is converted. "This item reaches it" uses the chosen variant's price times the chosen quantity. Wording can use `{threshold}` and `{country}`.
 - **Sold-out variants** (unavailable, or sold while out of stock) never get a dispatch date: they show the pre-order message, or the line is hidden, as set.
 - **The warning notice** shows between its first and last day inclusive by London's date.
 - The cart is read once, debounced (300 ms), from `/cart.js` after cart events, or taken from an event that carries the cart.
@@ -35,8 +44,9 @@ A product-page block that shows a free-shipping message, a dispatch countdown ("
 | `countdown_prefix`, `countdown_suffix`, `no_shipping_text`, `error_text`, `hide_if_unavailable` | Dispatch |
 | `bank_holidays` | Bank holidays (one `YYYY-MM-DD` per line; **Import UK bank holidays** adds gov.uk's England and Wales dates) |
 | `delay_days`, `delay_message` | Warehouse delay |
-| `show_free_shipping`, `free_shipping_threshold` | Free shipping (threshold per currency, in pounds, not pence) |
-| `free_shipping_text_under`, `_add_item`, `_over` | Free shipping (`{threshold}` is replaced everywhere it appears) |
+| `show_free_shipping` | Free shipping: show the message |
+| `free_shipping_threshold` | Gone: read from Shopify's shipping settings (see Shipping review) |
+| `free_shipping_text_under`, `_add_item`, `_over` | Free shipping (`{threshold}` and `{country}` are replaced everywhere they appear) |
 | `warning_notice_*` | Warning notice (the colours are new settings) |
 | `timezone` | Gone: always London |
 | Block style settings | Appearance in the app, with the same defaults, simplified (below) |
@@ -55,7 +65,7 @@ The old block had 17 settings; the app has fewer, better chosen ones, and the de
 
 ## Tests
 
-`tests/shipping-countdown.test.cjs` (the date and message functions with fixed instants: cut-offs, bank holidays, the Christmas run, both clock changes, other visitor time zones, delay mode, thresholds), `tests/shipping-countdown-element.test.cjs` (the real block rendered and driven in a simulated browser) and `tests/shipping-config.test.ts` (validation, the bank-holiday import) and `tests/shipping-appearance.test.ts` (the block and the app agree on the look). Run with `npm test`.
+`tests/shipping-countdown.test.cjs` (the date and message functions with fixed instants: cut-offs, bank holidays, the Christmas run, both clock changes, other visitor time zones, delay mode, thresholds), `tests/shipping-countdown-element.test.cjs` (the real block rendered and driven in a simulated browser) and `tests/shipping-config.test.ts` (validation, the bank-holiday import), `tests/shipping-review.test.ts`, `tests/shipping-page.test.tsx` and `tests/shipping-sync.test.ts` (reading Shopify's shipping, the free-service finder, the review checks, the Shipping page, and publishing the table) and `tests/shipping-appearance.test.ts` (the block and the app agree on the look). Run with `npm test`.
 
 ## Still to check on a real theme
 

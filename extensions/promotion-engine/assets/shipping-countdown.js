@@ -152,22 +152,26 @@
     }
   }
 
-  function fillThreshold(text, thresholdMinor, currency) {
-    return String(text || '').split('{threshold}').join(formatMoney(thresholdMinor, currency));
+  /** Fills {threshold} (every occurrence) and {country} in a message. */
+  function fillThreshold(text, thresholdMinor, currency, country) {
+    return String(text || '').split('{threshold}').join(formatMoney(thresholdMinor, currency)).split('{country}').join(country || '');
   }
 
   /**
-   * Which free-shipping message applies. Amounts are in minor units of the cart's own currency; a currency with no
-   * threshold set gets no message (fixed prices are entered per currency, nothing is converted).
+   * Which free-shipping message applies. The threshold is the shopper's own, worked out on the server from the shop's shipping settings for
+   * their country (in minor units, 0 meaning always free). It only applies to a cart in the same currency, so nothing is converted.
    */
   function freeShippingMessage(free, input) {
-    var threshold = free && free.enabled && free.thresholds ? free.thresholds[input.currency] : undefined;
-    if (!(threshold > 0)) return { state: 'hidden', text: '' };
+    var threshold = input.threshold;
+    if (!free || !free.enabled || typeof threshold !== 'number' || !(threshold >= 0) || !input.thresholdCurrency || input.cartCurrency !== input.thresholdCurrency) {
+      return { state: 'hidden', text: '' };
+    }
     var cart = input.cartTotal || 0;
     var item = (input.itemPrice || 0) * (input.quantity || 1);
-    if (cart >= threshold) return { state: 'over', text: fillThreshold(free.textOver, threshold, input.currency) };
-    if (item > 0 && cart + item >= threshold) return { state: 'add', text: fillThreshold(free.textAdd, threshold, input.currency) };
-    return { state: 'under', text: fillThreshold(free.textUnder, threshold, input.currency) };
+    var fill = function (text) { return fillThreshold(text, threshold, input.thresholdCurrency, input.country); };
+    if (cart >= threshold) return { state: 'over', text: fill(free.textOver) };
+    if (item > 0 && cart + item >= threshold) return { state: 'add', text: fill(free.textAdd) };
+    return { state: 'under', text: fill(free.textUnder) };
   }
 
   /** A variant that can only be bought now as a pre-order or back-order. */
@@ -245,6 +249,10 @@
       this.warning = this.querySelector('[data-role="warning"]');
       if (!this.config || !this.dispatchLine) return;
       this.cart = { total: Number(this.dataset.cartTotal) || 0, currency: this.dataset.currency || 'GBP' };
+      // Free delivery for this shopper's country, worked out by the server from the shop's shipping settings.
+      this.freeThreshold = this.dataset.freeThreshold === undefined || this.dataset.freeThreshold === '' ? null : Number(this.dataset.freeThreshold);
+      this.freeCurrency = this.dataset.freeCurrency || '';
+      this.country = this.dataset.country || '';
       this.variantId = Number(this.dataset.variantId) || null;
       this.listeners = [];
 
@@ -361,7 +369,8 @@
       if (!this.freeLine) return;
       var variant = this.selectedVariant();
       var result = freeShippingMessage(this.config.freeShipping, {
-        currency: this.cart.currency, cartTotal: this.cart.total, itemPrice: variant ? variant.price : 0, quantity: this.selectedQuantity()
+        threshold: this.freeThreshold, thresholdCurrency: this.freeCurrency, country: this.country,
+        cartCurrency: this.cart.currency, cartTotal: this.cart.total, itemPrice: variant ? variant.price : 0, quantity: this.selectedQuantity()
       });
       this.freeLine.hidden = result.state === 'hidden';
       if (this.freeLine.textContent !== result.text) this.freeLine.textContent = result.text;

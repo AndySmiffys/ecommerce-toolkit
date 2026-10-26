@@ -8,7 +8,9 @@ import { DateField } from "../promotions/components/DateTimeField";
 import { PolarisCheckbox, PolarisCheckboxList, PolarisNumberField, PolarisRadioList, PolarisSelect } from "../promotions/components/PolarisControls";
 import { contrastRatio } from "../promotions/design/design";
 import blockCss from "../../../extensions/promotion-engine/assets/shipping-countdown.css?raw";
-import { dayNames, defaultShippingConfig, fromMinorUnits, parseBankHolidays, toMinorUnits, validateShippingConfig, type ShippingCountdownConfig } from "./config";
+import { dayNames, defaultShippingConfig, parseBankHolidays, validateShippingConfig, type ShippingCountdownConfig } from "./config";
+import { formatMinor } from "./delivery/deliveryModel";
+import { freeDeliveryFor, type FreeDeliveryTable } from "./delivery/freeService";
 import { shippingLogic } from "./logic";
 import { styleAttributes } from "./appearance";
 
@@ -18,7 +20,7 @@ type Form = {
   cutoffTime: string; days: boolean[]; holidays: string; delayDays: string; delayMessage: string;
   hideIfUnavailable: boolean; showShippingDays: boolean; shippingDaysPrefix: string; noShippingText: string; errorText: string;
   countdownPrefix: string; countdownSuffix: string;
-  freeEnabled: boolean; thresholds: Array<{ code: string; amount: string }>; textUnder: string; textAdd: string; textOver: string;
+  freeEnabled: boolean; textUnder: string; textAdd: string; textOver: string;
   preorderMode: "message" | "hide"; preorderMessage: string;
   warnEnabled: boolean; warnStart: string; warnEnd: string; warnMessage: string; warnText: string; warnBackground: string; warnBorder: string;
   look: { align: string; showIcon: boolean; textSize: string; fontWeight: string; padding: string; margin: string; radius: string; border: string; borderWidth: string; background: string; text: string; accent: string; dispatch: string; muted: string; icon: string };
@@ -28,7 +30,7 @@ const toForm = (c: ShippingCountdownConfig): Form => ({
   cutoffTime: c.cutoffTime, days: c.shippingDays, holidays: c.bankHolidays.join("\n"), delayDays: String(c.delayDays), delayMessage: c.delayMessage,
   hideIfUnavailable: c.hideIfUnavailable, showShippingDays: c.showShippingDays, shippingDaysPrefix: c.shippingDaysPrefix, noShippingText: c.noShippingText,
   errorText: c.errorText, countdownPrefix: c.countdownPrefix, countdownSuffix: c.countdownSuffix,
-  freeEnabled: c.freeShipping.enabled, thresholds: Object.entries(c.freeShipping.thresholds).map(([code, amount]) => ({ code, amount: fromMinorUnits(amount) })),
+  freeEnabled: c.freeShipping.enabled,
   textUnder: c.freeShipping.textUnder, textAdd: c.freeShipping.textAdd, textOver: c.freeShipping.textOver,
   preorderMode: c.availability.preorderMode, preorderMessage: c.availability.preorderMessage,
   warnEnabled: c.warning.enabled, warnStart: c.warning.startDate, warnEnd: c.warning.endDate, warnMessage: c.warning.message,
@@ -41,22 +43,13 @@ function toInput(f: Form) {
   const problems: string[] = [];
   const holidays = parseBankHolidays(f.holidays);
   if (holidays.invalid.length) problems.push(`Bank holidays must be dates written YYYY-MM-DD. Not valid: ${holidays.invalid.slice(0, 3).join(", ")}.`);
-  const thresholds: Record<string, number> = {};
-  for (const row of f.thresholds) {
-    const code = row.code.trim().toUpperCase();
-    if (!code && !row.amount.trim()) continue;
-    const minor = toMinorUnits(row.amount);
-    if (minor === null) { problems.push(`The ${code || "new"} threshold must be an amount such as 50 or 49.50.`); continue; }
-    if (thresholds[code] !== undefined) problems.push(`${code} has more than one threshold.`);
-    thresholds[code] = minor;
-  }
   return {
     problems,
     input: {
       version: 1, cutoffTime: f.cutoffTime, shippingDays: f.days, bankHolidays: holidays.dates, delayDays: f.delayDays.trim() === "" ? 0 : Number(f.delayDays), delayMessage: f.delayMessage,
       hideIfUnavailable: f.hideIfUnavailable, showShippingDays: f.showShippingDays, shippingDaysPrefix: f.shippingDaysPrefix, noShippingText: f.noShippingText, errorText: f.errorText,
       countdownPrefix: f.countdownPrefix, countdownSuffix: f.countdownSuffix,
-      freeShipping: { enabled: f.freeEnabled, thresholds, textUnder: f.textUnder, textAdd: f.textAdd, textOver: f.textOver },
+      freeShipping: { enabled: f.freeEnabled, textUnder: f.textUnder, textAdd: f.textAdd, textOver: f.textOver },
       availability: { preorderMode: f.preorderMode, preorderMessage: f.preorderMessage },
       warning: { enabled: f.warnEnabled, startDate: f.warnStart, endDate: f.warnEnd, message: f.warnMessage, textColor: f.warnText, backgroundColor: f.warnBackground, borderColor: f.warnBorder },
       style: f.look,
@@ -88,7 +81,7 @@ function ColourField({ label, value, onChange }: { label: string; value: string;
 type Dispatch = ReturnType<typeof shippingLogic.dispatchView>;
 
 /** The block exactly as the product page builds it (same markup, same stylesheet, same variables), so the look can be judged here. */
-function ShippingPreview({ config, view, free, warningShowing }: { config: ShippingCountdownConfig; view: Dispatch; free: [string, number] | undefined; warningShowing: boolean }) {
+function ShippingPreview({ config, view, freeText, warningShowing }: { config: ShippingCountdownConfig; view: Dispatch; freeText: string; warningShowing: boolean }) {
   const { data, vars } = styleAttributes(config.style);
   const days = [1, 2, 3, 4, 5, 6, 0].filter(index => config.shippingDays[index]).map(index => dayNames[index]).join(", ");
   const warningVars = { "--sc-warn-text": config.warning.textColor, "--sc-warn-bg": config.warning.backgroundColor, "--sc-warn-border": config.warning.borderColor } as CSSProperties;
@@ -98,7 +91,7 @@ function ShippingPreview({ config, view, free, warningShowing }: { config: Shipp
       warningShowing && <div className="sc__warning" style={warningVars}>⚠️ {config.warning.message}</div>,
       <div className="sc__content">
         {config.style.showIcon && <svg className="sc__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" /></svg>}
-        {free && <p className="sc__free">{shippingLogic.fillThreshold(config.freeShipping.textUnder, free[1], free[0])}</p>}
+        {freeText && <p className="sc__free">{freeText}</p>}
         <p className="sc__main">
           {view.kind === "countdown" && <>{config.countdownPrefix} <span className="sc__countdown">{view.countdown}</span> {config.countdownSuffix} <span className="sc__dispatch">{view.date}</span></>}
           {view.kind === "delay" && <>{shippingLogic.parseHighlight(config.delayMessage).map((piece, index) => piece.highlight ? <span key={index} className="sc__countdown">{piece.text}</span> : <span key={index}>{piece.text}</span>)} <span className="sc__dispatch">{view.date}</span></>}
@@ -123,13 +116,35 @@ function contrastNotes(config: ShippingCountdownConfig) {
   return pairs.map(([label, foreground, background]) => ({ label, ratio: contrastRatio(foreground, background) })).filter(item => item.ratio < (item.label === "Icon" ? 3 : 4.5));
 }
 
+const regionNames = new Intl.DisplayNames(["en-GB"], { type: "region" });
+const countryName = (code: string) => { try { return regionNames.of(code) || code; } catch { return code; } };
+
+/** What Shopify's shipping settings say about free delivery, as last published for the product page. It is read-only here: it is changed in Shopify. */
+function DeliveryFromShopify({ delivery, appUrl }: { delivery: FreeDeliveryTable | null; appUrl: (path: string) => string }) {
+  if (!delivery) {
+    return <s-banner tone="info" heading="Free delivery has not been read from Shopify yet">Open the Shipping page and the app will read your shipping settings. Until then no free delivery message is shown on the product page.</s-banner>;
+  }
+  const line = (entry: ReturnType<typeof freeDeliveryFor>) => !entry || !entry.free ? "No free delivery" : entry.thresholdMinor === 0 ? "Always free" : `Free over ${formatMinor(entry.thresholdMinor, delivery.currency)}`;
+  const codes = Object.keys(delivery.countries).sort((a, b) => countryName(a).localeCompare(countryName(b), "en-GB"));
+  const free = codes.filter(code => delivery.countries[code].free);
+  return <s-stack direction="block" gap="small-300">
+    <s-text type="strong">From your Shopify shipping settings</s-text>
+    <s-text color="subdued">The product page tells each shopper about free delivery for their own country. Change the rates or thresholds in Shopify and this follows.</s-text>
+    {free.length === 0 && !delivery.restOfWorld?.free && <s-banner tone="warning" heading="No free delivery found">None of your shipping zones offers free delivery, so no message is shown. The Shipping page recommends how to add it.</s-banner>}
+    {free.slice(0, 12).map(code => <s-text key={code}>{countryName(code)}: {line(delivery.countries[code])}</s-text>)}
+    {free.length > 12 && <s-text color="subdued">and {free.length - 12} more countries</s-text>}
+    {delivery.restOfWorld?.free && <s-text>Everywhere else: {line(delivery.restOfWorld)}</s-text>}
+    <s-stack direction="inline" gap="base"><s-link href={appUrl("/app/shipping")}>Review your shipping</s-link><s-link href="shopify://admin/settings/shipping">Shipping settings in Shopify</s-link></s-stack>
+  </s-stack>;
+}
+
 const when = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /**
  * The shipping countdown's settings. Everything the theme block shows is decided here: the block itself only has its look. The preview
  * runs the storefront's own logic file, so what it says is what shoppers get.
  */
-export function ShippingCountdownPage({ initial, saved, today, fetcher }: { initial: ShippingCountdownConfig; saved: boolean; today: string; fetcher: FetcherWithComponents<ShippingResult> }) {
+export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher }: { initial: ShippingCountdownConfig; saved: boolean; today: string; delivery: FreeDeliveryTable | null; fetcher: FetcherWithComponents<ShippingResult> }) {
   const appUrl = useEmbeddedAppUrl();
   const shopify = useAppBridge();
   const [baseline, setBaseline] = useState(() => toForm(initial));
@@ -137,6 +152,7 @@ export function ShippingCountdownPage({ initial, saved, today, fetcher }: { init
   const [error, setError] = useState<string | null>(null);
   const [firstSave, setFirstSave] = useState(!saved);
   const sent = useRef<string | null>(null);
+  const [previewCountry, setPreviewCountry] = useState(() => (delivery?.countries.GB ? "GB" : Object.keys(delivery?.countries ?? {})[0] ?? "*"));
   const [sampleDate, setSampleDate] = useState("");
   const [sampleTime, setSampleTime] = useState("");
   const [now, setNow] = useState<number | null>(null);
@@ -181,7 +197,10 @@ export function ShippingCountdownPage({ initial, saved, today, fetcher }: { init
   const sampleMs = now === null ? null : sampleDate ? shippingLogic.londonTimeToUtc(sampleDate, sampleOk ? Number(sampleTime.slice(0, 2)) : 12, sampleOk ? Number(sampleTime.slice(3)) : 0) : now;
   const config = check.ok && problems.length === 0 ? check.config : null;
   const view = config && sampleMs !== null ? shippingLogic.dispatchView(sampleMs, config, null) : null;
-  const free = config?.freeShipping.enabled ? Object.entries(config.freeShipping.thresholds).find(([, amount]) => amount > 0) : undefined;
+  const entry = delivery ? (previewCountry === "*" ? delivery.restOfWorld : freeDeliveryFor(delivery, previewCountry)) : null;
+  const freeText = config && delivery && entry?.free
+    ? shippingLogic.freeShippingMessage(config.freeShipping, { threshold: entry.thresholdMinor, thresholdCurrency: delivery.currency, country: previewCountry === "*" ? "your country" : countryName(previewCountry), cartCurrency: delivery.currency, cartTotal: 0, itemPrice: 0, quantity: 1 }).text
+    : "";
   const warningShowing = Boolean(config && sampleMs !== null && shippingLogic.warningVisible(sampleMs, config.warning));
 
   return <s-page heading="Shipping countdown" inlineSize="large">
@@ -197,9 +216,13 @@ export function ShippingCountdownPage({ initial, saved, today, fetcher }: { init
             <DateField label="Date to preview (London). Leave empty for now" value={sampleDate} onChange={setSampleDate} />
             <TextField label="Time to preview (24-hour)" value={sampleTime} onChange={setSampleTime} details="For example 16:30. Used only with a date." />
           </s-grid>
+          {delivery && <PolarisSelect label="Country to preview" value={previewCountry} onChange={event => setPreviewCountry(event.currentTarget.value)}>
+            {Object.keys(delivery.countries).sort((a, b) => countryName(a).localeCompare(countryName(b), "en-GB")).map(code => <s-option key={code} value={code}>{countryName(code)}</s-option>)}
+            {delivery.restOfWorld && <s-option value="*">Everywhere else</s-option>}
+          </PolarisSelect>}
           {view === null || config === null
             ? <s-banner tone="warning">Fix the problem above to see a preview.</s-banner>
-            : <ShippingPreview config={config} view={view} free={free} warningShowing={warningShowing} />}
+            : <ShippingPreview config={config} view={view} freeText={freeText} warningShowing={warningShowing} />}
           <s-text color="subdued">The preview is the product page&rsquo;s own markup and stylesheet, with the same logic and London time.</s-text>
         </s-stack>
       </s-section>
@@ -240,21 +263,12 @@ export function ShippingCountdownPage({ initial, saved, today, fetcher }: { init
 
       <s-section heading="Free shipping">
         <s-stack direction="block" gap="base">
-          <PolarisCheckbox label="Show the free shipping message" checked={form.freeEnabled} onChange={event => set({ freeEnabled: event.currentTarget.checked })} />
+          <PolarisCheckbox label="Show the free delivery message" checked={form.freeEnabled} onChange={event => set({ freeEnabled: event.currentTarget.checked })} />
           {form.freeEnabled && <>
-            <s-stack direction="block" gap="small-300">
-              <s-text type="strong">Free shipping threshold, per currency</s-text>
-              <s-text color="subdued">Enter the fixed amount for each currency you sell in. Nothing is converted, and a shopper whose cart currency is not listed sees no free shipping message.</s-text>
-            </s-stack>
-            {form.thresholds.map((row, index) => <s-grid key={index} gridTemplateColumns="1fr 2fr auto" gap="base" alignItems="end">
-              <TextField label="Currency" value={row.code} maxLength={3} onChange={value => set({ thresholds: form.thresholds.map((item, at) => at === index ? { ...item, code: value.toUpperCase() } : item) })} />
-              <TextField label="Spend at least" value={row.amount} onChange={value => set({ thresholds: form.thresholds.map((item, at) => at === index ? { ...item, amount: value } : item) })} details={index === 0 ? "In that currency, such as 50 or 49.50." : undefined} />
-              <s-button type="button" variant="tertiary" tone="critical" onClick={() => set({ thresholds: form.thresholds.filter((_, at) => at !== index) })}>Remove</s-button>
-            </s-grid>)}
-            <div><s-button type="button" variant="secondary" onClick={() => set({ thresholds: [...form.thresholds, { code: "", amount: "" }] })}>Add a currency</s-button></div>
-            <TextField label="Message when under the threshold" value={form.textUnder} onChange={value => set({ textUnder: value })} details="{threshold} becomes the amount, for example “Free delivery on orders over {threshold}”." />
+            <DeliveryFromShopify delivery={delivery} appUrl={appUrl} />
+            <TextField label="Message when under the threshold" value={form.textUnder} onChange={value => set({ textUnder: value })} details="{threshold} becomes the amount and {country} the shopper's country, for example “Free delivery to {country} on orders over {threshold}”." />
             <TextField label="Message when this item would reach it" value={form.textAdd} onChange={value => set({ textAdd: value })} details="Uses the selected variant and quantity." />
-            <TextField label="Message when the cart has reached it" value={form.textOver} onChange={value => set({ textOver: value })} />
+            <TextField label="Message when the cart has reached it" value={form.textOver} onChange={value => set({ textOver: value })} details="Also shown where delivery is always free." />
           </>}
         </s-stack>
       </s-section>

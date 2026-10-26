@@ -138,21 +138,27 @@ test("the threshold is written in full, with pence only when there are some", ()
   assert.equal(logic.formatMoney(6000, "EUR"), "€60");
   assert.equal(logic.fillThreshold("Spend {threshold}, get free delivery over {threshold}", 4950, "GBP"), "Spend £49.50, get free delivery over £49.50");
   assert.equal(logic.fillThreshold("No placeholder", 5000, "GBP"), "No placeholder");
+  assert.equal(logic.fillThreshold("Free to {country} over {threshold}, yes {country}", 5000, "GBP", "Ireland"), "Free to Ireland over £50, yes Ireland", "the country goes in everywhere it is asked for");
+  assert.equal(logic.fillThreshold("Free to {country}", 5000, "GBP"), "Free to ", "no country, no text");
 });
 
-test("free shipping: under, add this item, over, and a currency with no threshold", () => {
-  const free = { enabled: true, thresholds: { GBP: 5000, EUR: 6000 }, textUnder: "Free over {threshold}", textAdd: "Add this", textOver: "You get free delivery" };
-  const message = input => logic.freeShippingMessage(free, { currency: "GBP", cartTotal: 0, itemPrice: 1000, quantity: 1, ...input });
-  assert.deepEqual(message({}), { state: "under", text: "Free over £50" });
+test("free shipping: under, add this item, over, always free, and a cart in another currency", () => {
+  const free = { enabled: true, textUnder: "Free to {country} over {threshold}", textAdd: "Add this", textOver: "You get free delivery" };
+  const message = (input, rule = free) => logic.freeShippingMessage(rule, { threshold: 5000, thresholdCurrency: "GBP", country: "United Kingdom", cartCurrency: "GBP", cartTotal: 0, itemPrice: 1000, quantity: 1, ...input });
+  assert.deepEqual(message({}), { state: "under", text: "Free to United Kingdom over £50" });
   assert.deepEqual(message({ cartTotal: 4500 }), { state: "add", text: "Add this" });
   assert.equal(message({ cartTotal: 4500, itemPrice: 400 }).state, "under");
   assert.equal(message({ cartTotal: 4500, itemPrice: 300, quantity: 2 }).state, "add", "the price is multiplied by the quantity");
   assert.equal(message({ cartTotal: 0, itemPrice: 5000 }).state, "add", "one item alone can reach the threshold");
   assert.equal(message({ cartTotal: 5000 }).state, "over");
   assert.equal(message({ cartTotal: 9999 }).text, "You get free delivery");
-  assert.deepEqual(message({ currency: "EUR" }), { state: "under", text: "Free over €60" });
-  assert.deepEqual(message({ currency: "USD" }), { state: "hidden", text: "" }, "nothing is converted");
-  assert.equal(logic.freeShippingMessage({ ...free, enabled: false }, { currency: "GBP", cartTotal: 0 }).state, "hidden");
+  assert.deepEqual(message({ threshold: 0 }), { state: "over", text: "You get free delivery" }, "always free: nothing to spend");
+  assert.deepEqual(message({ threshold: 7500 }), { state: "under", text: "Free to United Kingdom over £75" }, "a threshold set for another country");
+  assert.deepEqual(message({ cartCurrency: "EUR" }), { state: "hidden", text: "" }, "nothing is converted");
+  assert.deepEqual(message({ threshold: null }), { state: "hidden", text: "" }, "no free delivery for this country");
+  assert.deepEqual(message({ threshold: undefined }), { state: "hidden", text: "" });
+  assert.deepEqual(message({ thresholdCurrency: "" }), { state: "hidden", text: "" });
+  assert.equal(message({}, { ...free, enabled: false }).state, "hidden");
   assert.equal(message({ itemPrice: 0 }).state, "under");
 });
 

@@ -1,6 +1,6 @@
 /**
  * The shipping countdown's business settings: one JSON document the merchant edits in the app and the theme block reads
- * from an app metafield. Amounts are in minor units (pence) of each currency, entered per currency, never converted.
+ * from an app metafield. Free-delivery thresholds are not here: they come from Shopify's shipping settings (see delivery/).
  */
 
 /** How the block looks. Everything about it is set in the app; the theme editor only places the block. */
@@ -46,7 +46,8 @@ export type ShippingCountdownConfig = {
   errorText: string;
   countdownPrefix: string;
   countdownSuffix: string;
-  freeShipping: { enabled: boolean; thresholds: Record<string, number>; textUnder: string; textAdd: string; textOver: string };
+  /** Whether to show the free-delivery message. Where it applies and from what order total is read from Shopify's shipping settings, never typed in. */
+  freeShipping: { enabled: boolean; textUnder: string; textAdd: string; textOver: string };
   availability: { preorderMode: "message" | "hide"; preorderMessage: string };
   warning: { enabled: boolean; startDate: string; endDate: string; message: string; textColor: string; backgroundColor: string; borderColor: string };
   style: ShippingStyle;
@@ -75,8 +76,7 @@ export const defaultShippingConfig: ShippingCountdownConfig = {
   countdownSuffix: "for dispatch on",
   freeShipping: {
     enabled: true,
-    thresholds: { GBP: 5000 },
-    textUnder: "Free delivery on orders over {threshold}",
+    textUnder: "Free delivery to {country} on orders over {threshold}",
     textAdd: "Add this item to get free delivery!",
     textOver: "You've got free delivery!",
   },
@@ -85,7 +85,7 @@ export const defaultShippingConfig: ShippingCountdownConfig = {
   style: defaultShippingStyle,
 };
 
-export const limits = { text: 300, message: 600, holidays: 400, currencies: 20 };
+export const limits = { text: 300, message: 600, holidays: 400 };
 
 export function isIsoDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -108,16 +108,6 @@ export function parseBankHolidays(text: string): { dates: string[]; invalid: str
 }
 
 const hexColour = /^#[0-9a-fA-F]{6}$/;
-const currencyCode = /^[A-Z]{3}$/;
-
-/** Pounds as typed ("50", "49.50") to pence, or null when it is not a non-negative amount with at most two decimals. */
-export function toMinorUnits(text: string): number | null {
-  const match = /^\s*(\d{1,7})(?:\.(\d{1,2}))?\s*$/.exec(text);
-  return match ? Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0") || 0) : null;
-}
-export function fromMinorUnits(minor: number) {
-  return minor % 100 === 0 ? String(minor / 100) : (minor / 100).toFixed(2);
-}
 
 export type ConfigCheck = { ok: true; config: ShippingCountdownConfig } | { ok: false; errors: string[] };
 
@@ -159,17 +149,7 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
   if (!Number.isInteger(delayRaw) || delayRaw < 0 || delayRaw > 60) errors.push("Delay days must be a whole number from 0 to 60.");
   const delayDays = Number.isInteger(delayRaw) && delayRaw >= 0 && delayRaw <= 60 ? delayRaw : 0;
 
-  const thresholds: Record<string, number> = {};
-  const thresholdInput = free.thresholds && typeof free.thresholds === "object" ? Object.entries(free.thresholds as Record<string, unknown>) : Object.entries(d.freeShipping.thresholds);
-  if (thresholdInput.length > limits.currencies) errors.push(`Keep thresholds to ${limits.currencies} currencies or fewer.`);
-  for (const [code, amount] of thresholdInput) {
-    const upper = code.trim().toUpperCase();
-    if (!currencyCode.test(upper)) { errors.push(`"${code}" is not a three-letter currency code such as GBP.`); continue; }
-    if (typeof amount !== "number" || !Number.isInteger(amount) || amount < 0) { errors.push(`The ${upper} threshold must be zero or more.`); continue; }
-    thresholds[upper] = amount;
-  }
   const freeEnabled = flag(free.enabled, d.freeShipping.enabled);
-  if (freeEnabled && !Object.values(thresholds).some(amount => amount > 0)) errors.push("Enter a free shipping threshold for at least one currency, or turn free shipping off.");
 
   const preorderMode = availability.preorderMode === "hide" ? "hide" : "message";
   const warningEnabled = flag(warning.enabled, false);
@@ -237,7 +217,6 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     countdownSuffix: text(source.countdownSuffix, "Countdown suffix", d.countdownSuffix),
     freeShipping: {
       enabled: freeEnabled,
-      thresholds,
       textUnder: text(free.textUnder, "Message under the threshold", d.freeShipping.textUnder, limits.text, freeEnabled),
       textAdd: text(free.textAdd, "Add this item message", d.freeShipping.textAdd),
       textOver: text(free.textOver, "Message over the threshold", d.freeShipping.textOver),

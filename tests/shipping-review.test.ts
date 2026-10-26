@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { DeliveryProfile, DeliveryRate, DeliveryZone, Market, RateCondition, ShippingSnapshot } from "../app/modules/shipping/delivery/deliveryModel";
-import { describeFree, describeRate, freeDeliveryTable, freeOption, priceRange, zoneFree, zoneForCountry } from "../app/modules/shipping/delivery/freeService";
+import { describeFree, describeRate, freeDeliveryFor, freeDeliveryTable, freeOption, priceRange, zoneFree, zoneForCountry } from "../app/modules/shipping/delivery/freeService";
 import { marketCoverage, priceGaps, reviewShipping, summarise, usualThreshold, type Finding } from "../app/modules/shipping/delivery/shippingReview";
 import { formatMinor } from "../app/modules/shipping/delivery/deliveryModel";
 import { loadShippingSnapshot, parseMarket, parseRate, parseZone, ShippingAccessError, type RawMarket, type RawRate, type RawZone } from "../app/modules/shipping/delivery/shippingReader.server";
@@ -215,16 +215,21 @@ test("findings come worst first, and the summary counts them", () => {
 
 test("the free-delivery table the product page reads comes from the general profile", () => {
   const table = freeDeliveryTable(snapshot([healthy(), profile([zone("UK", ["GB"], [free(9900)])], { id: "p2", isDefault: false, name: "Other" })]));
-  assert.deepEqual(table.countries.GB, { thresholdMinor: 5000, rate: "Free delivery" });
-  assert.deepEqual(table.countries.IE, { thresholdMinor: 7500, rate: "Free delivery" });
-  assert.equal(table.restOfWorld, null, "the rest-of-world zone has no free rate");
+  assert.deepEqual(table.countries.GB, { free: true, thresholdMinor: 5000, rate: "Free delivery" });
+  assert.deepEqual(table.countries.IE, { free: true, thresholdMinor: 7500, rate: "Free delivery" });
+  assert.deepEqual(table.restOfWorld, { free: false }, "the rest-of-world zone has no free rate, and says so");
   assert.equal(table.currency, "GBP");
+  assert.equal(table.version, 1);
   const mixed = freeDeliveryTable(snapshot([profile([zone("UK", ["GB"], [rate("Free", 0)]), zone("France", ["FR"], [standard()]), zone("World", [], [free(10000)], true)])]));
-  assert.deepEqual(mixed.countries.GB, { thresholdMinor: 0, rate: "Free" }, "always free is a threshold of nothing");
-  assert.equal(mixed.countries.FR, null, "a named zone with no free rate does not borrow the rest of world's");
-  assert.deepEqual(mixed.restOfWorld, { thresholdMinor: 10000, rate: "Free delivery" });
-  assert.deepEqual(freeDeliveryTable(snapshot([])).countries, {});
-  assert.equal(freeDeliveryTable(snapshot([profile([zone("UK", ["GB"], [rate("H", 0, [heavy])])])])).countries.GB, null, "weight-based free delivery gives no figure");
+  assert.deepEqual(mixed.countries.GB, { free: true, thresholdMinor: 0, rate: "Free" }, "always free is a threshold of nothing");
+  assert.deepEqual(mixed.countries.FR, { free: false }, "a named zone with no free rate does not borrow the rest of the world's");
+  assert.deepEqual(mixed.restOfWorld, { free: true, thresholdMinor: 10000, rate: "Free delivery" });
+  assert.deepEqual(freeDeliveryTable(snapshot([])), { version: 1, currency: "GBP", countries: {}, restOfWorld: null });
+  assert.deepEqual(freeDeliveryTable(snapshot([profile([zone("UK", ["GB"], [rate("H", 0, [heavy])])])])).countries.GB, { free: false }, "weight-based free delivery gives no figure");
+  assert.deepEqual(freeDeliveryFor(mixed, "GB"), { free: true, thresholdMinor: 0, rate: "Free" });
+  assert.deepEqual(freeDeliveryFor(mixed, "FR"), { free: false });
+  assert.deepEqual(freeDeliveryFor(mixed, "US"), { free: true, thresholdMinor: 10000, rate: "Free delivery" }, "a country in no zone uses the rest of the world");
+  assert.equal(freeDeliveryFor(freeDeliveryTable(snapshot([profile([zone("UK", ["GB"], [free()])])])), "US"), null, "and nothing when there is no such zone");
 });
 
 test("rates are described in a line each", () => {

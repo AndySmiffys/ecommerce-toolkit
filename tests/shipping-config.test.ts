@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultShippingConfig, defaultShippingStyle, fromMinorUnits, isIsoDate, parseBankHolidays, toMinorUnits, validateShippingConfig } from "../app/modules/shipping/config";
+import { defaultShippingConfig, defaultShippingStyle, isIsoDate, parseBankHolidays, validateShippingConfig } from "../app/modules/shipping/config";
 import { mergeBankHolidays, upcomingBankHolidays } from "../app/modules/shipping/bankHolidays.server";
 
 const valid = (changes: Record<string, unknown> = {}) => ({ ...defaultShippingConfig, ...changes });
@@ -35,31 +35,16 @@ test("at least one shipping day, and delay days between 0 and 60", () => {
   assert.match(errorsOf(valid({ delayDays: 2, delayMessage: " " })).join(" "), /Delay message cannot be empty/);
 });
 
-test("free shipping needs a threshold per currency of zero or more, in whole pence", () => {
-  const free = (thresholds: unknown, enabled = true) => valid({ freeShipping: { ...defaultShippingConfig.freeShipping, enabled, thresholds } });
-  assert.equal(validateShippingConfig(free({ GBP: 5000 })).ok, true);
-  assert.equal(validateShippingConfig(free({ gbp: 4950, eur: 6000 })).ok && true, true);
-  const lower = validateShippingConfig(free({ gbp: 4950 }));
-  assert.deepEqual(lower.ok && lower.config.freeShipping.thresholds, { GBP: 4950 }, "codes are upper-cased");
-  assert.match(errorsOf(free({ GBP: -1 })).join(" "), /GBP threshold/);
-  assert.match(errorsOf(free({ GBP: 49.5 })).join(" "), /GBP threshold/);
-  assert.match(errorsOf(free({ POUNDS: 5000 })).join(" "), /three-letter/);
-  assert.match(errorsOf(free({})).join(" "), /threshold for at least one currency/);
-  assert.equal(validateShippingConfig(free({}, false)).ok, true, "no threshold is fine when it is off");
-});
-
-test("pounds typed in the app become whole pence, and back", () => {
-  assert.equal(toMinorUnits("50"), 5000);
-  assert.equal(toMinorUnits("49.5"), 4950);
-  assert.equal(toMinorUnits("49.50"), 4950);
-  assert.equal(toMinorUnits("0.05"), 5);
-  assert.equal(toMinorUnits("49.999"), null);
-  assert.equal(toMinorUnits("-1"), null);
-  assert.equal(toMinorUnits(""), null);
-  assert.equal(toMinorUnits("abc"), null);
-  assert.equal(fromMinorUnits(5000), "50");
-  assert.equal(fromMinorUnits(4950), "49.50");
-  assert.equal(fromMinorUnits(5), "0.05");
+test("free shipping is a switch and three wordings: the thresholds come from Shopify, never from here", () => {
+  const free = (changes: Record<string, unknown>) => valid({ freeShipping: { ...defaultShippingConfig.freeShipping, ...changes } });
+  assert.equal(validateShippingConfig(free({})).ok, true);
+  assert.equal(validateShippingConfig(free({ enabled: false, textUnder: "" })).ok, true, "nothing to say when it is off");
+  assert.match(errorsOf(free({ textUnder: " " })).join(" "), /Message under the threshold cannot be empty/);
+  assert.match(errorsOf(free({ textUnder: "x".repeat(301) })).join(" "), /300 characters/);
+  const old = validateShippingConfig(free({ thresholds: { GBP: 5000 } }));
+  assert.equal(old.ok && "thresholds" in old.config.freeShipping, false, "a threshold saved by an earlier version is dropped");
+  assert.deepEqual(Object.keys(defaultShippingConfig.freeShipping).sort(), ["enabled", "textAdd", "textOver", "textUnder"]);
+  assert.match(defaultShippingConfig.freeShipping.textUnder, /\{country\}.*\{threshold\}/, "the default wording names the country");
 });
 
 test("the warning notice needs valid dates with the end on or after the start, and its colours must be hex", () => {

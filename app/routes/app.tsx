@@ -1,4 +1,5 @@
 import { ensureStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
+import { ensureFreeDelivery } from "../modules/shipping/delivery/freeDeliverySync.server";
 import type {
   HeadersFunction,
   LoaderFunctionArgs,
@@ -33,6 +34,8 @@ export const loader = async ({
   const { admin, session } = await authenticate.admin(request);
   let storefrontSyncError: string | null = null;
   try { await ensureStorefrontSnapshot(admin, session.shop); } catch (error) { storefrontSyncError = `Initial storefront display could not be synced: ${error instanceof Error ? error.message : "Please reopen the app to retry."}`; }
+  // Where free delivery is offered, for the shipping countdown block. Only reads shipping the first time; a failure here must not stop the app opening.
+  try { await ensureFreeDelivery(admin); } catch (error) { console.error("Free delivery could not be published:", error instanceof Error ? error.message : error); }
 
   return {
     shop: session.shop,
