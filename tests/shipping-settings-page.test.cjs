@@ -351,7 +351,7 @@ test('clicking a placeholder copies it, and says so', async () => {
   } finally { await page.unmount(); }
 });
 
-test('the delivery services step lists each option from Shopify, with what the app adds, and starts switched off', async () => {
+test('the delivery step has the switch, a link to the Shipping page right under it, the placeholders above the messages, and no month setting', async () => {
   const page = await mountPage({ services });
   try {
     const { container } = page;
@@ -359,19 +359,25 @@ test('the delivery services step lists each option from Shopify, with what the a
     assert.match(card.querySelector('summary').textContent, /Delivery services/);
     assert.match(card.querySelector('summary').textContent, /Off/);
     assert.equal(find(find(container, 'aside'), '.sc__delivery'), null, 'nothing on the product page until it is turned on');
-    await check(find(card, 's-checkbox'), true);
-    assert.match(card.querySelector('summary').textContent, /On, 3 services shown/);
-    assert.deepEqual(findAll(card, 'details[data-service]').map(item => item.getAttribute('data-service')), [DPD, AMAZON, 'Collection'], 'every Shopify option, in Shopify\'s order');
-    const summaries = findAll(card, 'details[data-service] > summary').map(item => item.textContent.replace(/\s+/g, ' ').trim());
-    assert.match(summaries[0], /Non-guaranteed · Mon–Fri · the shop's cut-off · 1 business day \(Shopify\)$/, 'nothing is guaranteed unless chosen');
-    assert.match(summaries[1], /2 business days \(Shopify\)$/);
-    assert.match(summaries[2], /no delivery time$/);
-    assert.equal(find(serviceCard(container, 'Collection'), 's-badge').textContent, 'No delivery time', 'flagged, since no date can be given for it');
-    const dpd = serviceCard(container, DPD);
-    assert.match(dpd.textContent, /offered in Domestic/);
-    assert.match(dpd.textContent, /Price: £6\.99, or £4\.99 on orders of £30 or more\./);
-    assert.match(dpd.textContent, /Delivery time in Shopify: 1 business day\./);
-    assert.match(serviceCard(container, 'Collection').textContent, /Shopify has no delivery time for it/);
+    const checkbox = find(card, 's-checkbox');
+    await check(checkbox, true);
+    assert.match(card.querySelector('summary').textContent, /On, 3 of 3 services shown/);
+    // The link comes straight after the switch, before anything else.
+    const link = find(card, 's-link');
+    assert.match(link.textContent, /Set up your delivery services on the Shipping page/);
+    assert.match(link.getAttribute('href'), /\/app\/shipping/);
+    assert.equal(checkbox.compareDocumentPosition(link) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING);
+    const firstMessage = find(card, '.rt-field');
+    const placeholders = find(card, 's-table');
+    assert.ok(placeholders, 'the list of placeholders');
+    assert.equal(placeholders.compareDocumentPosition(firstMessage) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING, 'the placeholders come before the message boxes');
+    assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Dropdown heading', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
+    assert.equal(findAll(card, 's-checkbox').length, 1, 'no month checkbox: it is always shown');
+    assert.doesNotMatch(card.textContent, /Show the month/);
+    // The services themselves are set up on the Shipping page, not here.
+    assert.equal(findAll(container, 'details[data-service]').length, 0);
+    assert.match(card.textContent, /3 of 3 delivery services are switched on/);
+    assert.match(card.textContent, /set per service on the Shipping page/);
   } finally { await page.unmount(); }
 });
 
@@ -391,56 +397,6 @@ test('with delivery options on, the preview lists each service with its price an
     await change(field(container, 's-select', 'Stock of the chosen variant'), 'in');
     await change(field(container, 's-select', 'Country of the shopper'), 'IE');
     assert.equal(find(container, 'aside .sc__delivery'), null, 'a country whose zone offers nothing');
-  } finally { await page.unmount(); }
-});
-
-test('a service can be set as guaranteed, renamed, given its own days and cut-off, and only what was changed is saved', async () => {
-  const page = await mountPage({ services });
-  try {
-    const { container } = page;
-    await check(find(container, 'details[data-step=delivery] s-checkbox'), true);
-    const dpd = serviceCard(container, DPD);
-    await type(controls(dpd, 's-text-field', 'Name on the product page'), 'DPD Next Day');
-    await check(controls(dpd, 's-checkbox', 'Guaranteed by the carrier'), true);
-    await type(controls(dpd, 's-text-field', 'Cut-off time for this service'), '16:00');
-    await change(find(dpd, 's-choice-list'), ['1', '2', '3', '4', '5', '6']);
-    assert.match(find(dpd, 'summary').textContent, /DPD Next Day/);
-    assert.match(find(dpd, 'summary').textContent, /Guaranteed · Mon–Sat · cut-off 16:00 · 1 business day \(Shopify\)/);
-    await previewAt(container, '2026-10-23', '15', '30');
-    // Friday 15:30: the shop's 15:00 has passed, but this service's 16:00 has not. A Saturday carrier delivers the next day.
-    assert.deepEqual(options(container).map(row => [row[0], row[2]]), [['DPD Next Day', 'Delivery by Sat 24th Oct'], [AMAZON, 'Delivery by Wed 28th Oct (Non-Guaranteed)']], 'guaranteed has no suffix; the other goes Monday and takes two business days');
-    await click(save(container));
-    await wait(60);
-    const sent = JSON.parse(page.posts[0].config).delivery;
-    assert.equal(sent.enabled, true);
-    assert.deepEqual(sent.services, [{ name: DPD, label: 'DPD Next Day', show: true, guaranteed: true, cutoffTime: '16:00', days: [false, true, true, true, true, true, true], onBankHolidays: false, transitMin: null, transitMax: null }], 'the other two are untouched, so nothing is saved for them');
-    assert.equal(sent.guaranteedText, 'Delivery by {date}');
-    assert.equal(sent.estimatedText, 'Delivery by {date} (Non-Guaranteed)');
-    assert.ok(toasts.includes('Shipping countdown saved'));
-  } finally { await page.unmount(); }
-});
-
-test('a delivery time typed in replaces Shopify\'s, half of one is rejected, and a service can be hidden', async () => {
-  const page = await mountPage({ services });
-  try {
-    const { container } = page;
-    await check(find(container, 'details[data-step=delivery] s-checkbox'), true);
-    await previewAt(container, '2026-10-20', '10', '00');
-    const amazon = serviceCard(container, AMAZON);
-    await type(controls(amazon, 's-number-field', 'Shortest delivery time (business days)'), '3');
-    assert.match(container.textContent, /Enter both the shortest and the longest delivery time/);
-    assert.equal(save(container).disabled, true, 'half a delivery time cannot be saved');
-    await type(controls(amazon, 's-number-field', 'Longest delivery time (business days)'), '4');
-    assert.match(find(amazon, 'summary').textContent, /3 to 4 business days \(set here\)/);
-    assert.equal(options(container).find(row => row[0] === AMAZON)[2], 'Delivery by Mon 26th Oct (Non-Guaranteed)', 'four business days from Wednesday, not Shopify\'s two');
-    await type(controls(amazon, 's-number-field', 'Shortest delivery time (business days)'), '5');
-    assert.match(container.textContent, /shortest delivery time for .* cannot be longer than the longest/);
-    assert.equal(save(container).disabled, true);
-    await type(controls(amazon, 's-number-field', 'Shortest delivery time (business days)'), '3');
-    await check(controls(serviceCard(container, DPD), 's-checkbox', 'Show in the delivery options'), false);
-    assert.match(find(serviceCard(container, DPD), 'summary').textContent, /Hidden/);
-    assert.deepEqual(options(container).map(row => row[0]), [AMAZON]);
-    assert.match(find(container, 'details[data-step=delivery] summary').textContent, /On, 2 services shown/);
   } finally { await page.unmount(); }
 });
 
@@ -470,33 +426,36 @@ test('the delivery messages can be formatted, use their own placeholders, and a 
   } finally { await page.unmount(); }
 });
 
-test('settings for a service Shopify no longer has are kept in view, and can be removed', async () => {
-  const page = await mountPage({ services, config: { delivery: { enabled: true, heading: 'Delivery options', guaranteedText: 'Delivery by {date}', estimatedText: 'Delivery by {date} (Non-Guaranteed)', showMonth: true, services: [{ name: 'Old courier', label: '', show: true, guaranteed: true, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: 1, transitMax: 1 }, { name: AMAZON, label: 'Amazon 2 Day', show: true, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null }] } } });
+test('what is saved for the services is used by the preview, and saving here never changes it', async () => {
+  const saved = [
+    { name: DPD, label: 'DPD Next Day', show: true, guaranteed: true, cutoffTime: '16:00', days: [false, true, true, true, true, true, true], onBankHolidays: false, transitMin: null, transitMax: null },
+    { name: AMAZON, label: '', show: true, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: 3, transitMax: 4 },
+    { name: 'Collection', label: '', show: false, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null },
+  ];
+  const page = await mountPage({ services, config: { delivery: { enabled: true, heading: 'Delivery options', guaranteedText: 'Delivery by {date}', estimatedText: 'Delivery by {date} (Non-Guaranteed)', services: saved } } });
   try {
     const { container } = page;
-    const names = findAll(container, 'details[data-service]').map(item => item.getAttribute('data-service'));
-    assert.deepEqual(names, [DPD, AMAZON, 'Collection', 'Old courier'], 'what Shopify has first, then what it no longer has');
-    assert.equal(save(container).disabled, true, 'listing the services is not a change');
-    assert.match(find(serviceCard(container, AMAZON), 'summary').textContent, /Amazon 2 Day/, 'saved wording is used');
-    const old = serviceCard(container, 'Old courier');
-    assert.equal(find(old, 's-badge[tone=warning]').textContent, 'Not in Shopify now');
-    assert.ok(find(old, 's-banner[heading="This option is no longer in your Shopify shipping settings"]'));
-    await click(byText(old, 's-button', 'Remove these settings'));
-    assert.equal(serviceCard(container, 'Old courier'), undefined);
-    assert.equal(save(container).disabled, false);
+    const card = find(container, 'details[data-step=delivery]');
+    assert.match(card.querySelector('summary').textContent, /On, 2 of 3 services shown/, 'one is hidden');
+    // Friday 15:30: the shop's 15:00 has passed, this service's own 16:00 has not, and a Saturday carrier delivers on Saturday.
+    await previewAt(container, '2026-10-23', '15', '30');
+    assert.deepEqual(options(container).map(row => [row[0], row[2]]), [['DPD Next Day', 'Delivery by Sat 24th Oct'], [AMAZON, 'Delivery by Fri 30th Oct (Non-Guaranteed)']], 'guaranteed has no suffix; the typed 3 to 4 business days replace Shopify\'s two');
+    await writeIn(boxOf(card, 'Dropdown heading'), 'Ways to get it');
     await click(save(container));
     await wait(60);
-    const sent = JSON.parse(page.posts[0].config).delivery.services;
-    assert.deepEqual(sent.map(item => item.name), [AMAZON], 'only the service that differs from the defaults, and not the removed one');
+    const sent = JSON.parse(page.posts[0].config);
+    assert.equal(sent.delivery.heading, 'Ways to get it');
+    assert.deepEqual(sent.delivery.services, saved, 'what the page last saw is passed on unchanged; the server keeps what is saved on the Shipping page anyway');
   } finally { await page.unmount(); }
 });
 
-test('before the services have been read from Shopify the step says so, and a saved setting is still shown', async () => {
+test('before the services have been read from Shopify the step says so, and a saved setting is still used', async () => {
   const page = await mountPage({ services: null });
   try {
     const { container } = page;
-    await check(find(container, 'details[data-step=delivery] s-checkbox'), true);
-    assert.ok(find(container, 's-banner[heading="Delivery services have not been read from Shopify yet"]'));
+    const card = find(container, 'details[data-step=delivery]');
+    await check(find(card, 's-checkbox'), true);
+    assert.match(card.textContent, /The services have not been read from Shopify yet/);
     assert.equal(findAll(container, 'details[data-service]').length, 0);
     assert.equal(find(container, 'aside .sc__delivery'), null);
   } finally { await page.unmount(); }

@@ -24,7 +24,7 @@ export async function action({ request }: ActionFunctionArgs): Promise<ShippingR
     if (intent === "save") {
       let input: unknown;
       try { input = JSON.parse(String(form.get("config") ?? "")); } catch { return { ok: false, intent, errors: ["The settings could not be read. Reload the page and try again."] }; }
-      const result = await saveShippingConfig(admin, input);
+      const result = await saveShippingConfig(admin, input, { keepServices: true });
       return result.ok ? { ok: true, intent, errors: [], config: result.config } : { ok: false, intent, errors: result.errors };
     }
     return { ok: false, intent, errors: ["That action is not available."] };

@@ -21,9 +21,9 @@ const next = { minDays: 1, maxDays: 1 };
 
 test("dates are written the way the shop wants them: weekday, day with its ordinal, month", () => {
   assert.equal(logic.formatDeliveryDate("2026-10-28", true), "Wed 28th Oct");
-  assert.equal(logic.formatDeliveryDate("2026-10-28"), "Wed 28th Oct", "the month is on unless turned off");
-  assert.equal(logic.formatDeliveryDate("2026-10-28", false), "Wed 28th");
-  const days = Array.from({ length: 31 }, (_, i) => logic.formatDeliveryDate(`2026-10-${String(i + 1).padStart(2, "0")}`, false).split(" ")[1]);
+  assert.equal(logic.formatDeliveryDate("2026-10-28"), "Wed 28th Oct", "the month is always there");
+  assert.equal(logic.formatDeliveryDate("2026-10-28", false), "Wed 28th Oct", "there is no way to leave it out");
+  const days = Array.from({ length: 31 }, (_, i) => logic.formatDeliveryDate(`2026-10-${String(i + 1).padStart(2, "0")}`).split(" ")[1]);
   assert.deepEqual(days.slice(0, 4), ["1st", "2nd", "3rd", "4th"]);
   assert.deepEqual(days.slice(10, 13), ["11th", "12th", "13th"], "11 to 13 are all th");
   assert.deepEqual(days.slice(20, 24), ["21st", "22nd", "23rd", "24th"]);
@@ -168,7 +168,7 @@ const services = () => [
   { name: "Economy 2 Day", tiers: [{ from: 0, price: 299 }], transit: { minDays: 2, maxDays: 2 } },
   { name: "Collection", tiers: [{ from: 0, price: 0 }] },
 ];
-const delivery = (extra = {}) => ({ enabled: true, showMonth: true, guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", services: [], ...extra });
+const delivery = (extra = {}) => ({ enabled: true, guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", services: [], ...extra });
 const options = (deliveryExtra, variant = null, list = services(), configExtra = {}) => logic.deliveryOptions(at("2026-10-26T09:00:00Z"), config({ delivery: delivery(deliveryExtra), ...configExtra }), list, "GBP", variant);
 
 test("the dropdown lists each service with its price and date, soonest first, and says which are not guaranteed", () => {
@@ -210,7 +210,7 @@ test("services can be left out, renamed, and described their own way", () => {
   assert.equal(renamed[0].text, "DPD Next Day: by Tue 27th Oct");
   assert.equal(renamed[0].label, "DPD Next Day");
   assert.equal(renamed[0].name, "DPD Next Working Day", "still known by Shopify's name");
-  assert.equal(options({ showMonth: false })[0].text, "Delivery by Tue 27th (Non-Guaranteed)");
+  assert.equal(options({ showMonth: false })[0].text, "Delivery by Tue 27th Oct (Non-Guaranteed)", "a leftover month setting changes nothing");
   assert.equal(options({ estimatedText: "Arrives {from} to {date}", services: [] }).find(item => item.name === "Amazon 2 Day").text, "Arrives Wed 28th Oct to Wed 28th Oct");
 });
 

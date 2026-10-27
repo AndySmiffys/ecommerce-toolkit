@@ -1,10 +1,19 @@
+import type { FetcherWithComponents } from "react-router";
 import { useEmbeddedAppUrl } from "../navigation/embeddedAppUrl";
+import type { DeliveryServiceSetting } from "./config";
+import type { PublishedServices } from "./delivery/deliveryServices";
+import { DeliveryServicesEditor, type ServicesResult } from "./DeliveryServicesEditor";
 import { formatMinor, type ShippingSnapshot } from "./delivery/deliveryModel";
 import { describeFree, describeRate, zoneFree } from "./delivery/freeService";
 import { marketCoverage, summarise, type Finding, type Severity } from "./delivery/shippingReview";
 
 export type ShippingReviewData =
-  | { ok: true; snapshot: ShippingSnapshot; findings: Finding[]; checkedAt: string }
+  | {
+    ok: true; snapshot: ShippingSnapshot; findings: Finding[]; checkedAt: string;
+    /** The delivery services in the general profile, and what the app has saved for them. Absent when the settings cannot be read. */
+    services?: PublishedServices;
+    delivery?: { settings: DeliveryServiceSetting[]; enabled: boolean; cutoffTime: string } | null;
+  }
   | { ok: false; access: boolean; error: string };
 
 const names = new Intl.DisplayNames(["en-GB"], { type: "region" });
@@ -31,7 +40,7 @@ function FindingRow({ finding }: { finding: Finding }) {
  * Shopify's shipping setup as the app understands it: where free delivery is offered and from what order total, what is wrong, and what to
  * change. It only reads. Changes are made in Shopify, where the links go.
  */
-export function ShippingReviewPage({ data, checking, onCheck }: { data: ShippingReviewData; checking: boolean; onCheck: () => void }) {
+export function ShippingReviewPage({ data, checking, onCheck, fetcher }: { data: ShippingReviewData; checking: boolean; onCheck: () => void; fetcher?: FetcherWithComponents<ServicesResult> }) {
   const appUrl = useEmbeddedAppUrl();
   const header = <>
     <s-link slot="breadcrumb-actions" href={appUrl("/app")}>Home</s-link>
@@ -97,6 +106,10 @@ export function ShippingReviewPage({ data, checking, onCheck }: { data: Shipping
           </s-table>
         </s-stack>
       </s-section>
+
+      {data.services && data.delivery && fetcher && <s-section heading="Delivery services">
+        <DeliveryServicesEditor services={data.services} settings={data.delivery.settings} shopCutoff={data.delivery.cutoffTime} enabled={data.delivery.enabled} fetcher={fetcher} />
+      </s-section>}
 
       {actionable.length > 0 && <s-section heading="What to fix">
         <s-stack direction="block" gap="large">{actionable.map(finding => <FindingRow key={finding.id} finding={finding} />)}</s-stack>

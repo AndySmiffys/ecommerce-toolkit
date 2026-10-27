@@ -200,10 +200,10 @@
     return n + ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th');
   }
 
-  /** "Wed 28th Oct", or "Wed 28th" when the month is turned off. */
-  function formatDeliveryDate(date, showMonth) {
+  /** "Wed 28th Oct". The month is always there: near a month's end "Fri 30th" could be this month or the next. */
+  function formatDeliveryDate(date) {
     var p = parseDate(date);
-    return WEEKDAY_SHORT[weekday(date)] + ' ' + ordinal(p.d) + (showMonth === false ? '' : ' ' + MONTH_NAMES[p.m - 1]);
+    return WEEKDAY_SHORT[weekday(date)] + ' ' + ordinal(p.d) + ' ' + MONTH_NAMES[p.m - 1];
   }
 
   /** Whether the carrier delivers on this day: one of the service's delivery days, and not a bank holiday unless it delivers on those. */
@@ -287,7 +287,7 @@
       if (!estimate) return;
       var label = setting.label || service.name;
       var template = setting.guaranteed ? delivery.guaranteedText : delivery.estimatedText;
-      var values = { date: formatDeliveryDate(estimate.to, delivery.showMonth), from: formatDeliveryDate(estimate.from, delivery.showMonth), service: label };
+      var values = { date: formatDeliveryDate(estimate.to), from: formatDeliveryDate(estimate.from), service: label };
       var lowest = Math.min.apply(null, (service.tiers || [{ price: 0 }]).map(function (tier) { return tier.price; }));
       options.push({ name: service.name, label: label, price: servicePrice(service, currency), guaranteed: Boolean(setting.guaranteed), text: fillDelivery(template, values), to: estimate.to, from: estimate.from, dispatchDate: estimate.dispatchDate, lowest: lowest });
     });

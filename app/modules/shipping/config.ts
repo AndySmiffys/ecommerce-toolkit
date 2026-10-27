@@ -58,7 +58,6 @@ export type DeliverySettings = {
   heading: string;
   guaranteedText: string;
   estimatedText: string;
-  showMonth: boolean;
   services: DeliveryServiceSetting[];
 };
 
@@ -99,7 +98,6 @@ export const defaultDeliverySettings: DeliverySettings = {
   heading: "Delivery options",
   guaranteedText: "Delivery by {date}",
   estimatedText: "Delivery by {date} (Non-Guaranteed)",
-  showMonth: true,
   services: [],
 };
 
@@ -352,7 +350,6 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     heading: text(dl.heading, "Delivery options heading", dd.heading, limits.text, deliveryEnabled),
     guaranteedText: deliveryText(dl.guaranteedText, "Guaranteed delivery message", dd.guaranteedText),
     estimatedText: deliveryText(dl.estimatedText, "Estimated delivery message", dd.estimatedText),
-    showMonth: flag(dl.showMonth, dd.showMonth),
     services,
   };
 

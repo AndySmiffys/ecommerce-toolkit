@@ -160,7 +160,7 @@ test("delivery options start switched off, with wording that says Non-Guaranteed
   assert.equal(defaultDeliverySettings.enabled, false, "nothing changes on the product page until it is turned on");
   assert.equal(defaultDeliverySettings.guaranteedText, "Delivery by {date}");
   assert.equal(defaultDeliverySettings.estimatedText, "Delivery by {date} (Non-Guaranteed)");
-  assert.equal(defaultDeliverySettings.showMonth, true);
+  assert.equal("showMonth" in defaultDeliverySettings, false, "the month is always shown, so there is nothing to set");
   assert.deepEqual(defaultDeliverySettings.services, []);
   assert.deepEqual(defaultServiceSetting("Standard"), { name: "Standard", label: "", show: true, guaranteed: false, cutoffTime: "", days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null }, "a service is a non-guaranteed weekday one until set otherwise");
   assert.deepEqual(deliveryPlaceholders.map(item => item.name), ["date", "from", "service"]);
@@ -211,4 +211,9 @@ test("each delivery service is checked: name, delivery days, cut-off and deliver
   assert.match(errorsOf(services(many)).join(" "), /Keep delivery services to 100 or fewer/);
   const stripped = validateShippingConfig(services([{ ...one(), nonsense: "x" }]));
   assert.equal(stripped.ok && "nonsense" in stripped.config.delivery.services[0], false);
+});
+
+test("a month setting saved by an earlier version is ignored", () => {
+  const old = validateShippingConfig({ ...defaultShippingConfig, delivery: { ...defaultDeliverySettings, showMonth: false } });
+  assert.equal(old.ok && "showMonth" in old.config.delivery, false);
 });

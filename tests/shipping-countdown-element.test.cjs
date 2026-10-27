@@ -20,7 +20,7 @@ const config = {
   freeShipping: { enabled: true, textUnder: "Free to {country} over {threshold}, only {threshold}", textAdd: "Add this item for free delivery", textOver: "Free delivery unlocked" },
   availability: { outOfStock: { mode: "message", message: "Out of stock right now" }, backorder: { mode: "message", message: "On back order: dispatched when it is back in stock" } },
   warning: { enabled: true, startDate: "2026-12-01", endDate: "2026-12-24", message: "<b>Last</b> orders", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
-  delivery: { enabled: false, heading: "Delivery options", guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", showMonth: true, services: [] },
+  delivery: { enabled: false, heading: "Delivery options", guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", services: [] },
   style: { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" },
 };
 // What the app publishes from Shopify's shipping settings: a country named in a zone, or everyone else.
@@ -44,7 +44,7 @@ const serviceTable = {
   countries: { GB: "z0", IE: "z1" },
   restOfWorld: "z2",
 };
-const deliveryOn = (changes = {}) => ({ enabled: true, heading: "Delivery options", guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", showMonth: true, services: [{ name: "DPD Next Working Day Delivery", label: "DPD Next Day", guaranteed: true }], ...changes });
+const deliveryOn = (changes = {}) => ({ enabled: true, heading: "Delivery options", guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", services: [{ name: "DPD Next Working Day Delivery", label: "DPD Next Day", guaranteed: true }], ...changes });
 const variants = [
   { id: 1, price: 1000, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 2, price: 4600, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
@@ -331,11 +331,11 @@ test("the box stays open while the list inside it is refreshed", async () => {
   p.close();
 });
 
-test("the delivery messages can be formatted and use the service's name, and the month can be left out", async () => {
-  const p = await page({ cfg: withDelivery({ guaranteedText: "[bold]{service}[/bold]: arrives [highlight]{date}[/highlight]", estimatedText: "Arrives {from} to {date}", showMonth: false }) });
+test("the delivery messages can be formatted and use the service's name, and dates always carry the month", async () => {
+  const p = await page({ cfg: withDelivery({ guaranteedText: "[bold]{service}[/bold]: arrives [highlight]{date}[/highlight]", estimatedText: "Arrives {from} to {date}" }) });
   const rows = [...p.document.querySelectorAll(".sc__option-date")];
-  assert.equal(rows[0].innerHTML, '<strong>DPD Next Day</strong>: arrives <span class="sc__countdown">Wed 21st</span>');
-  assert.equal(rows[1].textContent, "Arrives Thu 22nd to Thu 22nd");
+  assert.equal(rows[0].innerHTML, '<strong>DPD Next Day</strong>: arrives <span class="sc__countdown">Wed 21st Oct</span>');
+  assert.equal(rows[1].textContent, "Arrives Thu 22nd Oct to Thu 22nd Oct");
   p.close();
 });
 
