@@ -4,12 +4,15 @@ import type { ShippingCountdownConfig } from "./config";
 export type DispatchView =
   | { kind: "countdown"; countdown: string; date: string }
   | { kind: "delay"; date: string }
-  | { kind: "preorder" | "none" | "error" | "hidden" };
+  | { kind: "outofstock" | "backorder" | "none" | "error" | "hidden" };
+
+/** What the app knows about a variant's stock: enough to tell in stock, out of stock and back-order apart. */
+export type StockVariant = { available?: boolean; policy?: string; managed?: boolean; qty?: number | null };
 
 type Logic = {
   londonParts(ms: number): { date: string; hour: number; minute: number };
   londonTimeToUtc(date: string, hour: number, minute: number): number;
-  dispatchView(nowMs: number, config: ShippingCountdownConfig, variant: null): DispatchView;
+  dispatchView(nowMs: number, config: ShippingCountdownConfig, variant: StockVariant | null): DispatchView;
   warningVisible(nowMs: number, warning: ShippingCountdownConfig["warning"]): boolean;
   parseHighlight(text: string): Array<{ text: string; highlight: boolean }>;
   fillThreshold(text: string, thresholdMinor: number, currency: string, country?: string): string;

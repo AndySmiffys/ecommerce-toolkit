@@ -13,7 +13,7 @@ const logic = load();
 // BST ended at 02:00 BST on Sun 25 Oct 2026 and began at 01:00 GMT on Sun 29 Mar 2026.
 const at = iso => Date.parse(iso);
 const weekdays = [false, true, true, true, true, true, false];
-const base = { cutoffTime: "15:00", shippingDays: weekdays, bankHolidays: [], delayDays: 0, delayMessage: "", hideIfUnavailable: false, availability: { preorderMode: "message", preorderMessage: "Pre-order" } };
+const base = { cutoffTime: "15:00", shippingDays: weekdays, bankHolidays: [], delayDays: 0, delayMessage: "", hideIfUnavailable: false, availability: { outOfStock: { mode: "message", message: "Out" }, backorder: { mode: "message", message: "Back" } } };
 const view = (iso, config = {}, variant = null) => logic.dispatchView(at(iso), { ...base, ...config }, variant);
 const countdown = (iso, config = {}) => { const v = view(iso, config); assert.equal(v.kind, "countdown", iso); return `${v.countdown} | ${v.date}`; };
 
@@ -162,19 +162,26 @@ test("free shipping: under, add this item, over, always free, and a cart in anot
   assert.equal(message({ itemPrice: 0 }).state, "under");
 });
 
-test("a sold-out or back-ordered variant gets no dispatch date", () => {
+test("out of stock and zero stock with continue selling are told apart, and neither gets a dispatch date", () => {
   const ok = { id: 1, price: 1000, available: true, policy: "deny", managed: true, qty: 5 };
-  assert.equal(logic.isPreorder(ok), false);
-  assert.equal(logic.isPreorder(null), false);
-  assert.equal(logic.isPreorder({ ...ok, available: false }), true);
-  assert.equal(logic.isPreorder({ ...ok, policy: "continue", qty: 0 }), true);
-  assert.equal(logic.isPreorder({ ...ok, policy: "continue", qty: -3 }), true);
-  assert.equal(logic.isPreorder({ ...ok, policy: "continue", qty: 2 }), false);
-  assert.equal(logic.isPreorder({ ...ok, policy: "continue", managed: false, qty: 0 }), false, "stock is not tracked");
-  assert.equal(logic.isPreorder({ ...ok, policy: "continue", qty: null }), false, "stock is unknown");
-  assert.equal(view("2026-10-20T09:00:00Z", {}, { ...ok, available: false }).kind, "preorder");
-  assert.equal(view("2026-10-20T09:00:00Z", { availability: { preorderMode: "hide" } }, { ...ok, available: false }).kind, "hidden");
-  assert.equal(view("2026-10-20T09:00:00Z", { delayDays: 2, delayMessage: "x" }, { ...ok, available: false }).kind, "preorder", "no date promised in delay mode either");
+  assert.equal(logic.stockState(ok), "in");
+  assert.equal(logic.stockState(null), "in");
+  assert.equal(logic.stockState({ ...ok, available: false }), "out");
+  assert.equal(logic.stockState({ ...ok, available: false, policy: "continue" }), "out", "unavailable is unavailable");
+  assert.equal(logic.stockState({ ...ok, policy: "continue", qty: 0 }), "backorder");
+  assert.equal(logic.stockState({ ...ok, policy: "continue", qty: -3 }), "backorder");
+  assert.equal(logic.stockState({ ...ok, policy: "continue", qty: 2 }), "in");
+  assert.equal(logic.stockState({ ...ok, policy: "deny", qty: 0 }), "in", "not selling past zero is out of stock only once Shopify says unavailable");
+  assert.equal(logic.stockState({ ...ok, policy: "continue", managed: false, qty: 0 }), "in", "stock is not tracked");
+  assert.equal(logic.stockState({ ...ok, policy: "continue", qty: null }), "in", "stock is unknown");
+  const day = "2026-10-20T09:00:00Z";
+  assert.equal(view(day, {}, { ...ok, available: false }).kind, "outofstock");
+  assert.equal(view(day, {}, { ...ok, policy: "continue", qty: 0 }).kind, "backorder");
+  assert.equal(view(day, { availability: { outOfStock: { mode: "hide", message: "" }, backorder: { mode: "message", message: "Back" } } }, { ...ok, available: false }).kind, "hidden");
+  assert.equal(view(day, { availability: { outOfStock: { mode: "hide", message: "" }, backorder: { mode: "message", message: "Back" } } }, { ...ok, policy: "continue", qty: 0 }).kind, "backorder", "hiding one does not hide the other");
+  assert.equal(view(day, { availability: { outOfStock: { mode: "message", message: "Out" }, backorder: { mode: "hide", message: "" } } }, { ...ok, policy: "continue", qty: 0 }).kind, "hidden");
+  assert.equal(view(day, { delayDays: 2, delayMessage: "x" }, { ...ok, available: false }).kind, "outofstock", "no date promised in delay mode either");
+  assert.equal(view(day, { delayDays: 2, delayMessage: "x" }, { ...ok, policy: "continue", qty: 0 }).kind, "backorder");
 });
 
 test("the warning notice shows for London's own date, both ends included", () => {

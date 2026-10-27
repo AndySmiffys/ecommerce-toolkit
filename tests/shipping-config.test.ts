@@ -91,3 +91,25 @@ test("the appearance has the old block's look by default and is checked field by
   const stripped = validateShippingConfig(look({ nonsense: "x" }));
   assert.equal(stripped.ok && "nonsense" in stripped.config.style, false);
 });
+
+test("out of stock and zero stock with continue selling each have their own wording and a hide option", () => {
+  const stock = (changes: Record<string, unknown>) => valid({ availability: { ...defaultShippingConfig.availability, ...changes } });
+  assert.deepEqual(Object.keys(defaultShippingConfig.availability).sort(), ["backorder", "outOfStock"]);
+  assert.notEqual(defaultShippingConfig.availability.outOfStock.message, defaultShippingConfig.availability.backorder.message, "they say different things");
+  assert.equal(validateShippingConfig(stock({})).ok, true);
+  assert.equal(validateShippingConfig(stock({ outOfStock: { mode: "hide", message: "" } })).ok, true, "no message needed when hiding");
+  assert.match(errorsOf(stock({ outOfStock: { mode: "message", message: " " } })).join(" "), /Out of stock message cannot be empty/);
+  assert.match(errorsOf(stock({ backorder: { mode: "message", message: "" } })).join(" "), /Back-order message cannot be empty/);
+  assert.match(errorsOf(stock({ backorder: { mode: "message", message: "x".repeat(601) } })).join(" "), /600 characters/);
+  const odd = validateShippingConfig(stock({ outOfStock: { mode: "nonsense", message: "Gone" } }));
+  assert.equal(odd.ok && odd.config.availability.outOfStock.mode, "message", "an unknown mode is treated as showing the message");
+});
+
+test("settings saved with the single pre-order message keep their wording for zero stock with continue selling", () => {
+  const old = validateShippingConfig({ ...defaultShippingConfig, availability: { preorderMode: "message", preorderMessage: "Pre-order: date at checkout" } });
+  assert.equal(old.ok && old.config.availability.backorder.message, "Pre-order: date at checkout");
+  assert.equal(old.ok && old.config.availability.outOfStock.message, defaultShippingConfig.availability.outOfStock.message, "out of stock gets the new default");
+  const hidden = validateShippingConfig({ ...defaultShippingConfig, availability: { preorderMode: "hide" } });
+  assert.equal(hidden.ok && hidden.config.availability.backorder.mode, "hide");
+  assert.equal(old.ok && "preorderMessage" in old.config.availability, false, "the old fields are not carried forward");
+});

@@ -28,6 +28,9 @@ export type ShippingStyle = {
   icon: string;
 };
 
+/** Show a message, or hide the dispatch line altogether. */
+export type StockHandling = { mode: "message" | "hide"; message: string };
+
 export type ShippingCountdownConfig = {
   version: 1;
   /** 24-hour "HH:MM", London time. */
@@ -48,7 +51,8 @@ export type ShippingCountdownConfig = {
   countdownSuffix: string;
   /** Whether to show the free-delivery message. Where it applies and from what order total is read from Shopify's shipping settings, never typed in. */
   freeShipping: { enabled: boolean; textUnder: string; textAdd: string; textOver: string };
-  availability: { preorderMode: "message" | "hide"; preorderMessage: string };
+  /** What to say instead of a dispatch date when the chosen variant cannot be dispatched now. */
+  availability: { outOfStock: StockHandling; backorder: StockHandling };
   warning: { enabled: boolean; startDate: string; endDate: string; message: string; textColor: string; backgroundColor: string; borderColor: string };
   style: ShippingStyle;
 };
@@ -80,7 +84,10 @@ export const defaultShippingConfig: ShippingCountdownConfig = {
     textAdd: "Add this item to get free delivery!",
     textOver: "You've got free delivery!",
   },
-  availability: { preorderMode: "message", preorderMessage: "Available to pre-order: your dispatch date is shown at checkout." },
+  availability: {
+    outOfStock: { mode: "message", message: "This item is currently out of stock." },
+    backorder: { mode: "message", message: "Available to order now. It will be dispatched as soon as it is back in stock." },
+  },
   warning: { enabled: false, startDate: "", endDate: "", message: "", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
   style: defaultShippingStyle,
 };
@@ -151,7 +158,13 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
 
   const freeEnabled = flag(free.enabled, d.freeShipping.enabled);
 
-  const preorderMode = availability.preorderMode === "hide" ? "hide" : "message";
+  // Settings saved before out of stock and back-order were told apart had one pair of fields: keep their wording for back-order.
+  const legacy = typeof availability.preorderMessage === "string" || availability.preorderMode !== undefined ? { mode: availability.preorderMode, message: availability.preorderMessage } : undefined;
+  const stock = (raw: unknown, label: string, fallback: StockHandling): StockHandling => {
+    const rule = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const mode = rule.mode === "hide" ? "hide" : "message";
+    return { mode, message: text(rule.message, `${label} message`, fallback.message, limits.message, mode === "message") };
+  };
   const warningEnabled = flag(warning.enabled, false);
   const startDate = typeof warning.startDate === "string" ? warning.startDate.trim() : "";
   const endDate = typeof warning.endDate === "string" ? warning.endDate.trim() : "";
@@ -221,7 +234,10 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
       textAdd: text(free.textAdd, "Add this item message", d.freeShipping.textAdd),
       textOver: text(free.textOver, "Message over the threshold", d.freeShipping.textOver),
     },
-    availability: { preorderMode, preorderMessage: text(availability.preorderMessage, "Pre-order message", d.availability.preorderMessage, limits.message, preorderMode === "message") },
+    availability: {
+      outOfStock: stock(availability.outOfStock, "Out of stock", d.availability.outOfStock),
+      backorder: stock(availability.backorder ?? legacy, "Back-order", d.availability.backorder),
+    },
     warning: {
       enabled: warningEnabled,
       startDate,

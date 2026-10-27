@@ -23,9 +23,19 @@ The **Shipping** page reads Shopify's shipping setup (delivery profiles, zones, 
 - Dispatch is today when today is a shipping day, not a bank holiday, and before the cut-off; otherwise the next such day (searched up to 30 days ahead). The countdown is the real time to that day's cut-off: under 24 hours "X hours Y minutes", from 24 hours "X days Y hours".
 - **Delay** (delay days above 0) replaces the countdown with dispatch from the Nth shipping day after today, whatever the time of day. Wrap words in `[highlight]` and `[/highlight]` to colour them.
 - **Free shipping** is read from Shopify's shipping settings, never typed in (see Shipping review below). Each shopper gets the free-delivery rule for their own country: free from an order total, always free, or nothing. The message only shows for a cart in the shop's currency, and nothing is converted. "This item reaches it" uses the chosen variant's price times the chosen quantity. Wording can use `{threshold}` and `{country}`.
-- **Sold-out variants** (unavailable, or sold while out of stock) never get a dispatch date: they show the pre-order message, or the line is hidden, as set.
+- **Stock.** A variant that cannot be dispatched now never gets a dispatch date, and the two cases are told apart, each with its own wording or a hide option:
+  - **Out of stock:** the variant is unavailable, so it cannot be bought.
+  - **Zero stock, continue selling:** stock is tracked and is zero or below, but "Continue selling when out of stock" is on, so it can still be bought (a back-order or pre-order). Shopify only reports zero when stock is tracked.
+  An out of stock item never counts towards the free-delivery threshold, because it cannot be added to the basket.
 - **The warning notice** shows between its first and last day inclusive by London's date.
 - The cart is read once, debounced (300 ms), from `/cart.js` after cart events, or taken from an event that carries the cart.
+
+## The settings page
+
+Laid out like the promotion editor, so the app feels the same throughout: the **Storefront preview** stays in view on the left, and the settings are numbered step cards on the right, one open at a time, with **Appearance** first. On a narrow screen the preview is behind a **Preview** button.
+
+- The preview is the block's own markup and stylesheet and the same logic file, so it shows exactly what the product page will.
+- It has controls to see the block in other situations: **a day and time** (London) to see it on a set day, a **stock** choice (in stock, out of stock, zero stock with continue selling) and the **country** of the shopper.
 
 ## Adding the block
 

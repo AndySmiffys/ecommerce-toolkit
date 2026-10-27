@@ -18,7 +18,7 @@ const config = {
   version: 1, cutoffTime: "15:00", shippingDays: [false, true, true, true, true, true, false], bankHolidays: [], delayDays: 0, delayMessage: "Delayed [highlight]from[/highlight]",
   hideIfUnavailable: false, showShippingDays: true, shippingDaysPrefix: "We ship on:", noShippingText: "No dispatch", errorText: "Error", countdownPrefix: "Order in the next", countdownSuffix: "for dispatch on",
   freeShipping: { enabled: true, textUnder: "Free to {country} over {threshold}, only {threshold}", textAdd: "Add this item for free delivery", textOver: "Free delivery unlocked" },
-  availability: { preorderMode: "message", preorderMessage: "Pre-order: date at checkout" },
+  availability: { outOfStock: { mode: "message", message: "Out of stock right now" }, backorder: { mode: "message", message: "On back order: dispatched when it is back in stock" } },
   warning: { enabled: true, startDate: "2026-12-01", endDate: "2026-12-24", message: "<b>Last</b> orders", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
   style: { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" },
 };
@@ -33,6 +33,8 @@ const variants = [
   { id: 1, price: 1000, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 2, price: 4600, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 3, price: 1000, available: false, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 0 },
+  { id: 4, price: 1000, available: true, inventory_policy: "continue", inventory_management: "shopify", inventory_quantity: 0 },
+  { id: 5, price: 1000, available: true, inventory_policy: "continue", inventory_management: null, inventory_quantity: 0 },
 ];
 
 async function render({ cartTotal = 0, currency = "GBP", cfg = config, design = false, country = uk, table = delivery } = {}) {
@@ -158,15 +160,45 @@ test("the dispatch line rolls over to the next day after the cut-off without a r
   p.close();
 });
 
-test("a sold-out variant shows the pre-order message instead of a date, and going back restores the date", async () => {
+test("out of stock and zero stock with continue selling each show their own message, and going back restores the date", async () => {
   const p = await page();
   const id = p.document.querySelector('input[name="id"]');
-  id.value = "3";
-  id.dispatchEvent(new p.window.Event("change", { bubbles: true }));
-  assert.deepEqual(p.lines(), ["Pre-order: date at checkout"]);
-  id.value = "1";
-  id.dispatchEvent(new p.window.Event("change", { bubbles: true }));
+  const pick = value => { id.value = value; id.dispatchEvent(new p.window.Event("change", { bubbles: true })); };
+  pick("3");
+  assert.deepEqual(p.lines(), ["Out of stock right now"]);
+  pick("4");
+  assert.deepEqual(p.lines(), ["On back order: dispatched when it is back in stock"]);
+  pick("5");
+  assert.match(p.lines()[0], /Tuesday 20 Oct/, "stock that is not tracked is never reported as zero");
+  pick("1");
   assert.match(p.lines()[0], /Tuesday 20 Oct/);
+  p.close();
+});
+
+test("either case can be hidden instead, separately", async () => {
+  const hideOut = await page({ cfg: { ...config, availability: { ...config.availability, outOfStock: { mode: "hide", message: "" } } } });
+  const id = hideOut.document.querySelector('input[name="id"]');
+  id.value = "3"; id.dispatchEvent(new hideOut.window.Event("change", { bubbles: true }));
+  assert.equal(hideOut.document.querySelector("shipping-countdown").hidden, true);
+  id.value = "4"; id.dispatchEvent(new hideOut.window.Event("change", { bubbles: true }));
+  assert.equal(hideOut.document.querySelector("shipping-countdown").hidden, false, "the back-order message still shows");
+  assert.deepEqual(hideOut.lines(), ["On back order: dispatched when it is back in stock"]);
+  hideOut.close();
+  const hideBack = await page({ cfg: { ...config, availability: { ...config.availability, backorder: { mode: "hide", message: "" } } } });
+  const field = hideBack.document.querySelector('input[name="id"]');
+  field.value = "4"; field.dispatchEvent(new hideBack.window.Event("change", { bubbles: true }));
+  assert.equal(hideBack.document.querySelector("shipping-countdown").hidden, true);
+  hideBack.close();
+});
+
+test("an out of stock item never counts towards free delivery, but a back-order item does", async () => {
+  const p = await page();
+  const id = p.document.querySelector('input[name="id"]');
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 4500, currency: "GBP" } } }));
+  id.value = "3"; id.dispatchEvent(new p.window.Event("change", { bubbles: true }));
+  assert.equal(p.free().textContent, "Free to United Kingdom over £50, only £50", "an item that cannot be bought cannot take £45 to £55");
+  id.value = "4"; id.dispatchEvent(new p.window.Event("change", { bubbles: true }));
+  assert.equal(p.free().textContent, "Add this item for free delivery");
   p.close();
 });
 

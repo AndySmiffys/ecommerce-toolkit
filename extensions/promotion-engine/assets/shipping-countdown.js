@@ -174,11 +174,15 @@
     return { state: 'under', text: fill(free.textUnder) };
   }
 
-  /** A variant that can only be bought now as a pre-order or back-order. */
-  function isPreorder(variant) {
-    if (!variant) return false;
-    if (variant.available === false) return true;
-    return variant.policy === 'continue' && Boolean(variant.managed) && typeof variant.qty === 'number' && variant.qty <= 0;
+  /**
+   * Whether a variant can be dispatched now. "out" is unavailable altogether. "backorder" is sold while stock is zero or below (the
+   * variant's "continue selling when out of stock" setting), so there is no dispatch date to promise either.
+   */
+  function stockState(variant) {
+    if (!variant) return 'in';
+    if (variant.available === false) return 'out';
+    if (variant.policy === 'continue' && Boolean(variant.managed) && typeof variant.qty === 'number' && variant.qty <= 0) return 'backorder';
+    return 'in';
   }
 
   /** Whether the warning notice is showing today (London), both dates included. */
@@ -192,8 +196,10 @@
   function dispatchView(nowMs, config, variant) {
     var delay = Math.floor(config.delayDays || 0) > 0;
     if (!delay && parseCutoff(config.cutoffTime) === null) return { kind: 'error' };
-    if (isPreorder(variant)) {
-      return config.availability && config.availability.preorderMode === 'hide' ? { kind: 'hidden' } : { kind: 'preorder' };
+    var stock = stockState(variant);
+    if (stock !== 'in') {
+      var rule = config.availability && (stock === 'out' ? config.availability.outOfStock : config.availability.backorder);
+      return rule && rule.mode === 'hide' ? { kind: 'hidden' } : { kind: stock === 'out' ? 'outofstock' : 'backorder' };
     }
     if (delay) {
       var from = delayedDispatch(nowMs, config);
@@ -209,7 +215,7 @@
     londonParts: londonParts, addDays: addDays, weekday: weekday, londonTimeToUtc: londonTimeToUtc, parseCutoff: parseCutoff,
     isDispatchDay: isDispatchDay, nextDispatch: nextDispatch, delayedDispatch: delayedDispatch, countdownText: countdownText,
     formatDispatchDate: formatDispatchDate, parseHighlight: parseHighlight, formatMoney: formatMoney, fillThreshold: fillThreshold,
-    freeShippingMessage: freeShippingMessage, isPreorder: isPreorder, warningVisible: warningVisible, dispatchView: dispatchView
+    freeShippingMessage: freeShippingMessage, stockState: stockState, warningVisible: warningVisible, dispatchView: dispatchView
   };
   root.ShippingCountdownLogic = logic;
   if (typeof module !== 'undefined' && module.exports) module.exports = logic;
@@ -356,8 +362,10 @@
       } else if (view.kind === 'delay') {
         parseHighlight(c.delayMessage).forEach(function (piece) { line.append(piece.highlight ? el('span', 'sc__countdown', piece.text) : document.createTextNode(piece.text)); });
         line.append(' ', el('span', 'sc__dispatch', view.date));
-      } else if (view.kind === 'preorder') {
-        line.append(c.availability.preorderMessage);
+      } else if (view.kind === 'outofstock') {
+        line.append(c.availability.outOfStock.message);
+      } else if (view.kind === 'backorder') {
+        line.append(c.availability.backorder.message);
       } else if (view.kind === 'none') {
         line.append(el('span', 'sc__expired', c.noShippingText));
       } else if (view.kind === 'error') {
@@ -370,7 +378,8 @@
       var variant = this.selectedVariant();
       var result = freeShippingMessage(this.config.freeShipping, {
         threshold: this.freeThreshold, thresholdCurrency: this.freeCurrency, country: this.country,
-        cartCurrency: this.cart.currency, cartTotal: this.cart.total, itemPrice: variant ? variant.price : 0, quantity: this.selectedQuantity()
+        // An item that is out of stock cannot be added, so it never counts towards the threshold.
+        cartCurrency: this.cart.currency, cartTotal: this.cart.total, itemPrice: variant && stockState(variant) !== 'out' ? variant.price : 0, quantity: this.selectedQuantity()
       });
       this.freeLine.hidden = result.state === 'hidden';
       if (this.freeLine.textContent !== result.text) this.freeLine.textContent = result.text;
