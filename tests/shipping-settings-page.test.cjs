@@ -64,11 +64,11 @@ test('the page is laid out like the promotion editor: a preview that stays in vi
   try {
     const { container } = page;
     const steps = findAll(container, 'details[data-step]');
-    assert.deepEqual(steps.map(item => item.getAttribute('data-step')), ['appearance', 'dispatch', 'holidays', 'delay', 'free', 'stock', 'warning']);
+    assert.deepEqual(steps.map(item => item.getAttribute('data-step')), ['appearance', 'dispatch', 'holidays', 'free', 'stock', 'delay', 'warning']);
     assert.deepEqual(steps.filter(item => item.open).map(item => item.getAttribute('data-step')), ['appearance'], 'one step open at a time, the look first');
     const titles = steps.map(item => item.querySelector('summary').textContent.replace(/\s+/g, ' '));
     assert.match(titles[0], /1\s*Appearance/);
-    assert.match(titles[5], /6\s*Out of stock and back-order/);
+    assert.deepEqual(titles.map(title => title.match(/^\d+\s*([A-Za-z -]+?)(?=Cut-off|On|Off|\d|Out of stock:|$)/)?.[0].replace(/\s+/g, ' ').trim()).slice(3), ['4Free shipping', '5Out of stock and back-order', '6Warehouse delay', '7Warning notice'], 'in the order the settings are used');
     assert.ok(find(container, '.create-discount-layout aside.desktop-preview-panel'), 'the same two-column layout as the promotion editor');
     assert.match(find(container, 'aside.desktop-preview-panel').textContent, /Storefront preview/);
     assert.ok(find(container, 's-button[data-preview-toggle]'), 'a Preview button for narrow screens');
@@ -205,6 +205,27 @@ test('the free delivery step lists the placeholders, with what each becomes for 
     assert.deepEqual(rows.map(row => row[2]), ['£50', 'United Kingdom', 'Free delivery'], 'examples for the preview country');
     await change(field(container, 's-select', 'Country of the shopper'), 'IE');
     assert.deepEqual(findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell')[2].textContent.trim()), ['£75', 'Ireland', 'Free delivery']);
+  } finally { await page.unmount(); }
+});
+
+test('clicking a placeholder copies it, and says so', async () => {
+  const copied = [];
+  Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async value => { copied.push(value); } } });
+  toasts.length = 0;
+  const page = await mountPage();
+  try {
+    const card = find(page.container, 'details[data-step=free]');
+    assert.match(card.textContent, /Click a placeholder to copy it/);
+    const buttons = findAll(card, 's-table-row s-button');
+    assert.deepEqual(buttons.map(button => button.textContent), ['{threshold}', '{country}', '{rate}']);
+    await click(buttons[2]);
+    await click(buttons[0]);
+    assert.deepEqual(copied, ['{rate}', '{threshold}']);
+    assert.deepEqual(toasts, ['Copied {rate}', 'Copied {threshold}']);
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('blocked'); } } });
+    toasts.length = 0;
+    await click(buttons[1]);
+    assert.deepEqual(toasts, ['Could not copy. Type it in braces instead.'], 'when the browser will not allow it, the merchant is told what to do instead');
   } finally { await page.unmount(); }
 });
 

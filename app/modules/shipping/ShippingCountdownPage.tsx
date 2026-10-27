@@ -145,10 +145,10 @@ function DeliveryFromShopify({ delivery, appUrl }: { delivery: FreeDeliveryTable
 }
 
 /** The placeholders that can go in a free-delivery message, with what each becomes for the country being previewed. */
-function PlaceholderList({ examples }: { examples: Record<string, string> }) {
+function PlaceholderList({ examples, onCopy }: { examples: Record<string, string>; onCopy: (placeholder: string) => void }) {
   return <s-stack direction="block" gap="small-300">
     <s-text type="strong">Placeholders you can use in these messages</s-text>
-    <s-text color="subdued">Write one in braces and the product page fills it in for each shopper. Each can be used more than once.</s-text>
+    <s-text color="subdued">Click a placeholder to copy it, then paste it into a message. The product page fills it in for each shopper, and each can be used more than once.</s-text>
     <s-table>
       <s-table-header-row>
         <s-table-header listSlot="primary">Placeholder</s-table-header>
@@ -157,7 +157,7 @@ function PlaceholderList({ examples }: { examples: Record<string, string> }) {
       </s-table-header-row>
       <s-table-body>
         {freePlaceholders.map(item => <s-table-row key={item.name}>
-          <s-table-cell><s-text type="strong">{`{${item.name}}`}</s-text></s-table-cell>
+          <s-table-cell><s-button type="button" variant="tertiary" accessibilityLabel={`Copy {${item.name}}`} onClick={() => onCopy(`{${item.name}}`)}>{`{${item.name}}`}</s-button></s-table-cell>
           <s-table-cell>{item.meaning}</s-table-cell>
           <s-table-cell>{examples[item.name] ?? item.example}</s-table-cell>
         </s-table-row>)}
@@ -180,7 +180,7 @@ const stockScenarios: Record<string, { label: string; variant: StockVariant | nu
   backorder: { label: "Zero stock, continue selling", variant: { available: true, policy: "continue", managed: true, qty: 0 } },
 };
 
-const stepOrder = ["appearance", "dispatch", "holidays", "delay", "free", "stock", "warning"] as const;
+const stepOrder = ["appearance", "dispatch", "holidays", "free", "stock", "delay", "warning"] as const;
 type StepId = (typeof stepOrder)[number];
 const stepTitles: Record<StepId, string> = { appearance: "Appearance", dispatch: "Dispatch", holidays: "Bank holidays", delay: "Warehouse delay", free: "Free shipping", stock: "Out of stock and back-order", warning: "Warning notice" };
 
@@ -239,6 +239,11 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
       });
     }
   }, [fetcher.state, fetcher.data, shopify]);
+
+  async function copyPlaceholder(placeholder: string) {
+    try { await window.navigator.clipboard.writeText(placeholder); shopify.toast.show(`Copied ${placeholder}`); }
+    catch { shopify.toast.show("Could not copy. Type it in braces instead.", { isError: true }); }
+  }
 
   const send = (values: Record<string, string>) => { sent.current = values.intent; fetcher.submit(values, { method: "post" }); };
   const save = () => { if (check.ok && problems.length === 0) send({ intent: "save", config: JSON.stringify(check.config) }); };
@@ -374,16 +379,11 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
               {(() => { const list = parseBankHolidays(form.holidays).dates; const next = list.filter(date => date >= today); return <s-text color="subdued">{list.length} date{list.length === 1 ? "" : "s"} listed{next.length ? `, next: ${when(next[0])}` : ""}{list.length > 0 && next.length === 0 ? ". All of them are in the past, so import the new ones" : ""}.</s-text>; })()}
             </>)}
 
-            {step("delay", Number(form.delayDays) > 0 ? `On: dispatch from ${form.delayDays} dispatch day${Number(form.delayDays) === 1 ? "" : "s"} away` : "Off", <>
-              <PolarisNumberField label="Delay in dispatch days" min={0} max={60} step={1} value={form.delayDays} details="0 is off. Otherwise the countdown is replaced by dispatch from the Nth dispatch day after today, whatever the time of day." onInput={event => set({ delayDays: event.currentTarget.value })} />
-              <TextField label="Delay message" multiline value={form.delayMessage} onChange={value => set({ delayMessage: value })} maxLength={600} details="The dispatch date follows this text. Wrap words in [highlight] and [/highlight] to colour them like the countdown." />
-            </>)}
-
             {step("free", form.freeEnabled ? "On, read from your Shopify shipping settings" : "Off", <>
               <PolarisCheckbox label="Show the free delivery message" checked={form.freeEnabled} onChange={event => set({ freeEnabled: event.currentTarget.checked })} />
               {form.freeEnabled && <>
                 <DeliveryFromShopify delivery={delivery} appUrl={appUrl} />
-                <PlaceholderList examples={examples} />
+                <PlaceholderList examples={examples} onCopy={copyPlaceholder} />
                 <TextField label="Message when under the threshold" value={form.textUnder} onChange={value => set({ textUnder: value })} error={placeholderError(form.textUnder)} details="For example “Free delivery to {country} on orders over {threshold}”." />
                 <TextField label="Message when this item would reach it" value={form.textAdd} onChange={value => set({ textAdd: value })} error={placeholderError(form.textAdd)} details="Uses the selected variant and quantity. An out of stock variant never counts. For example “Add this item to get {rate}”." />
                 <TextField label="Message when the cart has reached it" value={form.textOver} onChange={value => set({ textOver: value })} error={placeholderError(form.textOver)} details="Also shown where delivery is always free. For example “You have unlocked {rate}!”." />
@@ -404,6 +404,11 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
                 <PolarisRadioList label="What to show" value={form.backMode} options={[{ value: "message", label: "Show a message instead" }, { value: "hide", label: "Hide the dispatch line" }]} onChange={value => set({ backMode: value === "hide" ? "hide" : "message" })} />
                 {form.backMode === "message" && <TextField label="Message" multiline value={form.backMessage} onChange={value => set({ backMessage: value })} maxLength={600} />}
               </section>
+            </>)}
+
+            {step("delay", Number(form.delayDays) > 0 ? `On: dispatch from ${form.delayDays} dispatch day${Number(form.delayDays) === 1 ? "" : "s"} away` : "Off", <>
+              <PolarisNumberField label="Delay in dispatch days" min={0} max={60} step={1} value={form.delayDays} details="0 is off. Otherwise the countdown is replaced by dispatch from the Nth dispatch day after today, whatever the time of day." onInput={event => set({ delayDays: event.currentTarget.value })} />
+              <TextField label="Delay message" multiline value={form.delayMessage} onChange={value => set({ delayMessage: value })} maxLength={600} details="The dispatch date follows this text. Wrap words in [highlight] and [/highlight] to colour them like the countdown." />
             </>)}
 
             {step("warning", form.warnEnabled ? (form.warnStart && form.warnEnd ? `${when(form.warnStart)} to ${when(form.warnEnd)}` : "On, dates not set") : "Off", <>
