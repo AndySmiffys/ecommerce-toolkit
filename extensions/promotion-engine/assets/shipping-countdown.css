@@ -16,7 +16,7 @@ shipping-countdown .sc__content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--sc-gap, 8px);
   box-sizing: border-box;
   padding: var(--sc-pad-v) var(--sc-pad-h);
   background-color: var(--sc-bg, #f8f9fa);
@@ -36,8 +36,8 @@ shipping-countdown .sc__free {
   font-weight: var(--sc-weight, 500);
   line-height: 1.4;
 }
-/* Holds the place of the dispatch line until the script has the time, so the page does not jump. */
-shipping-countdown .sc__main { min-height: 2.8em; }
+/* Holds one line for the dispatch line until the script has the time. It must not hold more: a taller reserve leaves a bigger gap below a short message than between the other lines. */
+shipping-countdown .sc__main { min-height: 1.4em; }
 shipping-countdown .sc__free[hidden] { display: none; }
 shipping-countdown .sc__countdown { color: var(--sc-accent, #d63384); font-weight: 600; }
 shipping-countdown .sc__dispatch { color: var(--sc-dispatch, #28a745); font-weight: 700; }
@@ -46,19 +46,20 @@ shipping-countdown .sc__days {
   margin: 0;
   color: var(--sc-muted, #666);
   font-size: calc(var(--sc-size, 16px) * 0.875);
-  line-height: 1.3;
+  line-height: 1.4;
 }
 shipping-countdown .sc__icon {
+  display: block;
+  flex: none;
   width: calc(var(--sc-size, 16px) * 1.5);
   height: calc(var(--sc-size, 16px) * 1.5);
-  margin-bottom: 4px;
   color: var(--sc-icon, #007bff);
 }
 
 shipping-countdown .sc__warning {
   width: 100%;
   box-sizing: border-box;
-  margin-bottom: 12px;
+  margin-bottom: var(--sc-gap, 8px);
   padding: var(--sc-pad-v) var(--sc-pad-h);
   color: var(--sc-warn-text, #8a4b00);
   background: var(--sc-warn-bg, #fff4e5);

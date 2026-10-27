@@ -20,7 +20,7 @@ const config = {
   freeShipping: { enabled: true, textUnder: "Free to {country} over {threshold}, only {threshold}", textAdd: "Add this item for free delivery", textOver: "Free delivery unlocked" },
   availability: { outOfStock: { mode: "message", message: "Out of stock right now" }, backorder: { mode: "message", message: "On back order: dispatched when it is back in stock" } },
   warning: { enabled: true, startDate: "2026-12-01", endDate: "2026-12-24", message: "<b>Last</b> orders", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
-  style: { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" },
+  style: { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" },
 };
 // What the app publishes from Shopify's shipping settings: a country named in a zone, or everyone else.
 const delivery = {
@@ -85,6 +85,17 @@ test("the look follows the saved appearance, including no icon", async () => {
   assert.match(html, /--sc-size:20px/);
   assert.match(html, /--sc-accent:#112233/);
   assert.doesNotMatch(html, /sc__icon/);
+});
+
+test("the space between lines follows the setting, and appearance saved before it existed still renders", async () => {
+  const wide = visible(await render({ cfg: { ...config, style: { ...config.style, lineGap: 14 } } }));
+  assert.match(wide, /--sc-gap:14px/);
+  const { lineGap, ...older } = config.style;
+  const html = visible(await render({ cfg: { ...config, style: older } }));
+  assert.doesNotMatch(html, /--sc-gap/, "left to the stylesheet's own default, not an empty value that would collapse the spacing");
+  assert.match(html, /--sc-size:16px/);
+  assert.match(html, /class="sc__content"/);
+  assert.equal(lineGap, 8);
 });
 
 test("settings saved before the appearance existed still render, with the stylesheet's own defaults", async () => {

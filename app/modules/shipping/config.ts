@@ -14,6 +14,8 @@ export type ShippingStyle = {
   padding: "compact" | "standard" | "roomy";
   /** Space above and below the block, px. */
   margin: number;
+  /** Space between each line inside the block (the warning, the icon, the free delivery line, the dispatch line, the days), px. */
+  lineGap: number;
   radius: number;
   border: "double" | "solid" | "none";
   borderWidth: number;
@@ -58,7 +60,7 @@ export type ShippingCountdownConfig = {
 };
 
 export const defaultShippingStyle: ShippingStyle = {
-  align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, radius: 8, border: "double", borderWidth: 6,
+  align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6,
   background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff",
 };
 
@@ -203,6 +205,7 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     fontWeight: choice(look.fontWeight, ["400", "500", "600", "700"], ds.fontWeight, "Font weight"),
     padding: choice(look.padding, ["compact", "standard", "roomy"], ds.padding, "Padding"),
     margin: whole(look.margin, "Space above and below", 0, 40, ds.margin),
+    lineGap: whole(look.lineGap, "Space between lines", 0, 24, ds.lineGap),
     radius: whole(look.radius, "Corner radius", 0, 20, ds.radius),
     border: choice(look.border, ["double", "solid", "none"], ds.border, "Border"),
     borderWidth: whole(look.borderWidth, "Border width", 1, 10, ds.borderWidth),

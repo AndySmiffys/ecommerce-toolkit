@@ -19,7 +19,7 @@ const attribute = (html: string, name: string) => new RegExp(`${name}="([^"]*)"`
 // The block's Liquid and the app's preview build the look separately. They must say the same thing.
 for (const [name, style] of [
   ["the original look", defaultShippingStyle],
-  ["a custom look", { align: "right", showIcon: false, textSize: 21, fontWeight: "700", padding: "roomy", margin: 4, radius: 0, border: "solid", borderWidth: 2, background: "#101820", text: "#ffffff", accent: "#ffcc00", dispatch: "#00aa88", muted: "#cccccc", icon: "#ffffff" }],
+  ["a custom look", { align: "right", showIcon: false, textSize: 21, fontWeight: "700", padding: "roomy", margin: 4, lineGap: 14, radius: 0, border: "solid", borderWidth: 2, background: "#101820", text: "#ffffff", accent: "#ffcc00", dispatch: "#00aa88", muted: "#cccccc", icon: "#ffffff" }],
 ] as const) {
   test(`the block and the app's preview agree on ${name}`, async () => {
     const html = await render(style);
@@ -35,4 +35,18 @@ test("the stylesheet reads every variable the app sets, and nothing else is need
   for (const value of ["compact", "roomy"]) assert.ok(css.includes(`data-padding="${value}"`), value);
   for (const value of ["solid", "none"]) assert.ok(css.includes(`data-border="${value}"`), value);
   for (const value of ["left", "right"]) assert.ok(css.includes(`data-align="${value}"`), value);
+});
+
+test("every line in the block is spaced by the one setting, with nothing extra to make a gap uneven", () => {
+  const css = readFileSync("extensions/promotion-engine/assets/shipping-countdown.css", "utf8");
+  assert.match(css, /\.sc__content \{[^}]*gap: var\(--sc-gap, 8px\)/, "one gap between the icon, free delivery, dispatch and days lines");
+  assert.match(css, /\.sc__warning \{[^}]*margin-bottom: var\(--sc-gap, 8px\)/, "and between the warning and the box");
+  // These each added space beyond the setting: a taller reserve for the dispatch line left a bigger gap below a short message, and
+  // the icon's own margin and the days line's different line height added to theirs.
+  assert.doesNotMatch(css, /min-height: 2\.8em/);
+  assert.match(css, /\.sc__main \{ min-height: 1\.4em; \}/);
+  assert.doesNotMatch(css, /\.sc__icon \{[^}]*margin/);
+  assert.match(css, /\.sc__icon \{[^}]*display: block/, "an inline icon sits on the text baseline and adds a sliver below");
+  const heights = [...css.matchAll(/line-height: ([\d.]+)/g)].map(match => match[1]);
+  assert.deepEqual([...new Set(heights)], ["1.4"], "the same line height for every line");
 });

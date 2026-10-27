@@ -59,7 +59,7 @@
     data-align="{{ look.align }}"
     data-padding="{{ look.padding }}"
     data-border="{{ look.border }}"
-    style="--sc-margin:{{ look.margin }}px;--sc-radius:{{ look.radius }}px;--sc-border-width:{{ look.borderWidth }}px;--sc-size:{{ look.textSize }}px;--sc-weight:{{ look.fontWeight }};--sc-bg:{{ look.background }};--sc-text:{{ look.text }};--sc-accent:{{ look.accent }};--sc-dispatch:{{ look.dispatch }};--sc-muted:{{ look.muted }};--sc-icon:{{ look.icon }}"
+    style="--sc-margin:{{ look.margin }}px;--sc-radius:{{ look.radius }}px;--sc-border-width:{{ look.borderWidth }}px;--sc-size:{{ look.textSize }}px;--sc-weight:{{ look.fontWeight }};--sc-bg:{{ look.background }};--sc-text:{{ look.text }};--sc-accent:{{ look.accent }};--sc-dispatch:{{ look.dispatch }};--sc-muted:{{ look.muted }};--sc-icon:{{ look.icon }}{% if look.lineGap != nil %};--sc-gap:{{ look.lineGap }}px{% endif %}"
     {%- endif %}
     data-cart-total="{{ cart.total_price }}"
     data-currency="{{ currency }}"

@@ -20,6 +20,7 @@ export function styleAttributes(style: ShippingStyle) {
       "--sc-dispatch": style.dispatch,
       "--sc-muted": style.muted,
       "--sc-icon": style.icon,
+      "--sc-gap": `${style.lineGap}px`,
     },
   };
 }

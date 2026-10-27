@@ -77,13 +77,13 @@ test("the gov.uk list keeps England and Wales dates from today on, and merges wi
 });
 
 test("the appearance has the old block's look by default and is checked field by field", () => {
-  assert.deepEqual(defaultShippingStyle, { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" });
+  assert.deepEqual(defaultShippingStyle, { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" });
   const look = (changes: Record<string, unknown>) => valid({ style: { ...defaultShippingStyle, ...changes } });
   const good = validateShippingConfig(look({ align: "right", textSize: "20", border: "solid", padding: "compact", background: "#FFFFFF" }));
   assert.equal(good.ok && good.config.style.textSize, 20, "numbers typed as text are accepted");
   assert.equal(good.ok && good.config.style.background, "#ffffff", "colours are lower-cased");
   assert.equal(validateShippingConfig(look({})).ok, true);
-  for (const [field, bad, label] of [["align", "middle", /Alignment/], ["fontWeight", "800", /Font weight/], ["padding", "huge", /Padding/], ["border", "dotted", /Border is/], ["textSize", 11, /Text size/], ["textSize", 25, /Text size/], ["textSize", "", /Text size/], ["margin", -1, /Space above/], ["radius", 21, /Corner radius/], ["borderWidth", 0, /Border width/], ["borderWidth", 11, /Border width/], ["accent", "red", /Countdown colour/], ["icon", "#12345", /Icon colour/]] as const) {
+  for (const [field, bad, label] of [["align", "middle", /Alignment/], ["fontWeight", "800", /Font weight/], ["padding", "huge", /Padding/], ["border", "dotted", /Border is/], ["textSize", 11, /Text size/], ["textSize", 25, /Text size/], ["textSize", "", /Text size/], ["margin", -1, /Space above/], ["lineGap", -1, /Space between lines/], ["lineGap", 25, /Space between lines/], ["radius", 21, /Corner radius/], ["borderWidth", 0, /Border width/], ["borderWidth", 11, /Border width/], ["accent", "red", /Countdown colour/], ["icon", "#12345", /Icon colour/]] as const) {
     assert.match(errorsOf(look({ [field]: bad })).join(" "), label, `${field}=${String(bad)}`);
   }
   const old = validateShippingConfig({ ...defaultShippingConfig, style: undefined });

@@ -26,7 +26,7 @@ type Form = {
   freeEnabled: boolean; textUnder: string; textAdd: string; textOver: string;
   outMode: "message" | "hide"; outMessage: string; backMode: "message" | "hide"; backMessage: string;
   warnEnabled: boolean; warnStart: string; warnEnd: string; warnMessage: string; warnText: string; warnBackground: string; warnBorder: string;
-  look: { align: string; showIcon: boolean; textSize: string; fontWeight: string; padding: string; margin: string; radius: string; border: string; borderWidth: string; background: string; text: string; accent: string; dispatch: string; muted: string; icon: string };
+  look: { align: string; showIcon: boolean; textSize: string; fontWeight: string; padding: string; margin: string; lineGap: string; radius: string; border: string; borderWidth: string; background: string; text: string; accent: string; dispatch: string; muted: string; icon: string };
 };
 
 const toForm = (c: ShippingCountdownConfig): Form => ({
@@ -38,7 +38,7 @@ const toForm = (c: ShippingCountdownConfig): Form => ({
   outMode: c.availability.outOfStock.mode, outMessage: c.availability.outOfStock.message, backMode: c.availability.backorder.mode, backMessage: c.availability.backorder.message,
   warnEnabled: c.warning.enabled, warnStart: c.warning.startDate, warnEnd: c.warning.endDate, warnMessage: c.warning.message,
   warnText: c.warning.textColor, warnBackground: c.warning.backgroundColor, warnBorder: c.warning.borderColor,
-  look: { ...c.style, textSize: String(c.style.textSize), margin: String(c.style.margin), radius: String(c.style.radius), borderWidth: String(c.style.borderWidth) },
+  look: { ...c.style, textSize: String(c.style.textSize), margin: String(c.style.margin), lineGap: String(c.style.lineGap), radius: String(c.style.radius), borderWidth: String(c.style.borderWidth) },
 });
 
 /** The settings the form describes, plus anything in it that cannot even be read as a setting (the rest is checked by the shared validator). */
@@ -300,6 +300,7 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
                 <PolarisNumberField label="Border width (px)" min={1} max={10} step={1} disabled={form.look.border === "none"} value={form.look.borderWidth} onInput={event => setLook({ borderWidth: event.currentTarget.value })} />
                 <PolarisNumberField label="Corner radius (px)" min={0} max={20} step={1} value={form.look.radius} onInput={event => setLook({ radius: event.currentTarget.value })} />
                 <PolarisNumberField label="Space above and below (px)" min={0} max={40} step={1} value={form.look.margin} onInput={event => setLook({ margin: event.currentTarget.value })} />
+                <PolarisNumberField label="Space between lines (px)" min={0} max={24} step={1} value={form.look.lineGap} details="The same gap between every line in the block." onInput={event => setLook({ lineGap: event.currentTarget.value })} />
               </s-grid>
               <PolarisCheckbox label="Show the clock icon" checked={form.look.showIcon} onChange={event => setLook({ showIcon: event.currentTarget.checked })} />
               <section aria-label="Colours" style={{ display: "grid", gap: 12, borderTop: "1px solid #e3e3e3", paddingTop: 16 }}>

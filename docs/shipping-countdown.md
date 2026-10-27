@@ -68,6 +68,7 @@ The old block had 17 settings; the app has fewer, better chosen ones, and the de
 - **One text size** (default 16 px). The days line (87.5%) and the icon (1.5 times) scale with it, replacing separate sizes for each.
 - **Padding** is Compact, Standard (16/24 px, as before) or Roomy, replacing two sliders. On phones it is 20% smaller, inside the box.
 - **Border** is Double (as before), Solid or None, with a width.
+- **Space between lines** (default 8 px) is one gap between every line in the block (the icon, the free delivery line, the dispatch line, the days line, and the warning above). Nothing else adds space between them: the dispatch line holds a single line while it loads, the icon has no margin of its own, and every line uses the same line height.
 - **Colours**: background, text, time left, dispatch day and border, secondary text, icon. The separate "expired text" colour is now the secondary text colour. The warning notice has its own colours.
 - The app warns when text would be hard to read on its background (4.5 to 1 for text, 3 to 1 for the icon).
 - The preview in the app is the block's own markup and stylesheet. A test renders the block's Liquid and checks it writes the same attributes and variables the app's preview does.
