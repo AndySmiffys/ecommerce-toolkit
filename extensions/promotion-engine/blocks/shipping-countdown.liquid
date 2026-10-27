@@ -76,7 +76,7 @@
         data-role="warning"
         style="--sc-warn-text:{{ warning.textColor }};--sc-warn-bg:{{ warning.backgroundColor }};--sc-warn-border:{{ warning.borderColor }}"
         {% unless show_warning %}hidden{% endunless %}
-      >⚠️ {{ warning.message | escape }}</div>
+      >⚠️ {% render 'shipping-rich', text: warning.message %}</div>
     {%- endif -%}
 
     <div class="sc__content">
@@ -88,14 +88,14 @@
       {%- endif -%}
 
       {%- if free.enabled -%}
-        <p class="sc__free" data-role="free" aria-live="polite" {% unless show_free %}hidden{% endunless %}>{{ free_text | escape }}</p>
+        <p class="sc__free" data-role="free" aria-live="polite" {% unless show_free %}hidden{% endunless %}>{% render 'shipping-rich', text: free_text %}</p>
       {%- endif -%}
 
       {%- comment -%} The dispatch line is filled in by the script from London's clock; the space is held so nothing jumps. {%- endcomment -%}
       <p class="sc__main" data-role="dispatch">&nbsp;</p>
 
       {%- if config.showShippingDays and day_list != blank -%}
-        <p class="sc__days">{{ config.shippingDaysPrefix | escape }} {{ day_list }}</p>
+        <p class="sc__days">{% render 'shipping-rich', text: config.shippingDaysPrefix %} {{ day_list }}</p>
       {%- endif -%}
     </div>
 

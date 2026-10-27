@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultShippingConfig, defaultShippingStyle, freePlaceholders, isIsoDate, parseBankHolidays, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
+import { defaultShippingConfig, defaultShippingStyle, freePlaceholders, isIsoDate, parseBankHolidays, richProblem, stripRich, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
 import { mergeBankHolidays, upcomingBankHolidays } from "../app/modules/shipping/bankHolidays.server";
 
 const valid = (changes: Record<string, unknown> = {}) => ({ ...defaultShippingConfig, ...changes });
@@ -130,4 +130,28 @@ test("the free-delivery messages can use three placeholders, and anything else i
   assert.equal(validateShippingConfig(free({ enabled: false, textUnder: "Spend {thresold}" })).ok, false, "still checked when switched off, so it is not a surprise later");
   assert.match(defaultShippingConfig.freeShipping.textUnder, /\{country\}.*\{threshold\}/);
   assert.deepEqual(unknownPlaceholders(defaultShippingConfig.freeShipping.textUnder + defaultShippingConfig.freeShipping.textAdd + defaultShippingConfig.freeShipping.textOver), [], "the defaults use only real ones");
+});
+
+test("formatting in a message must be closed properly, and the words under it count for the rules about wording", () => {
+  assert.equal(stripRich("[bold]Last[/bold] [highlight]orders[/highlight]"), "Last orders");
+  assert.equal(stripRich("[bold][highlight]a[/highlight][/bold] <b>x</b> [b]y[/b]"), "a <b>x</b> [b]y[/b]", "only the two real tags are removed");
+  for (const fine of ["", "plain", "[bold]a[/bold]", "[highlight]a[/highlight] b [bold]c[/bold]", "[bold]a [highlight]b[/highlight][/bold]", "[highlight][bold]a[/bold][/highlight]", "a [ b ] c", "{rate}"]) assert.equal(richProblem(fine), null, fine);
+  assert.match(richProblem("[bold]never closed") ?? "", /^\[bold\] that is never closed$/);
+  assert.match(richProblem("closing[/highlight] only") ?? "", /a closing \[\/highlight\] with no matching start/);
+  assert.match(richProblem("[bold]a [highlight]b[/bold][/highlight]") ?? "", /closing \[\/bold\]/, "closed in the wrong order");
+  assert.match(richProblem("[bold][bold]a[/bold]") ?? "", /never closed/);
+  const text = (field: string, value: string) => (field === "delay" ? valid({ delayDays: 2, delayMessage: value }) : valid({ [field]: value }));
+  for (const field of ["countdownPrefix", "countdownSuffix", "noShippingText", "errorText", "shippingDaysPrefix", "delay"]) {
+    assert.equal(validateShippingConfig(text(field, "[bold]ok[/bold] [highlight]fine[/highlight]")).ok, true, field);
+    assert.match(errorsOf(text(field, "[bold]open")).join(" "), /has formatting with \[bold\] that is never closed\. Select the words and use the Bold and Highlight buttons\./, field);
+  }
+  const free = (changes: Record<string, unknown>) => valid({ freeShipping: { ...defaultShippingConfig.freeShipping, ...changes } });
+  assert.match(errorsOf(free({ textUnder: "[highlight]open" })).join(" "), /Message under the threshold has formatting/);
+  assert.match(errorsOf(free({ textAdd: "x[/bold]" })).join(" "), /Add this item message has formatting/);
+  assert.match(errorsOf(valid({ availability: { outOfStock: { mode: "message", message: "[bold]x" }, backorder: defaultShippingConfig.availability.backorder } })).join(" "), /Out of stock message has formatting/);
+  assert.match(errorsOf(valid({ warning: { ...defaultShippingConfig.warning, enabled: true, startDate: "2026-12-01", endDate: "2026-12-02", message: "[highlight]x" } })).join(" "), /Warning message has formatting/);
+  // A message that is only formatting has no words, so it counts as empty.
+  assert.match(errorsOf(free({ textUnder: "[bold][/bold]" })).join(" "), /cannot be empty/);
+  assert.match(errorsOf(valid({ availability: { outOfStock: { mode: "message", message: "[bold] [/bold]" }, backorder: defaultShippingConfig.availability.backorder } })).join(" "), /Out of stock message cannot be empty/);
+  assert.equal(validateShippingConfig(valid({ delayMessage: defaultShippingConfig.delayMessage })).ok, true, "the default delay message, written before the editor, is still fine");
 });

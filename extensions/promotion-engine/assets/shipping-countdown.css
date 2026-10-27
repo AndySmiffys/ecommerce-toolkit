@@ -41,6 +41,7 @@ shipping-countdown .sc__main { min-height: 1.4em; }
 shipping-countdown .sc__free[hidden] { display: none; }
 shipping-countdown .sc__countdown { color: var(--sc-accent, #d63384); font-weight: 600; }
 shipping-countdown .sc__dispatch { color: var(--sc-dispatch, #28a745); font-weight: 700; }
+shipping-countdown strong { font-weight: 700; }
 shipping-countdown .sc__expired { color: var(--sc-muted, #666); font-style: italic; }
 shipping-countdown .sc__days {
   margin: 0;

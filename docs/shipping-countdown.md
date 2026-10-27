@@ -9,6 +9,14 @@ A product-page block that shows a free-shipping message, a dispatch countdown ("
 - **The script** (`assets/shipping-countdown.js`) holds pure date and message functions, and a single `<shipping-countdown>` element (defined once, however many blocks are on the page). The app's preview loads the same file, so the preview cannot disagree with the shop.
 - **Time**: "now" and every calendar day are London's, taken from `Intl.DateTimeFormat` with `timeZone: "Europe/London"`. The shopper's time zone is never used. Days are `YYYY-MM-DD` strings; day arithmetic is done in UTC on those strings.
 
+## Bold and highlight in every wording
+
+Every wording box on the settings page (the countdown prefix and suffix, the days prefix, no dispatch day and error text, the free-delivery messages, the two stock messages, the delay message and the warning) is a small formatting editor. Select words and press **Bold** or **Highlight** (or Ctrl+B and Ctrl+Shift+H); the box shows the result as you type, and so does the preview. Highlight is the countdown's colour, from Appearance. A message is one paragraph: Enter does nothing, and pasted text loses its line breaks and formatting.
+
+- **What is stored** is the same text as before with two tags, `[bold]…[/bold]` and `[highlight]…[/highlight]`, so wording saved before the editor (the delay message's `[highlight]`) works unchanged. The editor always writes them closed and nested; saving rejects anything that is not.
+- **On the product page** the tags become `<strong>` and a highlight `<span>`, and nothing else in a message can become markup: the server escapes the whole message first and only turns these four fixed tags into HTML (`snippets/shipping-rich.liquid`), and the script builds the same from text nodes. Anything in braces is a placeholder, filled in before the formatting is read, so `[bold]{rate}[/bold]` works.
+- **The editor is hand-built.** Shopify has no rich text field, so this is one of the few exceptions to using native components, like the image focal-point picker. It lives in `app/modules/shipping/RichTextField.tsx`, with the editing rules (select characters, toggle a format, write back the tags) in `richText.ts`, which reads messages with the storefront script's own `parseRich` so the editor and the product page cannot disagree.
+
 ## Placeholders in the free-delivery messages
 
 The three free-delivery wordings (under the threshold, this item would reach it, and reached) can use these. Write one in braces and the product page fills it in for each shopper. Each can be used more than once, and the settings page lists them with an example for the country in the preview.
@@ -33,7 +41,7 @@ The **Shipping** page reads Shopify's shipping setup (delivery profiles, zones, 
 ## Rules
 
 - Dispatch is today when today is a shipping day, not a bank holiday, and before the cut-off; otherwise the next such day (searched up to 30 days ahead). The countdown is the real time to that day's cut-off: under 24 hours "X hours Y minutes", from 24 hours "X days Y hours".
-- **Delay** (delay days above 0) replaces the countdown with dispatch from the Nth shipping day after today, whatever the time of day. Wrap words in `[highlight]` and `[/highlight]` to colour them.
+- **Delay** (delay days above 0) replaces the countdown with dispatch from the Nth shipping day after today, whatever the time of day. Select words in the message and use **Highlight** to colour them like the countdown.
 - **Free shipping** is read from Shopify's shipping settings, never typed in (see Shipping review below). Each shopper gets the free-delivery rule for their own country: free from an order total, always free, or nothing. The message only shows for a cart in the shop's currency, and nothing is converted. "This item reaches it" uses the chosen variant's price times the chosen quantity. Wording can use the placeholders below.
 - **Stock.** A variant that cannot be dispatched now never gets a dispatch date, and the two cases are told apart, each with its own wording or a hide option:
   - **Out of stock:** the variant is unavailable, so it cannot be bought.
@@ -88,7 +96,7 @@ The old block had 17 settings; the app has fewer, better chosen ones, and the de
 
 ## Tests
 
-`tests/shipping-countdown.test.cjs` (the date and message functions with fixed instants: cut-offs, bank holidays, the Christmas run, both clock changes, other visitor time zones, delay mode, thresholds), `tests/shipping-countdown-element.test.cjs` (the real block rendered and driven in a simulated browser) and `tests/shipping-config.test.ts` (validation, the bank-holiday import), `tests/shipping-review.test.ts`, `tests/shipping-page.test.tsx` and `tests/shipping-sync.test.ts` (reading Shopify's shipping, the free-service finder, the review checks, the Shipping page, and publishing the table) and `tests/shipping-appearance.test.ts` (the block and the app agree on the look). Run with `npm test`.
+`tests/shipping-countdown.test.cjs` (the date and message functions with fixed instants: cut-offs, bank holidays, the Christmas run, both clock changes, other visitor time zones, delay mode, thresholds), `tests/shipping-countdown-element.test.cjs` (the real block rendered and driven in a simulated browser) and `tests/shipping-config.test.ts` (validation, the bank-holiday import), `tests/shipping-review.test.ts`, `tests/shipping-page.test.tsx` and `tests/rich-text-field.test.cjs` and `tests/shipping-rich-text.test.ts` (the formatting editor and its rules), `tests/shipping-sync.test.ts` (reading Shopify's shipping, the free-service finder, the review checks, the Shipping page, and publishing the table) and `tests/shipping-appearance.test.ts` (the block and the app agree on the look). Run with `npm test`.
 
 ## Still to check on a real theme
 

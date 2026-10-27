@@ -10,7 +10,7 @@ const schema = JSON.parse(schemaPart.split("{% endschema %}")[0]);
 const script = readFileSync("extensions/promotion-engine/assets/shipping-countdown.js", "utf8");
 
 const money = minor => `£${minor % 100 === 0 ? minor / 100 : (minor / 100).toFixed(2)}`;
-const liquid = new Liquid();
+const liquid = new Liquid({ root: "extensions/promotion-engine/snippets", extname: ".liquid" });
 liquid.registerFilter("money_without_trailing_zeros", money);
 liquid.registerFilter("date", () => "2026-10-20"); // the shop's own date, as 'now' | date gives it
 
@@ -170,6 +170,60 @@ test("the warning notice is decided on the server by the shop's date, and its te
   const inside = await render({ cfg: { ...config, warning: { ...config.warning, startDate: "2026-10-20", endDate: "2026-10-20" } } });
   assert.doesNotMatch(inside, /data-role="warning"[^>]*hidden/, "both ends are included");
   assert.doesNotMatch(await render({ cfg: { ...config, warning: { ...config.warning, enabled: false } } }), /data-role="warning"/);
+});
+
+test("bold and highlighted words in a message are written as formatting on the server, and nothing else in it can become markup", async () => {
+  const rich = {
+    ...config,
+    shippingDaysPrefix: "We [bold]ship[/bold] on:",
+    freeShipping: { ...config.freeShipping, textUnder: "[highlight]Free[/highlight] over {threshold} with [bold]{rate}[/bold]" },
+    warning: { ...config.warning, startDate: "2026-10-20", endDate: "2026-10-20", message: "[bold]Last[/bold] orders <img src=x onerror=alert(1)> [highlight]soon[/highlight]" },
+  };
+  const html = visible(await render({ cfg: rich }));
+  assert.match(html, /<span class="sc__countdown">Free<\/span> over £50 with <strong>Free delivery<\/strong>/, "the free delivery line, with the placeholder filled in inside the bold");
+  assert.match(html, /We <strong>ship<\/strong> on: Monday/, "the days line");
+  assert.match(html, /<strong>Last<\/strong> orders &lt;img src=x onerror=alert\(1\)&gt; <span class="sc__countdown">soon<\/span>/, "the warning: formatting becomes markup, anything else is escaped");
+  assert.doesNotMatch(html, /<img/);
+  assert.doesNotMatch(html, /\[bold\]|\[highlight\]|\[\/bold\]|\[\/highlight\]/, "no tag is left showing");
+  const nested = visible(await render({ cfg: { ...rich, warning: { ...rich.warning, message: "[bold]a [highlight]b[/highlight][/bold]" } } }));
+  assert.match(nested, /<strong>a <span class="sc__countdown">b<\/span><\/strong>/);
+});
+
+test("in the browser every message is written with its formatting, and what is typed cannot become markup", async () => {
+  const rich = {
+    ...config,
+    countdownPrefix: "Order [bold]in[/bold] the next",
+    countdownSuffix: "for [highlight]dispatch[/highlight] on",
+    noShippingText: "[bold]Closed[/bold] <img src=x onerror=alert(1)>",
+    errorText: "[bold]Oops[/bold]",
+    freeShipping: { ...config.freeShipping, textAdd: "Add this for [bold]{rate}[/bold]" },
+    availability: { outOfStock: { mode: "message", message: "[bold]Sold[/bold] out" }, backorder: { mode: "message", message: "Back [highlight]soon[/highlight]" } },
+  };
+  const p = await page({ cfg: rich });
+  const line = () => p.document.querySelector('[data-role="dispatch"]');
+  assert.equal(line().innerHTML.replace(/<span class="sc__(countdown|dispatch)">/g, "<s>").replace(/<\/span>/g, "</s>"), "Order <strong>in</strong> the next <s>5 hours</s> for <s>dispatch</s> on <s>Tuesday 20 Oct</s>");
+  const id = p.document.querySelector('input[name="id"]');
+  const pick = value => { id.value = value; id.dispatchEvent(new p.window.Event("change", { bubbles: true })); };
+  pick("3");
+  assert.equal(line().innerHTML, "<strong>Sold</strong> out");
+  pick("4");
+  assert.equal(line().innerHTML, 'Back <span class="sc__countdown">soon</span>');
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 4500, currency: "GBP" } } }));
+  assert.equal(p.free().innerHTML, "Add this for <strong>Free delivery</strong>");
+  const closed = await page({ cfg: { ...rich, shippingDays: [false, false, false, false, false, false, false] } });
+  const none = closed.document.querySelector('[data-role="dispatch"] .sc__expired');
+  assert.equal(none.querySelector("strong").textContent, "Closed");
+  assert.equal(none.querySelector("img"), null, "typed text is never turned into elements");
+  assert.match(none.textContent, /<img src=x onerror=alert\(1\)>/, "it stays visible as the text it is");
+  const broken = await page({ cfg: { ...rich, cutoffTime: "" } });
+  assert.equal(broken.document.querySelector('[data-role="dispatch"]').innerHTML, "<strong>Oops</strong>");
+  p.close(); closed.close(); broken.close();
+});
+
+test("delay messages keep working with the formatting written by hand before there was an editor", async () => {
+  const p = await page({ cfg: { ...config, delayDays: 2, delayMessage: "Delayed [highlight]from[/highlight] and [bold]slow[/bold]" } });
+  assert.equal(p.document.querySelector('[data-role="dispatch"]').innerHTML, 'Delayed <span class="sc__countdown">from</span> and <strong>slow</strong> <span class="sc__dispatch">Thursday 22 Oct</span>');
+  p.close();
 });
 
 test("with no saved settings the block says nothing, except to the theme editor", async () => {

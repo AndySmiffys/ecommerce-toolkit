@@ -6,7 +6,7 @@ import { defaultShippingConfig, defaultShippingStyle } from "../app/modules/ship
 import { styleAttributes, styleText } from "../app/modules/shipping/appearance";
 
 const template = readFileSync("extensions/promotion-engine/blocks/shipping-countdown.liquid", "utf8").split("{% schema %}")[0];
-const liquid = new Liquid();
+const liquid = new Liquid({ root: "extensions/promotion-engine/snippets", extname: ".liquid" });
 liquid.registerFilter("money_without_trailing_zeros", (value: number) => `£${value / 100}`);
 liquid.registerFilter("date", () => "2026-10-20");
 const render = (style: unknown) => liquid.parseAndRender(template, {

@@ -128,18 +128,32 @@
     return DAY_NAMES[weekday(date)] + ' ' + p.d + ' ' + MONTH_NAMES[p.m - 1];
   }
 
-  /** Splits "text [highlight]this[/highlight] text" into plain and highlighted pieces, without any markup. */
-  function parseHighlight(text) {
-    var out = [];
-    var pattern = /\[highlight\]([\s\S]*?)\[\/highlight\]/g;
-    var last = 0, m;
-    while ((m = pattern.exec(String(text || '')))) {
-      if (m.index > last) out.push({ text: text.slice(last, m.index), highlight: false });
-      out.push({ text: m[1], highlight: true });
-      last = pattern.lastIndex;
+  var OPEN_BOLD = '[bold]', CLOSE_BOLD = '[/bold]', OPEN_HIGHLIGHT = '[highlight]', CLOSE_HIGHLIGHT = '[/highlight]';
+
+  /**
+   * Reads the formatting in a message: "Order [bold]now[/bold] for [highlight]free[/highlight] delivery" (the two can be nested).
+   * Returns runs of text with what applies to each. It never produces markup, so it is safe for any text, and it forgives what is not
+   * balanced: a closing tag with nothing open is ignored, and a tag left open runs to the end.
+   */
+  function parseRich(text) {
+    var source = String(text || '');
+    var runs = [], bold = 0, highlight = 0, buffer = '', i = 0;
+    function flush() {
+      if (!buffer) return;
+      var last = runs[runs.length - 1];
+      if (last && last.bold === (bold > 0) && last.highlight === (highlight > 0)) last.text += buffer;
+      else runs.push({ text: buffer, bold: bold > 0, highlight: highlight > 0 });
+      buffer = '';
     }
-    if (last < String(text || '').length) out.push({ text: text.slice(last), highlight: false });
-    return out;
+    while (i < source.length) {
+      if (source.substr(i, OPEN_BOLD.length) === OPEN_BOLD) { flush(); bold++; i += OPEN_BOLD.length; }
+      else if (source.substr(i, CLOSE_BOLD.length) === CLOSE_BOLD) { flush(); if (bold > 0) bold--; i += CLOSE_BOLD.length; }
+      else if (source.substr(i, OPEN_HIGHLIGHT.length) === OPEN_HIGHLIGHT) { flush(); highlight++; i += OPEN_HIGHLIGHT.length; }
+      else if (source.substr(i, CLOSE_HIGHLIGHT.length) === CLOSE_HIGHLIGHT) { flush(); if (highlight > 0) highlight--; i += CLOSE_HIGHLIGHT.length; }
+      else { buffer += source.charAt(i); i++; }
+    }
+    flush();
+    return runs;
   }
 
   /** An amount in minor units (pence), with pence only when there are some: 5000 is "£50", 4950 is "£49.50". */
@@ -214,7 +228,7 @@
   var logic = {
     londonParts: londonParts, addDays: addDays, weekday: weekday, londonTimeToUtc: londonTimeToUtc, parseCutoff: parseCutoff,
     isDispatchDay: isDispatchDay, nextDispatch: nextDispatch, delayedDispatch: delayedDispatch, countdownText: countdownText,
-    formatDispatchDate: formatDispatchDate, parseHighlight: parseHighlight, formatMoney: formatMoney, fillThreshold: fillThreshold,
+    formatDispatchDate: formatDispatchDate, parseRich: parseRich, formatMoney: formatMoney, fillThreshold: fillThreshold,
     freeShippingMessage: freeShippingMessage, stockState: stockState, warningVisible: warningVisible, dispatchView: dispatchView
   };
   root.ShippingCountdownLogic = logic;
@@ -235,6 +249,15 @@
       if (c && typeof c === 'object' && typeof c.total_price === 'number') return c;
     }
     return null;
+  }
+  /** Writes a message into a node with its bold and highlighted words, built from text nodes so nothing in it can become markup. */
+  function appendRich(node, text) {
+    parseRich(text).forEach(function (run) {
+      var piece = document.createTextNode(run.text);
+      if (run.bold) { var strong = document.createElement('strong'); strong.appendChild(piece); piece = strong; }
+      if (run.highlight) { var mark = el('span', 'sc__countdown'); mark.appendChild(piece); piece = mark; }
+      node.appendChild(piece);
+    });
   }
   function el(tag, className, text) {
     var node = document.createElement(tag);
@@ -359,18 +382,23 @@
       this.hidden = view.kind === 'hidden';
       line.textContent = '';
       if (view.kind === 'countdown') {
-        line.append(c.countdownPrefix + ' ', el('span', 'sc__countdown', view.countdown), ' ' + c.countdownSuffix + ' ', el('span', 'sc__dispatch', view.date));
+        appendRich(line, c.countdownPrefix);
+        line.append(' ', el('span', 'sc__countdown', view.countdown), ' ');
+        appendRich(line, c.countdownSuffix);
+        line.append(' ', el('span', 'sc__dispatch', view.date));
       } else if (view.kind === 'delay') {
-        parseHighlight(c.delayMessage).forEach(function (piece) { line.append(piece.highlight ? el('span', 'sc__countdown', piece.text) : document.createTextNode(piece.text)); });
+        appendRich(line, c.delayMessage);
         line.append(' ', el('span', 'sc__dispatch', view.date));
       } else if (view.kind === 'outofstock') {
-        line.append(c.availability.outOfStock.message);
+        appendRich(line, c.availability.outOfStock.message);
       } else if (view.kind === 'backorder') {
-        line.append(c.availability.backorder.message);
+        appendRich(line, c.availability.backorder.message);
       } else if (view.kind === 'none') {
-        line.append(el('span', 'sc__expired', c.noShippingText));
+        var expired = el('span', 'sc__expired');
+        appendRich(expired, c.noShippingText);
+        line.append(expired);
       } else if (view.kind === 'error') {
-        line.append(c.errorText);
+        appendRich(line, c.errorText);
       }
     }
 
@@ -383,7 +411,12 @@
         cartCurrency: this.cart.currency, cartTotal: this.cart.total, itemPrice: variant && stockState(variant) !== 'out' ? variant.price : 0, quantity: this.selectedQuantity()
       });
       this.freeLine.hidden = result.state === 'hidden';
-      if (this.freeLine.textContent !== result.text) this.freeLine.textContent = result.text;
+      // Rewritten only when the message changed, so a screen reader is not told the same thing again.
+      if (this.freeLine.getAttribute('data-message') !== result.text) {
+        this.freeLine.textContent = '';
+        appendRich(this.freeLine, result.text);
+        this.freeLine.setAttribute('data-message', result.text);
+      }
     }
 
     /** Re-run the dispatch line on the minute, so the countdown ticks over and rolls to the next day by itself. */

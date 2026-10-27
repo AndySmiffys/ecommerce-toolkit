@@ -124,11 +124,20 @@ test("dispatch dates are written the en-GB way", () => {
   assert.equal(logic.formatDispatchDate("2027-01-04"), "Monday 4 Jan");
 });
 
-test("the delay message highlights what is inside [highlight] tags and nothing else", () => {
-  assert.deepEqual(logic.parseHighlight("We are behind. [highlight]Dispatch from[/highlight]"), [{ text: "We are behind. ", highlight: false }, { text: "Dispatch from", highlight: true }]);
-  assert.deepEqual(logic.parseHighlight("<b>plain</b>"), [{ text: "<b>plain</b>", highlight: false }], "markup stays as text");
-  assert.deepEqual(logic.parseHighlight("[highlight]a[/highlight] and [highlight]b[/highlight]").map(p => p.text), ["a", " and ", "b"]);
-  assert.deepEqual(logic.parseHighlight(""), []);
+test("a message's bold and highlighted words are read without producing any markup", () => {
+  const runs = text => logic.parseRich(text);
+  assert.deepEqual(runs("We are behind. [highlight]Dispatch from[/highlight]"), [{ text: "We are behind. ", bold: false, highlight: false }, { text: "Dispatch from", bold: false, highlight: true }]);
+  assert.deepEqual(runs("Order [bold]now[/bold] for [highlight]free[/highlight]"), [{ text: "Order ", bold: false, highlight: false }, { text: "now", bold: true, highlight: false }, { text: " for ", bold: false, highlight: false }, { text: "free", bold: false, highlight: true }]);
+  assert.deepEqual(runs("[bold]a [highlight]b[/highlight][/bold]"), [{ text: "a ", bold: true, highlight: false }, { text: "b", bold: true, highlight: true }], "the two can be nested");
+  assert.deepEqual(runs("[highlight][bold]a[/bold][/highlight]"), [{ text: "a", bold: true, highlight: true }], "either way round");
+  assert.deepEqual(runs("<b>plain</b> & [b]this[/b]"), [{ text: "<b>plain</b> & [b]this[/b]", bold: false, highlight: false }], "markup and other tags stay as text");
+  assert.deepEqual(runs("[highlight]a[/highlight][highlight]b[/highlight]").map(run => run.text), ["ab"], "runs that touch are joined");
+  assert.deepEqual(runs("[highlight]a[/highlight] and [highlight]b[/highlight]").map(run => run.text), ["a", " and ", "b"]);
+  assert.deepEqual(runs(""), []);
+  assert.deepEqual(runs(null), []);
+  // Text that is not balanced is forgiven, never an error on the product page.
+  assert.deepEqual(runs("a[/bold]b"), [{ text: "ab", bold: false, highlight: false }], "a closing tag with nothing open is ignored");
+  assert.deepEqual(runs("a[bold]b"), [{ text: "a", bold: false, highlight: false }, { text: "b", bold: true, highlight: false }], "a tag left open runs to the end");
 });
 
 test("the threshold is written in full, with pence only when there are some", () => {

@@ -1,0 +1,5 @@
+{%- comment -%}
+  A message written in the app, with [bold] and [highlight] tags, as safe HTML. The text is escaped first and only these four fixed tags are
+  turned into markup, so nothing else in it can become HTML. The script's own reader (parseRich) does the same for what it writes later.
+{%- endcomment -%}
+{{- text | escape | replace: '[bold]', '<strong>' | replace: '[/bold]', '</strong>' | replace: '[highlight]', '<span class="sc__countdown">' | replace: '[/highlight]', '</span>' -}}

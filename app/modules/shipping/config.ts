@@ -107,6 +107,22 @@ export function unknownPlaceholders(text: string): string[] {
   return [...new Set([...text.matchAll(/\{([^{}]*)\}/g)].map(match => match[1]).filter(name => !known.has(name)))].map(name => `{${name}}`);
 }
 
+/** The message with its [bold] and [highlight] tags removed: the words a shopper reads. */
+export const stripRich = (text: string) => text.replace(/\[\/?(?:bold|highlight)\]/g, "");
+
+/**
+ * Whether the formatting in a message is closed properly and nested (bold outside, highlight inside is fine either way round as long as
+ * each is closed in the order it was opened). The editor only writes well-formed text, so this catches text that was written by hand.
+ */
+export function richProblem(text: string): string | null {
+  const stack: string[] = [];
+  for (const match of text.matchAll(/\[(\/?)(bold|highlight)\]/g)) {
+    if (!match[1]) { stack.push(match[2]); continue; }
+    if (stack.pop() !== match[2]) return `a closing [/${match[2]}] with no matching start`;
+  }
+  return stack.length ? `[${stack[stack.length - 1]}] that is never closed` : null;
+}
+
 export const limits = { text: 300, message: 600, holidays: 400 };
 
 export function isIsoDate(value: string) {
@@ -142,8 +158,10 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
   const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const text = (value: unknown, label: string, fallback: string, max = limits.text, required = false) => {
     const clean = typeof value === "string" ? value.trim() : fallback;
-    if (required && !clean) errors.push(`${label} cannot be empty.`);
+    if (required && !stripRich(clean).trim()) errors.push(`${label} cannot be empty.`);
     if (clean.length > max) errors.push(`${label} must be ${max} characters or fewer.`);
+    const broken = richProblem(clean);
+    if (broken) errors.push(`${label} has formatting with ${broken}. Select the words and use the Bold and Highlight buttons.`);
     return clean;
   };
   const flag = (value: unknown, fallback: boolean) => (typeof value === "boolean" ? value : fallback);

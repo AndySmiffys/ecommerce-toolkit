@@ -1,4 +1,4 @@
-import { createElement, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createElement, Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import type { FetcherWithComponents } from "react-router";
 import { useEmbeddedAppUrl } from "../navigation/embeddedAppUrl";
@@ -15,6 +15,7 @@ import { dayNames, defaultShippingConfig, freePlaceholders, parseBankHolidays, u
 import { formatMinor } from "./delivery/deliveryModel";
 import { freeDeliveryFor, type FreeDeliveryTable } from "./delivery/freeService";
 import { shippingLogic, type StockVariant } from "./logic";
+import { RichTextField } from "./RichTextField";
 import { styleAttributes } from "./appearance";
 
 export type ShippingResult = { ok: boolean; intent: string; errors: string[]; config?: ShippingCountdownConfig; dates?: string[] };
@@ -83,6 +84,16 @@ function ColourField({ label, value, onChange }: { label: string; value: string;
 
 type Dispatch = ReturnType<typeof shippingLogic.dispatchView>;
 
+/** A message with its bold and highlighted words, the way the product page writes it. */
+function Rich({ text }: { text: string }) {
+  return <>{shippingLogic.parseRich(text).map((run, index) => {
+    let node: ReactNode = run.text;
+    if (run.bold) node = <strong>{node}</strong>;
+    if (run.highlight) node = <span className="sc__countdown">{node}</span>;
+    return <Fragment key={index}>{node}</Fragment>;
+  })}</>;
+}
+
 /** The block exactly as the product page builds it (same markup, same stylesheet, same variables), so the look can be judged here. */
 function ShippingPreview({ config, view, freeText, warningShowing }: { config: ShippingCountdownConfig; view: Dispatch; freeText: string; warningShowing: boolean }) {
   const { data, vars } = styleAttributes(config.style);
@@ -93,20 +104,20 @@ function ShippingPreview({ config, view, freeText, warningShowing }: { config: S
   return <>
     <style>{blockCss}</style>
     {createElement("shipping-countdown", { ...hostAttributes, ...data, style: vars as CSSProperties },
-      warningShowing && <div className="sc__warning" style={warningVars}>⚠️ {config.warning.message}</div>,
+      warningShowing && <div className="sc__warning" style={warningVars}>⚠️ <Rich text={config.warning.message} /></div>,
       <div className="sc__content">
         {config.style.showIcon && <svg className="sc__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" /></svg>}
-        {freeText && <p className="sc__free">{freeText}</p>}
+        {freeText && <p className="sc__free"><Rich text={freeText} /></p>}
         <p className="sc__main">
-          {view.kind === "countdown" && <>{config.countdownPrefix} <span className="sc__countdown">{view.countdown}</span> {config.countdownSuffix} <span className="sc__dispatch">{view.date}</span></>}
-          {view.kind === "delay" && <>{shippingLogic.parseHighlight(config.delayMessage).map((piece, index) => piece.highlight ? <span key={index} className="sc__countdown">{piece.text}</span> : <span key={index}>{piece.text}</span>)} <span className="sc__dispatch">{view.date}</span></>}
-          {view.kind === "none" && <span className="sc__expired">{config.noShippingText}</span>}
-          {view.kind === "error" && config.errorText}
+          {view.kind === "countdown" && <><Rich text={config.countdownPrefix} /> <span className="sc__countdown">{view.countdown}</span> <Rich text={config.countdownSuffix} /> <span className="sc__dispatch">{view.date}</span></>}
+          {view.kind === "delay" && <><Rich text={config.delayMessage} /> <span className="sc__dispatch">{view.date}</span></>}
+          {view.kind === "none" && <span className="sc__expired"><Rich text={config.noShippingText} /></span>}
+          {view.kind === "error" && <Rich text={config.errorText} />}
           {view.kind === "hidden" && "The block is hidden: no dispatch day is available and Hide when unavailable is on."}
-          {view.kind === "outofstock" && config.availability.outOfStock.message}
-          {view.kind === "backorder" && config.availability.backorder.message}
+          {view.kind === "outofstock" && <Rich text={config.availability.outOfStock.message} />}
+          {view.kind === "backorder" && <Rich text={config.availability.backorder.message} />}
         </p>
-        {config.showShippingDays && days && <p className="sc__days">{config.shippingDaysPrefix} {days}</p>}
+        {config.showShippingDays && days && <p className="sc__days"><Rich text={config.shippingDaysPrefix} /> {days}</p>}
       </div>)}
   </>;
 }
@@ -362,11 +373,11 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
                 options={[1, 2, 3, 4, 5, 6, 0].map(index => ({ value: String(index), label: dayNames[index] }))}
                 onChange={values => set({ days: Array.from({ length: 7 }, (_, index) => values.includes(String(index))) })} />
               <PolarisCheckbox label="Show the dispatch days under the message" checked={form.showShippingDays} onChange={event => set({ showShippingDays: event.currentTarget.checked })} />
-              <TextField label="Shipping days prefix" value={form.shippingDaysPrefix} onChange={value => set({ shippingDaysPrefix: value })} details="Shown before the list of days, for example “We ship on:”." />
-              <TextField label="Countdown prefix" value={form.countdownPrefix} onChange={value => set({ countdownPrefix: value })} details="Before the time left, for example “Order in the next”." />
-              <TextField label="Countdown suffix" value={form.countdownSuffix} onChange={value => set({ countdownSuffix: value })} details="Between the time left and the dispatch day, for example “for dispatch on”." />
-              <TextField label="No dispatch day text" value={form.noShippingText} onChange={value => set({ noShippingText: value })} details="Shown when no dispatch day is found in the next 30 days." />
-              <TextField label="Error text" value={form.errorText} onChange={value => set({ errorText: value })} details="Shown if the settings cannot be read." />
+              <RichTextField accent={form.look.accent} label="Shipping days prefix" value={form.shippingDaysPrefix} onChange={value => set({ shippingDaysPrefix: value })} details="Shown before the list of days, for example “We ship on:”." />
+              <RichTextField accent={form.look.accent} label="Countdown prefix" value={form.countdownPrefix} onChange={value => set({ countdownPrefix: value })} details="Before the time left, for example “Order in the next”." />
+              <RichTextField accent={form.look.accent} label="Countdown suffix" value={form.countdownSuffix} onChange={value => set({ countdownSuffix: value })} details="Between the time left and the dispatch day, for example “for dispatch on”." />
+              <RichTextField accent={form.look.accent} label="No dispatch day text" value={form.noShippingText} onChange={value => set({ noShippingText: value })} details="Shown when no dispatch day is found in the next 30 days." />
+              <RichTextField accent={form.look.accent} label="Error text" value={form.errorText} onChange={value => set({ errorText: value })} details="Shown if the settings cannot be read." />
               <PolarisCheckbox label="Hide the block when no dispatch day is available" checked={form.hideIfUnavailable} onChange={event => set({ hideIfUnavailable: event.currentTarget.checked })} />
             </>)}
 
@@ -384,9 +395,9 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
               {form.freeEnabled && <>
                 <DeliveryFromShopify delivery={delivery} appUrl={appUrl} />
                 <PlaceholderList examples={examples} onCopy={copyPlaceholder} />
-                <TextField label="Message when under the threshold" value={form.textUnder} onChange={value => set({ textUnder: value })} error={placeholderError(form.textUnder)} details="For example “Free delivery to {country} on orders over {threshold}”." />
-                <TextField label="Message when this item would reach it" value={form.textAdd} onChange={value => set({ textAdd: value })} error={placeholderError(form.textAdd)} details="Uses the selected variant and quantity. An out of stock variant never counts. For example “Add this item to get {rate}”." />
-                <TextField label="Message when the cart has reached it" value={form.textOver} onChange={value => set({ textOver: value })} error={placeholderError(form.textOver)} details="Also shown where delivery is always free. For example “You have unlocked {rate}!”." />
+                <RichTextField accent={form.look.accent} label="Message when under the threshold" value={form.textUnder} onChange={value => set({ textUnder: value })} error={placeholderError(form.textUnder)} details="For example “Free delivery to {country} on orders over {threshold}”." />
+                <RichTextField accent={form.look.accent} label="Message when this item would reach it" value={form.textAdd} onChange={value => set({ textAdd: value })} error={placeholderError(form.textAdd)} details="Uses the selected variant and quantity. An out of stock variant never counts. For example “Add this item to get {rate}”." />
+                <RichTextField accent={form.look.accent} label="Message when the cart has reached it" value={form.textOver} onChange={value => set({ textOver: value })} error={placeholderError(form.textOver)} details="Also shown where delivery is always free. For example “You have unlocked {rate}!”." />
               </>}
             </>)}
 
@@ -396,19 +407,19 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
                 <s-heading>Out of stock</s-heading>
                 <s-text color="subdued">The chosen variant is unavailable: it has no stock and cannot be bought.</s-text>
                 <PolarisRadioList label="What to show" value={form.outMode} options={[{ value: "message", label: "Show a message instead" }, { value: "hide", label: "Hide the dispatch line" }]} onChange={value => set({ outMode: value === "hide" ? "hide" : "message" })} />
-                {form.outMode === "message" && <TextField label="Message" multiline value={form.outMessage} onChange={value => set({ outMessage: value })} maxLength={600} />}
+                {form.outMode === "message" && <RichTextField accent={form.look.accent} label="Message" lines={3} value={form.outMessage} onChange={value => set({ outMessage: value })} />}
               </section>
               <section aria-label="Zero stock, continue selling" style={{ display: "grid", gap: 12, borderTop: "1px solid #e3e3e3", paddingTop: 16 }}>
                 <s-heading>Zero stock, continue selling</s-heading>
                 <s-text color="subdued">The chosen variant has no stock, but &ldquo;Continue selling when out of stock&rdquo; is on, so it can still be bought (a back-order or pre-order). Stock must be tracked for Shopify to report zero.</s-text>
                 <PolarisRadioList label="What to show" value={form.backMode} options={[{ value: "message", label: "Show a message instead" }, { value: "hide", label: "Hide the dispatch line" }]} onChange={value => set({ backMode: value === "hide" ? "hide" : "message" })} />
-                {form.backMode === "message" && <TextField label="Message" multiline value={form.backMessage} onChange={value => set({ backMessage: value })} maxLength={600} />}
+                {form.backMode === "message" && <RichTextField accent={form.look.accent} label="Message" lines={3} value={form.backMessage} onChange={value => set({ backMessage: value })} />}
               </section>
             </>)}
 
             {step("delay", Number(form.delayDays) > 0 ? `On: dispatch from ${form.delayDays} dispatch day${Number(form.delayDays) === 1 ? "" : "s"} away` : "Off", <>
               <PolarisNumberField label="Delay in dispatch days" min={0} max={60} step={1} value={form.delayDays} details="0 is off. Otherwise the countdown is replaced by dispatch from the Nth dispatch day after today, whatever the time of day." onInput={event => set({ delayDays: event.currentTarget.value })} />
-              <TextField label="Delay message" multiline value={form.delayMessage} onChange={value => set({ delayMessage: value })} maxLength={600} details="The dispatch date follows this text. Wrap words in [highlight] and [/highlight] to colour them like the countdown." />
+              <RichTextField accent={form.look.accent} label="Delay message" lines={3} value={form.delayMessage} onChange={value => set({ delayMessage: value })} details="The dispatch date follows this text. Select words and use Highlight to colour them like the countdown." />
             </>)}
 
             {step("warning", form.warnEnabled ? (form.warnStart && form.warnEnd ? `${when(form.warnStart)} to ${when(form.warnEnd)}` : "On, dates not set") : "Off", <>
@@ -418,7 +429,7 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
                   <DateField label="First day shown" value={form.warnStart} onChange={value => set({ warnStart: value })} />
                   <DateField label="Last day shown" value={form.warnEnd} onChange={value => set({ warnEnd: value })} />
                 </s-grid>
-                <TextField label="Message" multiline value={form.warnMessage} onChange={value => set({ warnMessage: value })} maxLength={600} details="Shown above the dispatch message on both days and every day between, by London's date." />
+                <RichTextField accent={form.look.accent} label="Message" lines={3} value={form.warnMessage} onChange={value => set({ warnMessage: value })} details="Shown above the dispatch message on both days and every day between, by London's date." />
                 <s-grid gridTemplateColumns="1fr 1fr 1fr" gap="base">
                   <ColourField label="Text colour" value={form.warnText} onChange={value => set({ warnText: value })} />
                   <ColourField label="Background colour" value={form.warnBackground} onChange={value => set({ warnBackground: value })} />

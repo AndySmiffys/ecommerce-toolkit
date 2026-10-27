@@ -14,7 +14,7 @@ type Logic = {
   londonTimeToUtc(date: string, hour: number, minute: number): number;
   dispatchView(nowMs: number, config: ShippingCountdownConfig, variant: StockVariant | null): DispatchView;
   warningVisible(nowMs: number, warning: ShippingCountdownConfig["warning"]): boolean;
-  parseHighlight(text: string): Array<{ text: string; highlight: boolean }>;
+  parseRich(text: string): Array<{ text: string; bold: boolean; highlight: boolean }>;
   fillThreshold(text: string, thresholdMinor: number, currency: string, country?: string, rate?: string): string;
   freeShippingMessage(free: ShippingCountdownConfig["freeShipping"], input: { threshold: number | null; thresholdCurrency: string; country: string; rate: string; cartCurrency: string; cartTotal: number; itemPrice: number; quantity: number }): { state: "hidden" | "under" | "add" | "over"; text: string };
 };
