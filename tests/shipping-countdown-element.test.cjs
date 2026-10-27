@@ -20,6 +20,7 @@ const config = {
   freeShipping: { enabled: true, textUnder: "Free to {country} over {threshold}, only {threshold}", textAdd: "Add this item for free delivery", textOver: "Free delivery unlocked" },
   availability: { outOfStock: { mode: "message", message: "Out of stock right now" }, backorder: { mode: "message", message: "On back order: dispatched when it is back in stock" } },
   warning: { enabled: true, startDate: "2026-12-01", endDate: "2026-12-24", message: "<b>Last</b> orders", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
+  delivery: { enabled: false, heading: "Delivery options", guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", showMonth: true, services: [] },
   style: { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" },
 };
 // What the app publishes from Shopify's shipping settings: a country named in a zone, or everyone else.
@@ -29,6 +30,21 @@ const delivery = {
   restOfWorld: { free: true, thresholdMinor: 10000, rate: "Free delivery" },
 };
 const uk = { iso_code: "GB", name: "United Kingdom" };
+// The delivery services the app publishes from Shopify's shipping settings: by zone, with each country pointing at its zone.
+const serviceTable = {
+  version: 1, currency: "GBP",
+  zones: {
+    z0: { name: "Domestic", services: [
+      { name: "DPD Next Working Day Delivery", tiers: [{ from: 0, price: 699 }, { from: 3000, price: 499 }], transit: { minDays: 1, maxDays: 1 } },
+      { name: "Amazon 2 Day (Order Before 2pm) Non Guaranteed", tiers: [{ from: 0, price: 399 }, { from: 3000, price: 0 }], transit: { minDays: 2, maxDays: 2 } },
+    ] },
+    z1: { name: "Ireland", services: [] },
+    z2: { name: "Rest of world", services: [{ name: "International", tiers: [{ from: 0, price: 1999 }], transit: { minDays: 5, maxDays: 10 } }] },
+  },
+  countries: { GB: "z0", IE: "z1" },
+  restOfWorld: "z2",
+};
+const deliveryOn = (changes = {}) => ({ enabled: true, heading: "Delivery options", guaranteedText: "Delivery by {date}", estimatedText: "Delivery by {date} (Non-Guaranteed)", showMonth: true, services: [{ name: "DPD Next Working Day Delivery", label: "DPD Next Day", guaranteed: true }], ...changes });
 const variants = [
   { id: 1, price: 1000, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
   { id: 2, price: 4600, available: true, inventory_policy: "deny", inventory_management: "shopify", inventory_quantity: 9 },
@@ -37,9 +53,9 @@ const variants = [
   { id: 5, price: 1000, available: true, inventory_policy: "continue", inventory_management: null, inventory_quantity: 0 },
 ];
 
-async function render({ cartTotal = 0, currency = "GBP", cfg = config, design = false, country = uk, table = delivery } = {}) {
+async function render({ cartTotal = 0, currency = "GBP", cfg = config, design = false, country = uk, table = delivery, services = serviceTable } = {}) {
   return liquid.parseAndRender(blockTemplate, {
-    app: { metafields: { shipping_countdown: { config: { value: cfg }, delivery: { value: table } } } },
+    app: { metafields: { shipping_countdown: { config: { value: cfg }, delivery: { value: table }, delivery_services: { value: services } } } },
     localization: { country },
     block: { id: "template_abc_123", settings: {}, shopify_attributes: "" },
     cart: { total_price: cartTotal, currency: { iso_code: currency } },
@@ -223,6 +239,116 @@ test("in the browser every message is written with its formatting, and what is t
 test("delay messages keep working with the formatting written by hand before there was an editor", async () => {
   const p = await page({ cfg: { ...config, delayDays: 2, delayMessage: "Delayed [highlight]from[/highlight] and [bold]slow[/bold]" } });
   assert.equal(p.document.querySelector('[data-role="dispatch"]').innerHTML, 'Delayed <span class="sc__countdown">from</span> and <strong>slow</strong> <span class="sc__dispatch">Thursday 22 Oct</span>');
+  p.close();
+});
+
+const withDelivery = (changes = {}) => ({ ...config, delivery: deliveryOn(changes) });
+
+test("the delivery options box is written by the server with the shopper's services, and only when there is something to offer", async () => {
+  const html = visible(await render({ cfg: withDelivery() }));
+  assert.match(html, /<details class="sc__delivery" data-role="delivery">\s*<summary class="sc__delivery-heading">Delivery options<\/summary>\s*<ul class="sc__delivery-list" data-role="delivery-list"><\/ul>\s*<\/details>/);
+  assert.match(html, /data-delivery-currency="GBP"/);
+  const json = JSON.parse(/<script type="application\/json" data-services>([\s\S]*?)<\/script>/.exec(await render({ cfg: withDelivery() }))[1]);
+  assert.deepEqual(json.map(service => service.name), ["DPD Next Working Day Delivery", "Amazon 2 Day (Order Before 2pm) Non Guaranteed"], "this shopper's own country's services");
+  assert.deepEqual(json[0].tiers, serviceTable.zones.z0.services[0].tiers);
+  const ireland = await render({ cfg: withDelivery(), country: { iso_code: "IE", name: "Ireland" } });
+  assert.doesNotMatch(ireland, /sc__delivery|data-services/, "a named zone with nothing to offer does not borrow rest of world's");
+  const elsewhere = await render({ cfg: withDelivery(), country: { iso_code: "US", name: "United States" } });
+  assert.deepEqual(JSON.parse(/data-services>([\s\S]*?)<\/script>/.exec(elsewhere)[1]).map(service => service.name), ["International"], "a country in no zone uses rest of world");
+  assert.doesNotMatch(await render({ cfg: withDelivery({ enabled: false }) }), /sc__delivery|data-services/, "switched off");
+  assert.doesNotMatch(await render({ cfg: config }), /sc__delivery|data-services/, "settings saved before delivery options existed");
+  assert.doesNotMatch(await render({ cfg: withDelivery(), services: null }), /sc__delivery/, "before shipping has been read");
+  assert.doesNotMatch(await render({ cfg: withDelivery(), currency: "EUR" }), /sc__delivery/, "a cart in another currency: prices are not converted");
+  assert.doesNotMatch(await render({ cfg: withDelivery(), services: { ...serviceTable, restOfWorld: null }, country: { iso_code: "US", name: "United States" } }), /sc__delivery/, "no zone for them at all");
+});
+
+test("the heading can be formatted, and nothing else in it can become markup", async () => {
+  const html = visible(await render({ cfg: withDelivery({ heading: "[bold]Delivery[/bold] <img src=x onerror=alert(1)>" }) }));
+  assert.match(html, /<summary class="sc__delivery-heading"><strong>Delivery<\/strong> &lt;img src=x onerror=alert\(1\)&gt;<\/summary>/);
+  assert.doesNotMatch(html, /<img/);
+});
+
+test("in the browser the box lists each service with its price and when it arrives, soonest first", async () => {
+  // Tuesday 20 October, 10:00 London, before the 15:00 cut-off.
+  const p = await page({ cfg: withDelivery() });
+  const rows = () => [...p.document.querySelectorAll(".sc__option")].map(row => [...row.children].map(child => child.textContent));
+  assert.deepEqual(rows(), [
+    ["DPD Next Day", "£6.99, or £4.99 on orders of £30 or more", "Delivery by Wed 21st Oct"],
+    ["Amazon 2 Day (Order Before 2pm) Non Guaranteed", "£3.99, or free on orders of £30 or more", "Delivery by Thu 22nd Oct (Non-Guaranteed)"],
+  ]);
+  assert.equal(p.document.querySelector('[data-role="delivery"]').hidden, false);
+  assert.equal(p.document.querySelector(".sc__option-name").tagName, "SPAN");
+  p.close();
+});
+
+test("a service says Non-Guaranteed unless it was set as guaranteed, and uses its own days, cut-off and delivery time", async () => {
+  const settings = [
+    { name: "DPD Next Working Day Delivery", label: "DPD Next Day", guaranteed: true, cutoffTime: "16:00" },
+    { name: "Amazon 2 Day (Order Before 2pm) Non Guaranteed", transitMin: 3, transitMax: 3, days: [false, true, true, true, true, true, true] },
+  ];
+  const p = await page({ cfg: withDelivery({ services: settings }) });
+  const texts = () => [...p.document.querySelectorAll(".sc__option-date")].map(item => item.textContent);
+  assert.deepEqual(texts(), ["Delivery by Wed 21st Oct", "Delivery by Fri 23rd Oct (Non-Guaranteed)"], "three business days typed in, instead of Shopify's two");
+  // 15:30 London: the shop's 15:00 has passed, but this service's own 16:00 has not.
+  p.state.now = Date.parse("2026-10-20T14:30:00Z");
+  Object.defineProperty(p.document, "hidden", { value: false });
+  p.document.dispatchEvent(new p.window.Event("visibilitychange"));
+  assert.deepEqual(texts(), ["Delivery by Wed 21st Oct", "Delivery by Sat 24th Oct (Non-Guaranteed)"], "the guaranteed one goes today; the other waits for tomorrow, three delivery days on, and a Saturday carrier delivers on Saturday");
+  p.close();
+});
+
+test("the delivery options follow the chosen variant: none for out of stock or zero stock with continue selling, and they come back", async () => {
+  const p = await page({ cfg: withDelivery() });
+  const box = () => p.document.querySelector('[data-role="delivery"]');
+  const id = p.document.querySelector('input[name="id"]');
+  const pick = value => { id.value = value; id.dispatchEvent(new p.window.Event("change", { bubbles: true })); };
+  assert.equal(box().hidden, false);
+  pick("3");
+  assert.equal(box().hidden, true, "out of stock");
+  assert.equal(p.document.querySelectorAll(".sc__option").length, 0);
+  pick("4");
+  assert.equal(box().hidden, true, "zero stock, continue selling");
+  pick("5");
+  assert.equal(box().hidden, false, "stock that is not tracked is never zero");
+  pick("1");
+  assert.equal(p.document.querySelectorAll(".sc__option").length, 2);
+  p.close();
+});
+
+test("the box stays open while the list inside it is refreshed", async () => {
+  const p = await page({ cfg: withDelivery() });
+  const box = p.document.querySelector('[data-role="delivery"]');
+  box.open = true;
+  const id = p.document.querySelector('input[name="id"]');
+  id.value = "2"; id.dispatchEvent(new p.window.Event("change", { bubbles: true }));
+  assert.equal(p.document.querySelector('[data-role="delivery"]'), box, "the same box");
+  assert.equal(box.open, true, "still open");
+  p.state.now = Date.parse("2026-10-20T15:00:00Z");
+  Object.defineProperty(p.document, "hidden", { value: false });
+  p.document.dispatchEvent(new p.window.Event("visibilitychange"));
+  assert.equal(box.open, true);
+  assert.match(p.document.querySelector(".sc__option-date").textContent, /Thu 22nd Oct/, "after the cut-off, a day later");
+  p.close();
+});
+
+test("the delivery messages can be formatted and use the service's name, and the month can be left out", async () => {
+  const p = await page({ cfg: withDelivery({ guaranteedText: "[bold]{service}[/bold]: arrives [highlight]{date}[/highlight]", estimatedText: "Arrives {from} to {date}", showMonth: false }) });
+  const rows = [...p.document.querySelectorAll(".sc__option-date")];
+  assert.equal(rows[0].innerHTML, '<strong>DPD Next Day</strong>: arrives <span class="sc__countdown">Wed 21st</span>');
+  assert.equal(rows[1].textContent, "Arrives Thu 22nd to Thu 22nd");
+  p.close();
+});
+
+test("a cart in another currency hides the delivery options, and a service name from Shopify cannot inject markup", async () => {
+  const table = { ...serviceTable, zones: { ...serviceTable.zones, z0: { name: "Domestic", services: [{ name: "<img src=x onerror=alert(1)>Fast", tiers: [{ from: 0, price: 100 }], transit: { minDays: 1, maxDays: 1 } }] } } };
+  const p = await page({ cfg: withDelivery({ services: [] }), services: table });
+  const name = p.document.querySelector(".sc__option-name");
+  assert.equal(name.textContent, "<img src=x onerror=alert(1)>Fast");
+  assert.equal(p.document.querySelector(".sc__option img"), null);
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 0, currency: "EUR" } } }));
+  assert.equal(p.document.querySelector('[data-role="delivery"]').hidden, true, "at once, when the cart's currency changes");
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 0, currency: "GBP" } } }));
+  assert.equal(p.document.querySelector('[data-role="delivery"]').hidden, false, "and back again");
   p.close();
 });
 

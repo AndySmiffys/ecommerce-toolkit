@@ -49,6 +49,15 @@ shipping-countdown .sc__days {
   font-size: calc(var(--sc-size, 16px) * 0.875);
   line-height: 1.4;
 }
+/* The delivery options: a native disclosure, so it opens without a script, listing each service with its price and date. */
+shipping-countdown .sc__delivery { width: 100%; text-align: left; }
+shipping-countdown .sc__delivery[hidden] { display: none; }
+shipping-countdown .sc__delivery-heading { cursor: pointer; color: var(--sc-text, #333); font-size: var(--sc-size, 16px); font-weight: var(--sc-weight, 500); line-height: 1.4; }
+shipping-countdown .sc__delivery-list { display: grid; gap: var(--sc-gap, 8px); margin: var(--sc-gap, 8px) 0 0; padding: 0; list-style: none; }
+shipping-countdown .sc__option { display: grid; gap: 2px; padding-top: var(--sc-gap, 8px); border-top: 1px solid rgba(0, 0, 0, 0.12); line-height: 1.4; }
+shipping-countdown .sc__option-name { color: var(--sc-text, #333); font-weight: 700; }
+shipping-countdown .sc__option-price { color: var(--sc-muted, #666); font-size: calc(var(--sc-size, 16px) * 0.875); }
+shipping-countdown .sc__option-date { color: var(--sc-text, #333); font-size: calc(var(--sc-size, 16px) * 0.9); }
 shipping-countdown .sc__icon {
   display: block;
   flex: none;

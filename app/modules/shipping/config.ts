@@ -30,6 +30,38 @@ export type ShippingStyle = {
   icon: string;
 };
 
+/**
+ * What the app adds to a delivery service. The service itself is a Shopify shipping option, matched by its name; its price and delivery time
+ * come from Shopify. Only what differs from the defaults is saved.
+ */
+export type DeliveryServiceSetting = {
+  /** The option's name in Shopify. */
+  name: string;
+  /** What to call it on the product page, when the Shopify name is long or says things (guarantee, cut-off) that are set here instead. */
+  label: string;
+  show: boolean;
+  /** Promised by the carrier. Never assumed: the message says Non-Guaranteed unless this is on. */
+  guaranteed: boolean;
+  /** "HH:MM" London time, or empty to use the shop's cut-off. */
+  cutoffTime: string;
+  /** Sunday first. The days this carrier delivers, which delivery times count. */
+  days: boolean[];
+  onBankHolidays: boolean;
+  /** Business days from dispatch, typed in when Shopify has none or its figure is wrong. Both set, or both null to use Shopify's. */
+  transitMin: number | null;
+  transitMax: number | null;
+};
+
+export type DeliverySettings = {
+  enabled: boolean;
+  /** The words on the dropdown. */
+  heading: string;
+  guaranteedText: string;
+  estimatedText: string;
+  showMonth: boolean;
+  services: DeliveryServiceSetting[];
+};
+
 /** Show a message, or hide the dispatch line altogether. */
 export type StockHandling = { mode: "message" | "hide"; message: string };
 
@@ -57,6 +89,18 @@ export type ShippingCountdownConfig = {
   availability: { outOfStock: StockHandling; backorder: StockHandling };
   warning: { enabled: boolean; startDate: string; endDate: string; message: string; textColor: string; backgroundColor: string; borderColor: string };
   style: ShippingStyle;
+  delivery: DeliverySettings;
+};
+
+export const defaultServiceSetting = (name: string): DeliveryServiceSetting => ({ name, label: "", show: true, guaranteed: false, cutoffTime: "", days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null });
+
+export const defaultDeliverySettings: DeliverySettings = {
+  enabled: false,
+  heading: "Delivery options",
+  guaranteedText: "Delivery by {date}",
+  estimatedText: "Delivery by {date} (Non-Guaranteed)",
+  showMonth: true,
+  services: [],
 };
 
 export const defaultShippingStyle: ShippingStyle = {
@@ -92,6 +136,7 @@ export const defaultShippingConfig: ShippingCountdownConfig = {
   },
   warning: { enabled: false, startDate: "", endDate: "", message: "", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
   style: defaultShippingStyle,
+  delivery: defaultDeliverySettings,
 };
 
 /** What can be written in braces in a free-delivery message. The product page fills each one in for the shopper. */
@@ -101,9 +146,16 @@ export const freePlaceholders = [
   { name: "rate", meaning: "The name of the free delivery option in your Shopify shipping settings", example: "Free delivery" },
 ] as const;
 
+/** What can be written in braces in a delivery message. */
+export const deliveryPlaceholders = [
+  { name: "date", meaning: "The latest date it can arrive", example: "Wed 28th Oct" },
+  { name: "from", meaning: "The earliest date it can arrive", example: "Tue 27th Oct" },
+  { name: "service", meaning: "The service's name, or the name you gave it here", example: "DPD Next Day" },
+] as const;
+
 /** Anything in braces that is not a placeholder the product page fills in, so a typo is caught instead of shown to shoppers. */
-export function unknownPlaceholders(text: string): string[] {
-  const known = new Set<string>(freePlaceholders.map(item => item.name));
+export function unknownPlaceholders(text: string, placeholders: ReadonlyArray<{ name: string }> = freePlaceholders): string[] {
+  const known = new Set<string>(placeholders.map(item => item.name));
   return [...new Set([...text.matchAll(/\{([^{}]*)\}/g)].map(match => match[1]).filter(name => !known.has(name)))].map(name => `{${name}}`);
 }
 
@@ -123,7 +175,7 @@ export function richProblem(text: string): string | null {
   return stack.length ? `[${stack[stack.length - 1]}] that is never closed` : null;
 }
 
-export const limits = { text: 300, message: 600, holidays: 400 };
+export const limits = { text: 300, message: 600, holidays: 400, services: 100 };
 
 export function isIsoDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -254,6 +306,56 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     icon: colour(look.icon, "Icon colour", ds.icon),
   };
 
+  const dl = (source.delivery && typeof source.delivery === "object" ? source.delivery : {}) as Record<string, unknown>;
+  const dd = defaultDeliverySettings;
+  const deliveryEnabled = flag(dl.enabled, dd.enabled);
+  const deliveryText = (value: unknown, label: string, fallback: string) => {
+    const clean = text(value, label, fallback, limits.text, deliveryEnabled);
+    const unknown = unknownPlaceholders(clean, deliveryPlaceholders);
+    if (unknown.length) errors.push(`${label} uses ${unknown.join(", ")}, which is not a placeholder. You can use ${deliveryPlaceholders.map(item => `{${item.name}}`).join(", ")}.`);
+    else if (deliveryEnabled && clean && !/\{(date|from)\}/.test(clean)) errors.push(`${label} must include {date} (or {from}), so it says when it arrives.`);
+    return clean;
+  };
+  const services: DeliveryServiceSetting[] = [];
+  const serviceInput = Array.isArray(dl.services) ? dl.services : [];
+  if (serviceInput.length > limits.services) errors.push(`Keep delivery services to ${limits.services} or fewer.`);
+  const seenServices = new Set<string>();
+  for (const raw of serviceInput.slice(0, limits.services)) {
+    const item = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!name) { errors.push("A delivery service has no name."); continue; }
+    if (name.length > 200) { errors.push(`The name of "${name.slice(0, 40)}…" is too long.`); continue; }
+    if (seenServices.has(name)) { errors.push(`"${name}" is listed more than once.`); continue; }
+    seenServices.add(name);
+    const label = typeof item.label === "string" ? item.label.trim() : "";
+    if (label.length > 120) errors.push(`The name shown for "${name}" must be 120 characters or fewer.`);
+    const cutoff = typeof item.cutoffTime === "string" ? item.cutoffTime.trim() : "";
+    if (cutoff && !/^([01]\d|2[0-3]):[0-5]\d$/.test(cutoff)) errors.push(`The cut-off time for "${name}" must be a 24-hour time such as 14:00, or empty to use the shop's.`);
+    const days = Array.isArray(item.days) && item.days.length === 7 ? item.days.map(Boolean) : defaultServiceSetting(name).days;
+    if (!days.some(Boolean)) errors.push(`Choose at least one delivery day for "${name}".`);
+    const hasMin = item.transitMin !== null && item.transitMin !== undefined && item.transitMin !== "";
+    const hasMax = item.transitMax !== null && item.transitMax !== undefined && item.transitMax !== "";
+    let transitMin: number | null = null;
+    let transitMax: number | null = null;
+    if (hasMin || hasMax) {
+      const min = Number(item.transitMin);
+      const max = Number(item.transitMax);
+      if (!hasMin || !hasMax) errors.push(`Enter both the shortest and the longest delivery time for "${name}", or neither.`);
+      else if (!Number.isInteger(min) || !Number.isInteger(max) || min < 0 || max < 0 || min > 60 || max > 60) errors.push(`The delivery time for "${name}" must be whole business days from 0 to 60.`);
+      else if (min > max) errors.push(`The shortest delivery time for "${name}" cannot be longer than the longest.`);
+      else { transitMin = min; transitMax = max; }
+    }
+    services.push({ name, label, show: flag(item.show, true), guaranteed: flag(item.guaranteed, false), cutoffTime: cutoff, days, onBankHolidays: flag(item.onBankHolidays, false), transitMin, transitMax });
+  }
+  const delivery: DeliverySettings = {
+    enabled: deliveryEnabled,
+    heading: text(dl.heading, "Delivery options heading", dd.heading, limits.text, deliveryEnabled),
+    guaranteedText: deliveryText(dl.guaranteedText, "Guaranteed delivery message", dd.guaranteedText),
+    estimatedText: deliveryText(dl.estimatedText, "Estimated delivery message", dd.estimatedText),
+    showMonth: flag(dl.showMonth, dd.showMonth),
+    services,
+  };
+
   const config: ShippingCountdownConfig = {
     version: 1,
     cutoffTime,
@@ -288,6 +390,7 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
       borderColor: colour(warning.borderColor, "Warning border colour", d.warning.borderColor),
     },
     style,
+    delivery,
   };
   return errors.length ? { ok: false, errors } : { ok: true, config };
 }

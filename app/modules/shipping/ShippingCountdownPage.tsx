@@ -11,14 +11,18 @@ import { editorCss } from "../promotions/components/editor/editorStyles";
 import { PolarisCheckbox, PolarisCheckboxList, PolarisNumberField, PolarisRadioList, PolarisSelect } from "../promotions/components/PolarisControls";
 import { contrastRatio } from "../promotions/design/design";
 import blockCss from "../../../extensions/promotion-engine/assets/shipping-countdown.css?raw";
-import { dayNames, defaultShippingConfig, freePlaceholders, parseBankHolidays, unknownPlaceholders, validateShippingConfig, type ShippingCountdownConfig } from "./config";
-import { formatMinor } from "./delivery/deliveryModel";
+import { dayNames, defaultServiceSetting, defaultShippingConfig, deliveryPlaceholders, freePlaceholders, parseBankHolidays, unknownPlaceholders, validateShippingConfig, type DeliveryServiceSetting, type ShippingCountdownConfig } from "./config";
+import { formatMinor, transitText } from "./delivery/deliveryModel";
+import { serviceCatalogue, servicesFor, type PublishedServices } from "./delivery/deliveryServices";
 import { freeDeliveryFor, type FreeDeliveryTable } from "./delivery/freeService";
-import { shippingLogic, type StockVariant } from "./logic";
+import { shippingLogic, type DeliveryOption, type StockVariant } from "./logic";
 import { RichTextField } from "./RichTextField";
 import { styleAttributes } from "./appearance";
 
 export type ShippingResult = { ok: boolean; intent: string; errors: string[]; config?: ShippingCountdownConfig; dates?: string[] };
+
+type ServiceForm = { name: string; label: string; show: boolean; guaranteed: boolean; cutoffTime: string; days: boolean[]; onBankHolidays: boolean; transitMin: string; transitMax: string };
+type DeliveryForm = { enabled: boolean; heading: string; guaranteedText: string; estimatedText: string; showMonth: boolean; services: ServiceForm[] };
 
 type Form = {
   cutoffTime: string; days: boolean[]; holidays: string; delayDays: string; delayMessage: string;
@@ -27,10 +31,24 @@ type Form = {
   freeEnabled: boolean; textUnder: string; textAdd: string; textOver: string;
   outMode: "message" | "hide"; outMessage: string; backMode: "message" | "hide"; backMessage: string;
   warnEnabled: boolean; warnStart: string; warnEnd: string; warnMessage: string; warnText: string; warnBackground: string; warnBorder: string;
+  delivery: DeliveryForm;
   look: { align: string; showIcon: boolean; textSize: string; fontWeight: string; padding: string; margin: string; lineGap: string; radius: string; border: string; borderWidth: string; background: string; text: string; accent: string; dispatch: string; muted: string; icon: string };
 };
 
-const toForm = (c: ShippingCountdownConfig): Form => ({
+const serviceForm = (setting: DeliveryServiceSetting): ServiceForm => ({ ...setting, transitMin: setting.transitMin === null ? "" : String(setting.transitMin), transitMax: setting.transitMax === null ? "" : String(setting.transitMax) });
+
+/** A service nobody changed: the defaults, so nothing is saved for it. */
+function isDefaultService(f: ServiceForm) {
+  const d = defaultServiceSetting(f.name);
+  return f.label.trim() === "" && f.show === d.show && f.guaranteed === d.guaranteed && f.cutoffTime.trim() === "" && f.onBankHolidays === d.onBankHolidays
+    && f.transitMin.trim() === "" && f.transitMax.trim() === "" && f.days.every((day, index) => day === d.days[index]);
+}
+
+/**
+ * The form for saved settings. Every delivery service Shopify offers is listed, with its saved settings or the defaults; settings saved for a
+ * service Shopify no longer has are kept at the end, so they can be seen and removed.
+ */
+const toForm = (c: ShippingCountdownConfig, services: PublishedServices | null = null): Form => ({
   cutoffTime: c.cutoffTime, days: c.shippingDays, holidays: c.bankHolidays.join("\n"), delayDays: String(c.delayDays), delayMessage: c.delayMessage,
   hideIfUnavailable: c.hideIfUnavailable, showShippingDays: c.showShippingDays, shippingDaysPrefix: c.shippingDaysPrefix, noShippingText: c.noShippingText,
   errorText: c.errorText, countdownPrefix: c.countdownPrefix, countdownSuffix: c.countdownSuffix,
@@ -39,6 +57,13 @@ const toForm = (c: ShippingCountdownConfig): Form => ({
   outMode: c.availability.outOfStock.mode, outMessage: c.availability.outOfStock.message, backMode: c.availability.backorder.mode, backMessage: c.availability.backorder.message,
   warnEnabled: c.warning.enabled, warnStart: c.warning.startDate, warnEnd: c.warning.endDate, warnMessage: c.warning.message,
   warnText: c.warning.textColor, warnBackground: c.warning.backgroundColor, warnBorder: c.warning.borderColor,
+  delivery: {
+    enabled: c.delivery.enabled, heading: c.delivery.heading, guaranteedText: c.delivery.guaranteedText, estimatedText: c.delivery.estimatedText, showMonth: c.delivery.showMonth,
+    services: [
+      ...(services ? serviceCatalogue(services) : []).map(item => serviceForm(c.delivery.services.find(setting => setting.name === item.name) ?? defaultServiceSetting(item.name))),
+      ...c.delivery.services.filter(setting => !(services ? serviceCatalogue(services) : []).some(item => item.name === setting.name)).map(serviceForm),
+    ],
+  },
   look: { ...c.style, textSize: String(c.style.textSize), margin: String(c.style.margin), lineGap: String(c.style.lineGap), radius: String(c.style.radius), borderWidth: String(c.style.borderWidth) },
 });
 
@@ -57,6 +82,7 @@ function toInput(f: Form) {
       availability: { outOfStock: { mode: f.outMode, message: f.outMessage }, backorder: { mode: f.backMode, message: f.backMessage } },
       warning: { enabled: f.warnEnabled, startDate: f.warnStart, endDate: f.warnEnd, message: f.warnMessage, textColor: f.warnText, backgroundColor: f.warnBackground, borderColor: f.warnBorder },
       style: f.look,
+      delivery: { enabled: f.delivery.enabled, heading: f.delivery.heading, guaranteedText: f.delivery.guaranteedText, estimatedText: f.delivery.estimatedText, showMonth: f.delivery.showMonth, services: f.delivery.services.filter(item => !isDefaultService(item)) },
     },
   };
 }
@@ -95,7 +121,7 @@ function Rich({ text }: { text: string }) {
 }
 
 /** The block exactly as the product page builds it (same markup, same stylesheet, same variables), so the look can be judged here. */
-function ShippingPreview({ config, view, freeText, warningShowing }: { config: ShippingCountdownConfig; view: Dispatch; freeText: string; warningShowing: boolean }) {
+function ShippingPreview({ config, view, freeText, warningShowing, options }: { config: ShippingCountdownConfig; view: Dispatch; freeText: string; warningShowing: boolean; options: DeliveryOption[] }) {
   const { data, vars } = styleAttributes(config.style);
   const days = [1, 2, 3, 4, 5, 6, 0].filter(index => config.shippingDays[index]).map(index => dayNames[index]).join(", ");
   // A custom element takes `class`, not `className`, which React would write out as a literal "classname" attribute.
@@ -118,6 +144,16 @@ function ShippingPreview({ config, view, freeText, warningShowing }: { config: S
           {view.kind === "backorder" && <Rich text={config.availability.backorder.message} />}
         </p>
         {config.showShippingDays && days && <p className="sc__days"><Rich text={config.shippingDaysPrefix} /> {days}</p>}
+        {config.delivery.enabled && options.length > 0 && <details className="sc__delivery" open>
+          <summary className="sc__delivery-heading"><Rich text={config.delivery.heading} /></summary>
+          <ul className="sc__delivery-list">
+            {options.map(option => <li key={option.name} className="sc__option">
+              <span className="sc__option-name">{option.label}</span>
+              <span className="sc__option-price">{option.price}</span>
+              <span className="sc__option-date"><Rich text={option.text} /></span>
+            </li>)}
+          </ul>
+        </details>}
       </div>)}
   </>;
 }
@@ -155,19 +191,21 @@ function DeliveryFromShopify({ delivery, appUrl }: { delivery: FreeDeliveryTable
   </s-stack>;
 }
 
-/** The placeholders that can go in a free-delivery message, with what each becomes for the country being previewed. */
-function PlaceholderList({ examples, onCopy }: { examples: Record<string, string>; onCopy: (placeholder: string) => void }) {
+/** The placeholders that can go in a message, with what each becomes for the example being previewed. Click one to copy it. */
+function PlaceholderList({ examples, onCopy, placeholders = freePlaceholders, heading = "Placeholders you can use in these messages", exampleHeading = "For the country in the preview" }: {
+  examples: Record<string, string>; onCopy: (placeholder: string) => void; placeholders?: ReadonlyArray<{ name: string; meaning: string; example: string }>; heading?: string; exampleHeading?: string;
+}) {
   return <s-stack direction="block" gap="small-300">
-    <s-text type="strong">Placeholders you can use in these messages</s-text>
+    <s-text type="strong">{heading}</s-text>
     <s-text color="subdued">Click a placeholder to copy it, then paste it into a message. The product page fills it in for each shopper, and each can be used more than once.</s-text>
     <s-table>
       <s-table-header-row>
         <s-table-header listSlot="primary">Placeholder</s-table-header>
         <s-table-header>What it becomes</s-table-header>
-        <s-table-header>For the country in the preview</s-table-header>
+        <s-table-header>{exampleHeading}</s-table-header>
       </s-table-header-row>
       <s-table-body>
-        {freePlaceholders.map(item => <s-table-row key={item.name}>
+        {placeholders.map(item => <s-table-row key={item.name}>
           <s-table-cell><s-button type="button" variant="tertiary" accessibilityLabel={`Copy {${item.name}}`} onClick={() => onCopy(`{${item.name}}`)}>{`{${item.name}}`}</s-button></s-table-cell>
           <s-table-cell>{item.meaning}</s-table-cell>
           <s-table-cell>{examples[item.name] ?? item.example}</s-table-cell>
@@ -175,6 +213,57 @@ function PlaceholderList({ examples, onCopy }: { examples: Record<string, string
       </s-table-body>
     </s-table>
   </s-stack>;
+}
+
+/** "Mon–Fri", "Mon–Sat", "Every day", or the days listed, for a summary line. */
+function describeDays(days: boolean[]): string {
+  const order = [1, 2, 3, 4, 5, 6, 0].filter(index => days[index]);
+  if (order.length === 7) return "Every day";
+  if (!order.length) return "No delivery days";
+  const names = order.map(index => dayNames[index].slice(0, 3));
+  const positions = order.map(index => (index + 6) % 7);
+  const contiguous = positions.every((position, at) => at === 0 || position === positions[at - 1] + 1);
+  return contiguous && order.length > 2 ? `${names[0]}–${names[names.length - 1]}` : names.join(", ");
+}
+
+const cardStyle: CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", minWidth: 0 };
+
+/** One delivery service: what Shopify says about it, and what the app adds. Closed, it summarises its settings. */
+function ServiceCard({ form, entry, orphan, currency, shopCutoff, onChange, onRemove }: {
+  form: ServiceForm; entry: { zones: string[]; service: NonNullable<ReturnType<typeof serviceCatalogue>[number]["service"]> } | undefined; orphan: boolean; currency: string; shopCutoff: string; onChange: (changes: Partial<ServiceForm>) => void; onRemove: () => void;
+}) {
+  const typed = form.transitMin.trim() !== "" && form.transitMax.trim() !== "";
+  const time = typed ? `${form.transitMin === form.transitMax ? form.transitMin : `${form.transitMin} to ${form.transitMax}`} business days (set here)` : entry?.service.transit ? `${transitText(entry.service.transit)} (Shopify)` : "no delivery time";
+  const summary = `${form.guaranteed ? "Guaranteed" : "Non-guaranteed"} · ${describeDays(form.days)} · ${form.cutoffTime.trim() ? `cut-off ${form.cutoffTime.trim()}` : "the shop's cut-off"} · ${time}`;
+  return <details data-service={form.name} style={cardStyle}>
+    <summary style={{ cursor: "pointer", padding: 12, display: "grid", gap: 2 }}>
+      <span style={{ fontWeight: 600, fontSize: 13, display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {form.label.trim() || form.name}
+        {!form.show && <s-badge>Hidden</s-badge>}
+        {orphan && <s-badge tone="warning">Not in Shopify now</s-badge>}
+        {!entry?.service.transit && !typed && !orphan && <s-badge tone="warning">No delivery time</s-badge>}
+      </span>
+      <span style={{ fontSize: 12, color: "#616161" }}>{summary}</span>
+    </summary>
+    <div style={{ padding: "0 12px 12px", display: "grid", gap: 12 }}>
+      {entry
+        ? <s-text color="subdued">Shopify shipping option “{form.name}”, offered in {entry.zones.join(", ")}. {entry.service.tiers.length ? `Price: ${shippingLogic.servicePrice(entry.service, currency)}.` : ""} {entry.service.transit ? `Delivery time in Shopify: ${transitText(entry.service.transit)}.` : "Shopify has no delivery time for it, or it could not be read."}</s-text>
+        : <s-banner tone="warning" heading="This option is no longer in your Shopify shipping settings">Its name may have changed in Shopify, which detaches these settings. It is not shown on the product page. Remove it, or set the same options up under its new name.</s-banner>}
+      <PolarisCheckbox label="Show in the delivery options" checked={form.show} onChange={event => onChange({ show: event.currentTarget.checked })} />
+      <s-text-field label="Name on the product page" value={form.label} placeholder={form.name} maxLength={120} details="Leave empty to use the Shopify name. Shorten it if it says things that are set here instead, such as the cut-off or “Non Guaranteed”." onInput={event => onChange({ label: event.currentTarget.value })} />
+      <PolarisCheckbox label="Guaranteed by the carrier" checked={form.guaranteed} details="Leave off unless the carrier guarantees it. A guaranteed service says “Delivery by …”. Every other service adds “(Non-Guaranteed)”, so the shop never promises more than you chose." onChange={event => onChange({ guaranteed: event.currentTarget.checked })} />
+      <PolarisCheckboxList label="Days the carrier delivers" values={form.days.map((on, index) => (on ? String(index) : "")).filter(Boolean)}
+        options={[1, 2, 3, 4, 5, 6, 0].map(index => ({ value: String(index), label: dayNames[index] }))}
+        onChange={values => onChange({ days: Array.from({ length: 7 }, (_, index) => values.includes(String(index))) })} />
+      <PolarisCheckbox label="Delivers on bank holidays" checked={form.onBankHolidays} onChange={event => onChange({ onBankHolidays: event.currentTarget.checked })} />
+      <s-text-field label="Cut-off time for this service" value={form.cutoffTime} placeholder={shopCutoff} details="24-hour London time. Leave empty to use the shop's cut-off." error={!form.cutoffTime.trim() || /^([01]\d|2[0-3]):[0-5]\d$/.test(form.cutoffTime.trim()) ? undefined : "Use a 24-hour time such as 14:00."} onInput={event => onChange({ cutoffTime: event.currentTarget.value })} />
+      <s-grid gridTemplateColumns="1fr 1fr" gap="base" alignItems="start">
+        <PolarisNumberField label="Shortest delivery time (business days)" min={0} max={60} step={1} value={form.transitMin} details={entry?.service.transit ? `Shopify has ${transitText(entry.service.transit)}. Fill in both to use your own.` : "Fill in both, or neither."} onInput={event => onChange({ transitMin: event.currentTarget.value })} />
+        <PolarisNumberField label="Longest delivery time (business days)" min={0} max={60} step={1} value={form.transitMax} onInput={event => onChange({ transitMax: event.currentTarget.value })} />
+      </s-grid>
+      {orphan && <div><s-button type="button" variant="tertiary" tone="critical" onClick={onRemove}>Remove these settings</s-button></div>}
+    </div>
+  </details>;
 }
 
 /** Shown under a message that uses something in braces that is not a placeholder. */
@@ -191,9 +280,9 @@ const stockScenarios: Record<string, { label: string; variant: StockVariant | nu
   backorder: { label: "Zero stock, continue selling", variant: { available: true, policy: "continue", managed: true, qty: 0 } },
 };
 
-const stepOrder = ["appearance", "dispatch", "holidays", "free", "stock", "delay", "warning"] as const;
+const stepOrder = ["appearance", "dispatch", "holidays", "delivery", "free", "stock", "delay", "warning"] as const;
 type StepId = (typeof stepOrder)[number];
-const stepTitles: Record<StepId, string> = { appearance: "Appearance", dispatch: "Dispatch", holidays: "Bank holidays", delay: "Warehouse delay", free: "Free shipping", stock: "Out of stock and back-order", warning: "Warning notice" };
+const stepTitles: Record<StepId, string> = { appearance: "Appearance", dispatch: "Dispatch", holidays: "Bank holidays", delivery: "Delivery services", delay: "Warehouse delay", free: "Free shipping", stock: "Out of stock and back-order", warning: "Warning notice" };
 
 /** A card with the preview's own look, matching the promotion editor's preview panel. */
 const panelStyle: CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)", padding: 16, display: "grid", gap: 16, minWidth: 0 };
@@ -203,17 +292,21 @@ const panelStyle: CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 1
  * numbered step cards on the right. Everything the theme block shows is decided here. The preview runs the storefront's own logic file, so
  * what it says is what shoppers get.
  */
-export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher }: { initial: ShippingCountdownConfig; saved: boolean; today: string; delivery: FreeDeliveryTable | null; fetcher: FetcherWithComponents<ShippingResult> }) {
+export function ShippingCountdownPage({ initial, saved, today, delivery, services, fetcher }: { initial: ShippingCountdownConfig; saved: boolean; today: string; delivery: FreeDeliveryTable | null; services?: PublishedServices | null; fetcher: FetcherWithComponents<ShippingResult> }) {
   const appUrl = useEmbeddedAppUrl();
   const shopify = useAppBridge();
-  const [baseline, setBaseline] = useState(() => toForm(initial));
+  const published = services ?? null;
+  const [baseline, setBaseline] = useState(() => toForm(initial, published));
   const [form, setForm] = useState(baseline);
   const [error, setError] = useState<string | null>(null);
   const [firstSave, setFirstSave] = useState(!saved);
   const sent = useRef<string | null>(null);
   const [openStep, setOpenStep] = useState<StepId | null>("appearance");
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewCountry, setPreviewCountry] = useState(() => (delivery?.countries.GB ? "GB" : Object.keys(delivery?.countries ?? {})[0] ?? "*"));
+  // Countries to preview: those in either published table (free delivery, delivery services), and "everywhere else" when either has it.
+  const previewCodes = [...new Set([...Object.keys(delivery?.countries ?? {}), ...Object.keys(published?.countries ?? {})])];
+  const hasRestOfWorld = Boolean(delivery?.restOfWorld || published?.restOfWorld);
+  const [previewCountry, setPreviewCountry] = useState(() => (previewCodes.includes("GB") ? "GB" : previewCodes[0] ?? "*"));
   // A chosen London day and time, as "2026-12-24T16:30:00", or empty to follow the real clock.
   const [sample, setSample] = useState("");
   const [stock, setStock] = useState("in");
@@ -236,7 +329,7 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
     if (!fetcher.data.ok) { setError(fetcher.data.errors.join(" ")); return; }
     setError(null);
     if (intent === "save" && fetcher.data.config) {
-      const next = toForm(fetcher.data.config);
+      const next = toForm(fetcher.data.config, published);
       setBaseline(next); setForm(next); setFirstSave(false);
       shopify.toast.show("Shipping countdown saved");
     }
@@ -249,12 +342,20 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
         return { ...current, holidays: [...new Set([...existing, ...found])].sort().join("\n") };
       });
     }
-  }, [fetcher.state, fetcher.data, shopify]);
+  }, [fetcher.state, fetcher.data, shopify, published]);
 
   async function copyPlaceholder(placeholder: string) {
     try { await window.navigator.clipboard.writeText(placeholder); shopify.toast.show(`Copied ${placeholder}`); }
     catch { shopify.toast.show("Could not copy. Type it in braces instead.", { isError: true }); }
   }
+
+  const setDelivery = (changes: Partial<DeliveryForm>) => setForm(current => ({ ...current, delivery: { ...current.delivery, ...changes } }));
+  const setService = (name: string, changes: Partial<ServiceForm>) => setForm(current => ({ ...current, delivery: { ...current.delivery, services: current.delivery.services.map(item => (item.name === name ? { ...item, ...changes } : item)) } }));
+  const catalogue = published ? serviceCatalogue(published) : [];
+  const deliveryPlaceholderError = (text: string) => {
+    const unknown = unknownPlaceholders(text, deliveryPlaceholders);
+    return unknown.length ? `${unknown.join(", ")} is not a placeholder. Use ${deliveryPlaceholders.map(item => `{${item.name}}`).join(", ")}.` : undefined;
+  };
 
   const send = (values: Record<string, string>) => { sent.current = values.intent; fetcher.submit(values, { method: "post" }); };
   const save = () => { if (check.ok && problems.length === 0) send({ intent: "save", config: JSON.stringify(check.config) }); };
@@ -270,6 +371,11 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
     : "";
   const examples: Record<string, string> = delivery && entry?.free
     ? { threshold: formatMinor(entry.thresholdMinor, delivery.currency), country: previewCountry === "*" ? "your country" : countryName(previewCountry), rate: entry.rate }
+    : {};
+  const serviceList = published ? (previewCountry === "*" ? servicesFor({ ...published, countries: {} }, "") : servicesFor(published, previewCountry)) : [];
+  const deliveryLines = config && published && sampleMs !== null && config.delivery.enabled ? shippingLogic.deliveryOptions(sampleMs, config, serviceList, published.currency, scenario.variant) : [];
+  const deliveryExamples: Record<string, string> = deliveryLines[0]
+    ? { date: shippingLogic.formatDeliveryDate(deliveryLines[0].to, form.delivery.showMonth), from: shippingLogic.formatDeliveryDate(deliveryLines[0].from, form.delivery.showMonth), service: deliveryLines[0].label }
     : {};
   const warningShowing = Boolean(config && sampleMs !== null && shippingLogic.warningVisible(sampleMs, config.warning));
   const shownAt = sampleMs === null ? "" : new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(sampleMs);
@@ -288,9 +394,9 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
       <PolarisSelect label="Stock of the chosen variant" value={stock} onChange={event => setStock(event.currentTarget.value)}>
         {Object.entries(stockScenarios).map(([id, item]) => <s-option key={id} value={id}>{item.label}</s-option>)}
       </PolarisSelect>
-      {delivery && <PolarisSelect label="Country of the shopper" value={previewCountry} onChange={event => setPreviewCountry(event.currentTarget.value)}>
-        {Object.keys(delivery.countries).sort((a, b) => countryName(a).localeCompare(countryName(b), "en-GB")).map(code => <s-option key={code} value={code}>{countryName(code)}</s-option>)}
-        {delivery.restOfWorld && <s-option value="*">Everywhere else</s-option>}
+      {previewCodes.length > 0 && <PolarisSelect label="Country of the shopper" value={previewCountry} onChange={event => setPreviewCountry(event.currentTarget.value)}>
+        {[...previewCodes].sort((a, b) => countryName(a).localeCompare(countryName(b), "en-GB")).map(code => <s-option key={code} value={code}>{countryName(code)}</s-option>)}
+        {hasRestOfWorld && <s-option value="*">Everywhere else</s-option>}
       </PolarisSelect>}
     </s-stack>
     {view === null || config === null
@@ -299,7 +405,7 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
         <span style={{ fontSize: 13, color: "#616161" }}>Product page</span>
         <span style={{ fontWeight: 600 }}>Example product</span>
         <span>£9.99</span>
-        <ShippingPreview config={config} view={view} freeText={freeText} warningShowing={warningShowing} />
+        <ShippingPreview config={config} view={view} freeText={freeText} warningShowing={warningShowing} options={deliveryLines} />
         <span aria-hidden="true" style={{ background: "#202223", color: "#fff", borderRadius: 8, padding: "10px 16px", textAlign: "center", fontSize: 14 }}>Add to basket</span>
       </div>}
   </div>;
@@ -388,6 +494,27 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
                 <s-text color="subdued">Adds upcoming England and Wales dates from gov.uk. Dates already listed are kept. Save to apply.</s-text>
               </s-stack>
               {(() => { const list = parseBankHolidays(form.holidays).dates; const next = list.filter(date => date >= today); return <s-text color="subdued">{list.length} date{list.length === 1 ? "" : "s"} listed{next.length ? `, next: ${when(next[0])}` : ""}{list.length > 0 && next.length === 0 ? ". All of them are in the past, so import the new ones" : ""}.</s-text>; })()}
+            </>)}
+
+            {step("delivery", form.delivery.enabled ? `On, ${form.delivery.services.filter(item => item.show).length} service${form.delivery.services.filter(item => item.show).length === 1 ? "" : "s"} shown` : "Off", <>
+              <PolarisCheckbox label="Show delivery options on the product page" checked={form.delivery.enabled} details="A dropdown under the dispatch message listing each service for the shopper's country, with its price and the date it should arrive." onChange={event => setDelivery({ enabled: event.currentTarget.checked })} />
+              {form.delivery.enabled && <>
+                <s-text color="subdued">Each service is a shipping option from your Shopify shipping settings, with its price and delivery time read from there. Here you add what Shopify does not hold: whether it is guaranteed, the days the carrier delivers, and a cut-off if it differs. Delivery times count only the days each carrier delivers, and skip bank holidays.</s-text>
+                <RichTextField accent={form.look.accent} label="Dropdown heading" value={form.delivery.heading} onChange={value => setDelivery({ heading: value })} details="For example “Delivery options”." />
+                <RichTextField accent={form.look.accent} label="Message for a guaranteed service" lines={2} value={form.delivery.guaranteedText} onChange={value => setDelivery({ guaranteedText: value })} error={deliveryPlaceholderError(form.delivery.guaranteedText)} details="For example “Delivery by {date}”." />
+                <RichTextField accent={form.look.accent} label="Message for a service that is not guaranteed" lines={2} value={form.delivery.estimatedText} onChange={value => setDelivery({ estimatedText: value })} error={deliveryPlaceholderError(form.delivery.estimatedText)} details="For example “Delivery by {date} (Non-Guaranteed)”. This is what every service says unless you set it as guaranteed." />
+                <PlaceholderList placeholders={deliveryPlaceholders} examples={deliveryExamples} onCopy={copyPlaceholder} heading="Placeholders you can use in the delivery messages" exampleHeading="For the first service in the preview" />
+                <PolarisCheckbox label="Show the month in dates" checked={form.delivery.showMonth} details="“Wed 28th Oct” instead of “Wed 28th”." onChange={event => setDelivery({ showMonth: event.currentTarget.checked })} />
+                <section aria-label="Services" style={{ display: "grid", gap: 8, borderTop: "1px solid #e3e3e3", paddingTop: 16 }}>
+                  <s-heading>Services</s-heading>
+                  {published === null
+                    ? <s-banner tone="info" heading="Delivery services have not been read from Shopify yet">Open the Shipping page and the app will read your shipping options. Until then no delivery options are shown on the product page.</s-banner>
+                    : form.delivery.services.length === 0
+                      ? <s-banner tone="warning" heading="No delivery services found">Your Shopify shipping settings have no fixed-rate options for the general profile. The Shipping page shows what was read.</s-banner>
+                      : form.delivery.services.map(item => <ServiceCard key={item.name} form={item} entry={catalogue.find(entry => entry.name === item.name)} orphan={!catalogue.some(entry => entry.name === item.name)} currency={published.currency} shopCutoff={form.cutoffTime || "the shop's cut-off"} onChange={changes => setService(item.name, changes)} onRemove={() => setDelivery({ services: form.delivery.services.filter(other => other.name !== item.name) })} />)}
+                  <div><s-link href={appUrl("/app/shipping")}>Review your shipping</s-link></div>
+                </section>
+              </>}
             </>)}
 
             {step("free", form.freeEnabled ? "On, read from your Shopify shipping settings" : "Off", <>

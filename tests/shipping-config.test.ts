@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultShippingConfig, defaultShippingStyle, freePlaceholders, isIsoDate, parseBankHolidays, richProblem, stripRich, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
+import { defaultDeliverySettings, defaultServiceSetting, defaultShippingConfig, defaultShippingStyle, deliveryPlaceholders, freePlaceholders, isIsoDate, parseBankHolidays, richProblem, stripRich, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
 import { mergeBankHolidays, upcomingBankHolidays } from "../app/modules/shipping/bankHolidays.server";
 
 const valid = (changes: Record<string, unknown> = {}) => ({ ...defaultShippingConfig, ...changes });
@@ -154,4 +154,61 @@ test("formatting in a message must be closed properly, and the words under it co
   assert.match(errorsOf(free({ textUnder: "[bold][/bold]" })).join(" "), /cannot be empty/);
   assert.match(errorsOf(valid({ availability: { outOfStock: { mode: "message", message: "[bold] [/bold]" }, backorder: defaultShippingConfig.availability.backorder } })).join(" "), /Out of stock message cannot be empty/);
   assert.equal(validateShippingConfig(valid({ delayMessage: defaultShippingConfig.delayMessage })).ok, true, "the default delay message, written before the editor, is still fine");
+});
+
+test("delivery options start switched off, with wording that says Non-Guaranteed unless a service is set as guaranteed", () => {
+  assert.equal(defaultDeliverySettings.enabled, false, "nothing changes on the product page until it is turned on");
+  assert.equal(defaultDeliverySettings.guaranteedText, "Delivery by {date}");
+  assert.equal(defaultDeliverySettings.estimatedText, "Delivery by {date} (Non-Guaranteed)");
+  assert.equal(defaultDeliverySettings.showMonth, true);
+  assert.deepEqual(defaultDeliverySettings.services, []);
+  assert.deepEqual(defaultServiceSetting("Standard"), { name: "Standard", label: "", show: true, guaranteed: false, cutoffTime: "", days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null }, "a service is a non-guaranteed weekday one until set otherwise");
+  assert.deepEqual(deliveryPlaceholders.map(item => item.name), ["date", "from", "service"]);
+  const old = validateShippingConfig({ ...defaultShippingConfig, delivery: undefined });
+  assert.deepEqual(old.ok && old.config.delivery, defaultDeliverySettings, "settings saved before delivery options existed get the defaults");
+  assert.deepEqual(unknownPlaceholders("{date} {from} {service}", deliveryPlaceholders), []);
+  assert.deepEqual(unknownPlaceholders("{threshold}", deliveryPlaceholders), ["{threshold}"], "each message has its own placeholders");
+  assert.deepEqual(unknownPlaceholders("{date}"), ["{date}"], "and the free-delivery ones do not take the delivery ones");
+});
+
+test("the delivery wording must say when it arrives and use only its own placeholders", () => {
+  const delivery = (changes: Record<string, unknown>) => valid({ delivery: { ...defaultDeliverySettings, enabled: true, ...changes } });
+  assert.equal(validateShippingConfig(delivery({})).ok, true);
+  assert.equal(validateShippingConfig(delivery({ estimatedText: "{service}: {from} to {date}" })).ok, true);
+  assert.equal(validateShippingConfig(delivery({ guaranteedText: "Arrives [bold]{from}[/bold]" })).ok, true, "formatting works here too, and {from} alone is enough");
+  assert.match(errorsOf(delivery({ guaranteedText: "Delivery soon" })).join(" "), /Guaranteed delivery message must include \{date\} \(or \{from\}\)/);
+  assert.match(errorsOf(delivery({ estimatedText: "Delivery by {dat}" })).join(" "), /Estimated delivery message uses \{dat\}, which is not a placeholder\. You can use \{date\}, \{from\}, \{service\}\./);
+  assert.match(errorsOf(delivery({ estimatedText: "Over {threshold}" })).join(" "), /uses \{threshold\}/);
+  assert.match(errorsOf(delivery({ guaranteedText: "[bold]Delivery by {date}" })).join(" "), /Guaranteed delivery message has formatting/);
+  assert.match(errorsOf(delivery({ heading: "[bold][/bold]" })).join(" "), /Delivery options heading cannot be empty/);
+  assert.match(errorsOf(delivery({ guaranteedText: "" })).join(" "), /Guaranteed delivery message cannot be empty/);
+  // Switched off, the wording is not required, but a typo is still caught so it is not a surprise later.
+  assert.equal(validateShippingConfig(delivery({ enabled: false, heading: "", guaranteedText: "", estimatedText: "" })).ok, true);
+  assert.equal(validateShippingConfig(delivery({ enabled: false, estimatedText: "Delivery by {dat}" })).ok, false);
+});
+
+test("each delivery service is checked: name, delivery days, cut-off and delivery time", () => {
+  const services = (list: unknown[]) => valid({ delivery: { ...defaultDeliverySettings, enabled: true, services: list } });
+  const one = (changes: Record<string, unknown> = {}) => ({ ...defaultServiceSetting("DPD Next Day"), ...changes });
+  const good = validateShippingConfig(services([one({ label: "DPD Next Day", guaranteed: true, cutoffTime: "14:00", days: [false, true, true, true, true, true, true], onBankHolidays: true, transitMin: 1, transitMax: 2 })]));
+  assert.equal(good.ok, true);
+  assert.deepEqual(good.ok && good.config.delivery.services[0], { name: "DPD Next Day", label: "DPD Next Day", show: true, guaranteed: true, cutoffTime: "14:00", days: [false, true, true, true, true, true, true], onBankHolidays: true, transitMin: 1, transitMax: 2 });
+  const bare = validateShippingConfig(services([{ name: "  Standard  " }]));
+  assert.deepEqual(bare.ok && bare.config.delivery.services[0], defaultServiceSetting("Standard"), "anything left out is the safe default, and the name is trimmed");
+  assert.match(errorsOf(services([one({ name: "" })])).join(" "), /A delivery service has no name/);
+  assert.match(errorsOf(services([one(), one()])).join(" "), /"DPD Next Day" is listed more than once/);
+  assert.match(errorsOf(services([one({ name: "x".repeat(201) })])).join(" "), /is too long/);
+  assert.match(errorsOf(services([one({ label: "x".repeat(121) })])).join(" "), /The name shown for "DPD Next Day" must be 120 characters or fewer/);
+  assert.match(errorsOf(services([one({ cutoffTime: "25:00" })])).join(" "), /cut-off time for "DPD Next Day" must be a 24-hour time/);
+  assert.equal(validateShippingConfig(services([one({ cutoffTime: "" })])).ok, true, "empty means the shop's");
+  assert.match(errorsOf(services([one({ days: [false, false, false, false, false, false, false] })])).join(" "), /Choose at least one delivery day for "DPD Next Day"/);
+  assert.match(errorsOf(services([one({ transitMin: 2, transitMax: null })])).join(" "), /Enter both the shortest and the longest delivery time for "DPD Next Day", or neither/);
+  assert.match(errorsOf(services([one({ transitMin: 3, transitMax: 2 })])).join(" "), /shortest delivery time for "DPD Next Day" cannot be longer/);
+  for (const bad of [[-1, 2], [1, 61], [1.5, 2], ["x", 2]]) assert.match(errorsOf(services([one({ transitMin: bad[0], transitMax: bad[1] })])).join(" "), /whole business days from 0 to 60/, String(bad));
+  assert.equal(validateShippingConfig(services([one({ transitMin: 0, transitMax: 0 })])).ok, true, "same day is fine");
+  assert.equal(validateShippingConfig(services([one({ transitMin: "2", transitMax: "3" })])).ok, true, "numbers typed as text are accepted");
+  const many = Array.from({ length: 101 }, (_, i) => one({ name: `Service ${i}` }));
+  assert.match(errorsOf(services(many)).join(" "), /Keep delivery services to 100 or fewer/);
+  const stripped = validateShippingConfig(services([{ ...one(), nonsense: "x" }]));
+  assert.equal(stripped.ok && "nonsense" in stripped.config.delivery.services[0], false);
 });

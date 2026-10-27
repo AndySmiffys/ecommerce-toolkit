@@ -28,6 +28,16 @@
     assign threshold_text = threshold | money_without_trailing_zeros
     assign free_text = free_text | replace: '{threshold}', threshold_text | replace: '{country}', country_name | replace: '{rate}', entry.rate
   endif
+  assign services_table = app.metafields.shipping_countdown.delivery_services.value
+  assign zone_key = services_table.countries[country_code]
+  if zone_key == nil
+    assign zone_key = services_table.restOfWorld
+  endif
+  assign service_zone = services_table.zones[zone_key]
+  assign show_services = false
+  if config.delivery.enabled and service_zone.services.size > 0 and currency == services_table.currency
+    assign show_services = true
+  endif
   assign shop_today = 'now' | date: '%Y-%m-%d'
   assign warning = config.warning
   assign show_warning = false
@@ -67,6 +77,7 @@
     data-free-currency="{{ delivery.currency }}"
     data-country="{{ country_name | escape }}"
     data-free-rate="{{ entry.rate | escape }}"
+    data-delivery-currency="{{ services_table.currency }}"
     data-variant-id="{{ variant.id }}"
     {{ block.shopify_attributes }}
   >
@@ -97,9 +108,20 @@
       {%- if config.showShippingDays and day_list != blank -%}
         <p class="sc__days">{% render 'shipping-rich', text: config.shippingDaysPrefix %} {{ day_list }}</p>
       {%- endif -%}
+
+      {%- comment -%} The services are written here; the script works out each date from London's clock and fills the list. {%- endcomment -%}
+      {%- if show_services -%}
+        <details class="sc__delivery" data-role="delivery">
+          <summary class="sc__delivery-heading">{% render 'shipping-rich', text: config.delivery.heading %}</summary>
+          <ul class="sc__delivery-list" data-role="delivery-list"></ul>
+        </details>
+      {%- endif -%}
     </div>
 
     <script type="application/json" data-config>{{ config | json }}</script>
+    {%- if show_services -%}
+      <script type="application/json" data-services>{{ service_zone.services | json }}</script>
+    {%- endif -%}
     <script type="application/json" data-variants>
       [{%- for v in product.variants limit: 250 -%}{"id":{{ v.id }},"price":{{ v.price }},"available":{{ v.available | json }},"policy":{{ v.inventory_policy | json }},"managed":{% if v.inventory_management %}true{% else %}false{% endif %},"qty":{{ v.inventory_quantity | json }}}{% unless forloop.last %},{% endunless %}{%- endfor -%}]
     </script>

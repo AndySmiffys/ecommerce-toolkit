@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ShippingSnapshot } from "../app/modules/shipping/delivery/deliveryModel";
-import { ensureFreeDelivery, loadPublishedFreeDelivery, publishFreeDelivery, syncFreeDelivery } from "../app/modules/shipping/delivery/freeDeliverySync.server";
+import { ensureFreeDelivery, loadPublishedFreeDelivery, loadPublishedServices, publishFreeDelivery, syncFreeDelivery } from "../app/modules/shipping/delivery/freeDeliverySync.server";
 
 const gbp = (amount: number) => ({ amount, currency: "GBP" });
 const snapshot = (threshold: number): ShippingSnapshot => ({
@@ -37,13 +37,26 @@ test("the free-delivery table is published, and published again only when it has
   const first = await publishFreeDelivery(admin, snapshot(5000));
   assert.equal(first.changed, true);
   assert.deepEqual(JSON.parse(stored.get("delivery")!).countries.GB, { free: true, thresholdMinor: 5000, rate: "Free delivery" });
+  assert.equal(state.writes, 2, "the free-delivery table and the delivery services");
+  assert.deepEqual(JSON.parse(stored.get("delivery_services")!).zones.z0.services.map((service: { name: string }) => service.name), ["Free delivery"]);
   const again = await publishFreeDelivery(admin, snapshot(5000));
   assert.equal(again.changed, false, "nothing differs, so nothing is written");
-  assert.equal(state.writes, 1);
+  assert.equal(state.writes, 2);
   const changed = await publishFreeDelivery(admin, snapshot(7500));
   assert.equal(changed.changed, true);
-  assert.equal(state.writes, 2);
+  assert.equal(state.writes, 4, "the threshold is in both");
   assert.equal(JSON.parse(stored.get("delivery")!).countries.GB.thresholdMinor, 7500);
+  assert.deepEqual(JSON.parse(stored.get("delivery_services")!).zones.z0.services[0].tiers, [{ from: 7500, price: 0 }]);
+});
+
+test("only the table that changed is written again", async () => {
+  const { admin, state } = fakeShopify();
+  await publishFreeDelivery(admin, snapshot(5000));
+  const renamed = snapshot(5000);
+  renamed.profiles[0].zones[0].name = "United Kingdom";
+  const result = await publishFreeDelivery(admin, renamed);
+  assert.equal(result.changed, true, "the zone's name is only in the services table");
+  assert.equal(state.writes, 3, "so only that one was written");
 });
 
 test("what was published can be read back, and anything unreadable counts as nothing published", async () => {
@@ -51,6 +64,10 @@ test("what was published can be read back, and anything unreadable counts as not
   assert.equal(await loadPublishedFreeDelivery(admin), null);
   await publishFreeDelivery(admin, snapshot(5000));
   assert.equal((await loadPublishedFreeDelivery(admin))?.countries.GB.free, true);
+  assert.equal((await loadPublishedServices(admin))?.countries.GB, "z0");
+  assert.equal(await loadPublishedServices(fakeShopify().admin), null);
+  stored.set("delivery_services", "not json");
+  assert.equal(await loadPublishedServices(admin), null);
   stored.set("delivery", "not json");
   assert.equal(await loadPublishedFreeDelivery(admin), null);
   stored.set("delivery", JSON.stringify({ version: 2, countries: {} }));
@@ -71,8 +88,11 @@ test("a shop that has never published gets its table made the first time the app
   assert.deepEqual(JSON.parse(shopify.stored.get("delivery")!).countries.GB, { free: true, thresholdMinor: 5000, rate: "Free" });
   const before = calls.length;
   await ensureFreeDelivery(admin);
-  assert.equal(calls.length, before + 1, "the second time it only looks, and finds the table");
-  assert.equal(shopify.state.writes, 1);
+  assert.equal(calls.length, before + 2, "the second time it only looks, and finds both tables");
+  assert.equal(shopify.state.writes, 2);
+  shopify.stored.delete("delivery_services");
+  await ensureFreeDelivery(admin);
+  assert.ok(shopify.stored.has("delivery_services"), "a shop that had only the first table gets the second");
   const refreshed = await syncFreeDelivery(admin);
   assert.equal(refreshed.changed, false, "a refresh with no change in Shopify writes nothing");
 });

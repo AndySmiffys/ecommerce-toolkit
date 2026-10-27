@@ -389,6 +389,11 @@
       this.freeCurrency = this.dataset.freeCurrency || '';
       this.country = this.dataset.country || '';
       this.freeRate = this.dataset.freeRate || '';
+      // The delivery services for this shopper's country, from Shopify's shipping settings, and the box they are listed in.
+      this.deliveryCurrency = this.dataset.deliveryCurrency || '';
+      this.deliveryBox = this.querySelector('[data-role="delivery"]');
+      this.deliveryList = this.querySelector('[data-role="delivery-list"]');
+      try { this.services = JSON.parse(this.querySelector('script[data-services]').textContent); } catch (error) { this.services = null; }
       this.variantId = Number(this.dataset.variantId) || null;
       this.listeners = [];
 
@@ -506,6 +511,22 @@
       } else if (view.kind === 'error') {
         appendRich(line, c.errorText);
       }
+      this.renderDelivery();
+    }
+
+    /** The delivery options for the chosen variant, soonest first. Rebuilt each time; the box itself stays, so it stays open. */
+    renderDelivery() {
+      if (!this.deliveryBox || !this.deliveryList || !this.services) return;
+      var options = this.cart.currency === this.deliveryCurrency ? deliveryOptions(Date.now(), this.config, this.services, this.deliveryCurrency, this.selectedVariant()) : [];
+      this.deliveryBox.hidden = options.length === 0;
+      this.deliveryList.textContent = '';
+      options.forEach(function (option) {
+        var item = el('li', 'sc__option');
+        var when = el('span', 'sc__option-date');
+        appendRich(when, option.text);
+        item.append(el('span', 'sc__option-name', option.label), el('span', 'sc__option-price', option.price), when);
+        this.deliveryList.appendChild(item);
+      }, this);
     }
 
     renderFree() {
@@ -536,6 +557,8 @@
     setCart(cart) {
       this.cart = { total: cart.total_price, currency: cart.currency || this.cart.currency };
       this.renderFree();
+      // Prices are not converted, so a cart in another currency has no delivery options to show.
+      this.renderDelivery();
     }
 
     scheduleCartRefresh() {
