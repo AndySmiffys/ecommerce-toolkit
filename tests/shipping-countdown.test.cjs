@@ -140,6 +140,8 @@ test("the threshold is written in full, with pence only when there are some", ()
   assert.equal(logic.fillThreshold("No placeholder", 5000, "GBP"), "No placeholder");
   assert.equal(logic.fillThreshold("Free to {country} over {threshold}, yes {country}", 5000, "GBP", "Ireland"), "Free to Ireland over £50, yes Ireland", "the country goes in everywhere it is asked for");
   assert.equal(logic.fillThreshold("Free to {country}", 5000, "GBP"), "Free to ", "no country, no text");
+  assert.equal(logic.fillThreshold("Get {rate} over {threshold}. That is {rate}.", 5000, "GBP", "Ireland", "Free standard delivery"), "Get Free standard delivery over £50. That is Free standard delivery.", "the delivery option's name goes in everywhere it is asked for");
+  assert.equal(logic.fillThreshold("Get {rate}", 5000, "GBP", "Ireland"), "Get ", "no name, no text");
 });
 
 test("free shipping: under, add this item, over, always free, and a cart in another currency", () => {
@@ -153,6 +155,10 @@ test("free shipping: under, add this item, over, always free, and a cart in anot
   assert.equal(message({ cartTotal: 5000 }).state, "over");
   assert.equal(message({ cartTotal: 9999 }).text, "You get free delivery");
   assert.deepEqual(message({ threshold: 0 }), { state: "over", text: "You get free delivery" }, "always free: nothing to spend");
+  const named = { ...free, textUnder: "Spend {threshold} for {rate}", textAdd: "Add this for {rate}", textOver: "You unlocked {rate}" };
+  assert.equal(message({ rate: "Free standard delivery" }, named).text, "Spend £50 for Free standard delivery");
+  assert.equal(message({ rate: "Free standard delivery", cartTotal: 4500 }, named).text, "Add this for Free standard delivery");
+  assert.equal(message({ rate: "Free standard delivery", cartTotal: 6000 }, named).text, "You unlocked Free standard delivery");
   assert.deepEqual(message({ threshold: 7500 }), { state: "under", text: "Free to United Kingdom over £75" }, "a threshold set for another country");
   assert.deepEqual(message({ cartCurrency: "EUR" }), { state: "hidden", text: "" }, "nothing is converted");
   assert.deepEqual(message({ threshold: null }), { state: "hidden", text: "" }, "no free delivery for this country");

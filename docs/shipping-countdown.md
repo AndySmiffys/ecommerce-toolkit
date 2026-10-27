@@ -9,6 +9,18 @@ A product-page block that shows a free-shipping message, a dispatch countdown ("
 - **The script** (`assets/shipping-countdown.js`) holds pure date and message functions, and a single `<shipping-countdown>` element (defined once, however many blocks are on the page). The app's preview loads the same file, so the preview cannot disagree with the shop.
 - **Time**: "now" and every calendar day are London's, taken from `Intl.DateTimeFormat` with `timeZone: "Europe/London"`. The shopper's time zone is never used. Days are `YYYY-MM-DD` strings; day arithmetic is done in UTC on those strings.
 
+## Placeholders in the free-delivery messages
+
+The three free-delivery wordings (under the threshold, this item would reach it, and reached) can use these. Write one in braces and the product page fills it in for each shopper. Each can be used more than once, and the settings page lists them with an example for the country in the preview.
+
+| Placeholder | What it becomes | Example |
+| --- | --- | --- |
+| `{threshold}` | The order total that unlocks free delivery, in the shopper's currency (pence kept: £49.50) | £50 |
+| `{country}` | The shopper's country | United Kingdom |
+| `{rate}` | The name of the free delivery option in your Shopify shipping settings, for that shopper's country | Free delivery |
+
+Anything else in braces, such as `{thresold}`, is rejected when saving, so a typo is never shown to shoppers. The other messages (dispatch, delay, out of stock, back-order, warning) are fixed wording with no placeholders.
+
 ## Shipping review
 
 The **Shipping** page reads Shopify's shipping setup (delivery profiles, zones, rates and their conditions, and your Markets) and shows where free delivery is offered and from what order total. Free delivery in Shopify is a rate that costs nothing: either with a minimum order total (the threshold), or with no condition (always free). The page lists problems and suggestions with a link into Shopify's own settings to fix each. It only reads; changes are made in Shopify.
@@ -22,7 +34,7 @@ The **Shipping** page reads Shopify's shipping setup (delivery profiles, zones, 
 
 - Dispatch is today when today is a shipping day, not a bank holiday, and before the cut-off; otherwise the next such day (searched up to 30 days ahead). The countdown is the real time to that day's cut-off: under 24 hours "X hours Y minutes", from 24 hours "X days Y hours".
 - **Delay** (delay days above 0) replaces the countdown with dispatch from the Nth shipping day after today, whatever the time of day. Wrap words in `[highlight]` and `[/highlight]` to colour them.
-- **Free shipping** is read from Shopify's shipping settings, never typed in (see Shipping review below). Each shopper gets the free-delivery rule for their own country: free from an order total, always free, or nothing. The message only shows for a cart in the shop's currency, and nothing is converted. "This item reaches it" uses the chosen variant's price times the chosen quantity. Wording can use `{threshold}` and `{country}`.
+- **Free shipping** is read from Shopify's shipping settings, never typed in (see Shipping review below). Each shopper gets the free-delivery rule for their own country: free from an order total, always free, or nothing. The message only shows for a cart in the shop's currency, and nothing is converted. "This item reaches it" uses the chosen variant's price times the chosen quantity. Wording can use the placeholders below.
 - **Stock.** A variant that cannot be dispatched now never gets a dispatch date, and the two cases are told apart, each with its own wording or a hide option:
   - **Out of stock:** the variant is unavailable, so it cannot be bought.
   - **Zero stock, continue selling:** stock is tracked and is zero or below, but "Continue selling when out of stock" is on, so it can still be bought (a back-order or pre-order). Shopify only reports zero when stock is tracked.

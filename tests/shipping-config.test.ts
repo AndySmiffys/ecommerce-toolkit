@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultShippingConfig, defaultShippingStyle, isIsoDate, parseBankHolidays, validateShippingConfig } from "../app/modules/shipping/config";
+import { defaultShippingConfig, defaultShippingStyle, freePlaceholders, isIsoDate, parseBankHolidays, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
 import { mergeBankHolidays, upcomingBankHolidays } from "../app/modules/shipping/bankHolidays.server";
 
 const valid = (changes: Record<string, unknown> = {}) => ({ ...defaultShippingConfig, ...changes });
@@ -112,4 +112,22 @@ test("settings saved with the single pre-order message keep their wording for ze
   const hidden = validateShippingConfig({ ...defaultShippingConfig, availability: { preorderMode: "hide" } });
   assert.equal(hidden.ok && hidden.config.availability.backorder.mode, "hide");
   assert.equal(old.ok && "preorderMessage" in old.config.availability, false, "the old fields are not carried forward");
+});
+
+test("the free-delivery messages can use three placeholders, and anything else in braces is caught as a typo", () => {
+  assert.deepEqual(freePlaceholders.map(item => item.name), ["threshold", "country", "rate"]);
+  assert.ok(freePlaceholders.every(item => item.meaning.length > 10 && item.example.length > 0), "each is explained, with an example");
+  assert.deepEqual(unknownPlaceholders("Free to {country} over {threshold} with {rate}, {rate} again"), []);
+  assert.deepEqual(unknownPlaceholders("Spend {thresold} for {rate} and {Country}"), ["{thresold}", "{Country}"], "a typo or the wrong capital letter");
+  assert.deepEqual(unknownPlaceholders("{} and {a b}"), ["{}", "{a b}"]);
+  assert.deepEqual(unknownPlaceholders("No braces, and an unmatched { is left alone"), []);
+  const free = (changes: Record<string, unknown>) => valid({ freeShipping: { ...defaultShippingConfig.freeShipping, ...changes } });
+  assert.equal(validateShippingConfig(free({ textUnder: "Get {rate} over {threshold} to {country}" })).ok, true);
+  const bad = errorsOf(free({ textUnder: "Spend {thresold}", textAdd: "Add for {Rate}", textOver: "Fine {rate}" })).join(" | ");
+  assert.match(bad, /Message under the threshold uses \{thresold\}, which is not a placeholder\. You can use \{threshold\}, \{country\}, \{rate\}/);
+  assert.match(bad, /Add this item message uses \{Rate\}/);
+  assert.doesNotMatch(bad, /Message over the threshold/, "a correct message is not flagged");
+  assert.equal(validateShippingConfig(free({ enabled: false, textUnder: "Spend {thresold}" })).ok, false, "still checked when switched off, so it is not a surprise later");
+  assert.match(defaultShippingConfig.freeShipping.textUnder, /\{country\}.*\{threshold\}/);
+  assert.deepEqual(unknownPlaceholders(defaultShippingConfig.freeShipping.textUnder + defaultShippingConfig.freeShipping.textAdd + defaultShippingConfig.freeShipping.textOver), [], "the defaults use only real ones");
 });

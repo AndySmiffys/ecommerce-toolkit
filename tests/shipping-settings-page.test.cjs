@@ -192,6 +192,39 @@ test('free shipping shows what was read from Shopify, and its preview follows th
   } finally { await page.unmount(); }
 });
 
+test('the free delivery step lists the placeholders, with what each becomes for the country in the preview', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    const card = find(container, 'details[data-step=free]');
+    assert.match(card.textContent, /Placeholders you can use in these messages/);
+    const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
+    assert.deepEqual(rows.map(row => row[0]), ['{threshold}', '{country}', '{rate}']);
+    assert.match(rows[0][1], /order total that unlocks free delivery/);
+    assert.match(rows[2][1], /name of the free delivery option in your Shopify shipping settings/);
+    assert.deepEqual(rows.map(row => row[2]), ['£50', 'United Kingdom', 'Free delivery'], 'examples for the preview country');
+    await change(field(container, 's-select', 'Country of the shopper'), 'IE');
+    assert.deepEqual(findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell')[2].textContent.trim()), ['£75', 'Ireland', 'Free delivery']);
+  } finally { await page.unmount(); }
+});
+
+test('the delivery option name can be used in a message, and a typo is pointed out', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    const card = find(container, 'details[data-step=free]');
+    const under = findAll(card, 's-text-field').find(element => element.getAttribute('label') === 'Message when under the threshold');
+    await type(under, 'Spend {threshold} to unlock {rate}');
+    assert.match(find(container, 'aside .sc__free').textContent, /^Spend £50 to unlock Free delivery$/);
+    assert.equal(under.getAttribute('error'), null);
+    assert.equal(save(container).disabled, false);
+    await type(under, 'Spend {thresold} to unlock {rate}');
+    assert.match(under.getAttribute('error'), /\{thresold\} is not a placeholder\. Use \{threshold\}, \{country\}, \{rate\}\./);
+    assert.equal(save(container).disabled, true, 'a typo cannot be saved');
+    assert.match(container.textContent, /uses \{thresold\}, which is not a placeholder/);
+  } finally { await page.unmount(); }
+});
+
 test('before shipping has been read from Shopify the page says so', async () => {
   const page = await mountPage({ table: null, saved: false });
   try {

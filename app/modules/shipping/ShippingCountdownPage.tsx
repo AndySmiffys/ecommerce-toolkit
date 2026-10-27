@@ -11,7 +11,7 @@ import { editorCss } from "../promotions/components/editor/editorStyles";
 import { PolarisCheckbox, PolarisCheckboxList, PolarisNumberField, PolarisRadioList, PolarisSelect } from "../promotions/components/PolarisControls";
 import { contrastRatio } from "../promotions/design/design";
 import blockCss from "../../../extensions/promotion-engine/assets/shipping-countdown.css?raw";
-import { dayNames, defaultShippingConfig, parseBankHolidays, validateShippingConfig, type ShippingCountdownConfig } from "./config";
+import { dayNames, defaultShippingConfig, freePlaceholders, parseBankHolidays, unknownPlaceholders, validateShippingConfig, type ShippingCountdownConfig } from "./config";
 import { formatMinor } from "./delivery/deliveryModel";
 import { freeDeliveryFor, type FreeDeliveryTable } from "./delivery/freeService";
 import { shippingLogic, type StockVariant } from "./logic";
@@ -144,6 +144,34 @@ function DeliveryFromShopify({ delivery, appUrl }: { delivery: FreeDeliveryTable
   </s-stack>;
 }
 
+/** The placeholders that can go in a free-delivery message, with what each becomes for the country being previewed. */
+function PlaceholderList({ examples }: { examples: Record<string, string> }) {
+  return <s-stack direction="block" gap="small-300">
+    <s-text type="strong">Placeholders you can use in these messages</s-text>
+    <s-text color="subdued">Write one in braces and the product page fills it in for each shopper. Each can be used more than once.</s-text>
+    <s-table>
+      <s-table-header-row>
+        <s-table-header listSlot="primary">Placeholder</s-table-header>
+        <s-table-header>What it becomes</s-table-header>
+        <s-table-header>For the country in the preview</s-table-header>
+      </s-table-header-row>
+      <s-table-body>
+        {freePlaceholders.map(item => <s-table-row key={item.name}>
+          <s-table-cell><s-text type="strong">{`{${item.name}}`}</s-text></s-table-cell>
+          <s-table-cell>{item.meaning}</s-table-cell>
+          <s-table-cell>{examples[item.name] ?? item.example}</s-table-cell>
+        </s-table-row>)}
+      </s-table-body>
+    </s-table>
+  </s-stack>;
+}
+
+/** Shown under a message that uses something in braces that is not a placeholder. */
+const placeholderError = (text: string) => {
+  const unknown = unknownPlaceholders(text);
+  return unknown.length ? `${unknown.join(", ")} is not a placeholder. Use ${freePlaceholders.map(item => `{${item.name}}`).join(", ")}.` : undefined;
+};
+
 const when = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 const stockScenarios: Record<string, { label: string; variant: StockVariant | null }> = {
@@ -222,8 +250,11 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
   const view = config && sampleMs !== null ? shippingLogic.dispatchView(sampleMs, config, scenario.variant) : null;
   const entry = delivery ? (previewCountry === "*" ? delivery.restOfWorld : freeDeliveryFor(delivery, previewCountry)) : null;
   const freeText = config && delivery && entry?.free && stock !== "out"
-    ? shippingLogic.freeShippingMessage(config.freeShipping, { threshold: entry.thresholdMinor, thresholdCurrency: delivery.currency, country: previewCountry === "*" ? "your country" : countryName(previewCountry), cartCurrency: delivery.currency, cartTotal: 0, itemPrice: 0, quantity: 1 }).text
+    ? shippingLogic.freeShippingMessage(config.freeShipping, { threshold: entry.thresholdMinor, thresholdCurrency: delivery.currency, country: previewCountry === "*" ? "your country" : countryName(previewCountry), rate: entry.rate, cartCurrency: delivery.currency, cartTotal: 0, itemPrice: 0, quantity: 1 }).text
     : "";
+  const examples: Record<string, string> = delivery && entry?.free
+    ? { threshold: formatMinor(entry.thresholdMinor, delivery.currency), country: previewCountry === "*" ? "your country" : countryName(previewCountry), rate: entry.rate }
+    : {};
   const warningShowing = Boolean(config && sampleMs !== null && shippingLogic.warningVisible(sampleMs, config.warning));
   const shownAt = sampleMs === null ? "" : new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(sampleMs);
 
@@ -352,9 +383,10 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, fetcher
               <PolarisCheckbox label="Show the free delivery message" checked={form.freeEnabled} onChange={event => set({ freeEnabled: event.currentTarget.checked })} />
               {form.freeEnabled && <>
                 <DeliveryFromShopify delivery={delivery} appUrl={appUrl} />
-                <TextField label="Message when under the threshold" value={form.textUnder} onChange={value => set({ textUnder: value })} details="{threshold} becomes the amount and {country} the shopper's country, for example “Free delivery to {country} on orders over {threshold}”." />
-                <TextField label="Message when this item would reach it" value={form.textAdd} onChange={value => set({ textAdd: value })} details="Uses the selected variant and quantity. An out of stock variant never counts." />
-                <TextField label="Message when the cart has reached it" value={form.textOver} onChange={value => set({ textOver: value })} details="Also shown where delivery is always free." />
+                <PlaceholderList examples={examples} />
+                <TextField label="Message when under the threshold" value={form.textUnder} onChange={value => set({ textUnder: value })} error={placeholderError(form.textUnder)} details="For example “Free delivery to {country} on orders over {threshold}”." />
+                <TextField label="Message when this item would reach it" value={form.textAdd} onChange={value => set({ textAdd: value })} error={placeholderError(form.textAdd)} details="Uses the selected variant and quantity. An out of stock variant never counts. For example “Add this item to get {rate}”." />
+                <TextField label="Message when the cart has reached it" value={form.textOver} onChange={value => set({ textOver: value })} error={placeholderError(form.textOver)} details="Also shown where delivery is always free. For example “You have unlocked {rate}!”." />
               </>}
             </>)}
 

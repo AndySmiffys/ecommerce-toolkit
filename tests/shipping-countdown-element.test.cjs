@@ -124,6 +124,29 @@ test("the server writes the free-shipping message for the shopper's country, wit
   assert.match(await render({ country: { iso_code: "<b>", name: "<b>Land</b>" } }), /Free to &lt;b&gt;Land&lt;\/b&gt; over £100/, "a country name cannot inject markup");
 });
 
+test("the delivery option's name from Shopify's shipping settings can be used in a message, on the server and in the browser", async () => {
+  const named = { ...config, freeShipping: { ...config.freeShipping, textUnder: "Spend {threshold} to get {rate}", textAdd: "Add this to get {rate}", textOver: "You have {rate}, {country}!" } };
+  const html = await render({ cfg: named });
+  assert.match(html, /Spend £50 to get Free delivery/);
+  assert.match(html, /data-free-rate="Free delivery"/, "the script is given the name too");
+  assert.doesNotMatch(visible(html), /\{rate\}/);
+  assert.match(await render({ cfg: named, cartTotal: 4500 }), /Add this to get Free delivery/);
+  assert.match(await render({ cfg: named, cartTotal: 6000 }), /You have Free delivery, United Kingdom!/);
+  const ireland = { ...delivery, countries: { ...delivery.countries, IE: { free: true, thresholdMinor: 7500, rate: "Free Irish delivery" } } };
+  assert.match(await render({ cfg: named, table: ireland, country: { iso_code: "IE", name: "Ireland" } }), /Spend £75 to get Free Irish delivery/, "each country's own free option");
+  const markup = { ...delivery, countries: { ...delivery.countries, GB: { free: true, thresholdMinor: 5000, rate: "<b>Free</b> & fast" } } };
+  const escaped = await render({ cfg: named, table: markup });
+  assert.match(visible(escaped), /Spend £50 to get &lt;b&gt;Free&lt;\/b&gt; &amp; fast/, "a name from Shopify cannot inject markup");
+  assert.match(visible(escaped), /data-free-rate="&lt;b&gt;Free&lt;\/b&gt; &amp; fast"/);
+  // And in the browser, after the cart changes.
+  const p = await page({ cfg: named });
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 4500, currency: "GBP" } } }));
+  assert.equal(p.free().textContent, "Add this to get Free delivery");
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 6000, currency: "GBP" } } }));
+  assert.equal(p.free().textContent, "You have Free delivery, United Kingdom!");
+  p.close();
+});
+
 test("each shopper sees the threshold for their own country: a different one, none, always free, or the rest of the world's", async () => {
   assert.match(await render({ country: { iso_code: "IE", name: "Ireland" } }), /Free to Ireland over £75, only £75/);
   const france = await render({ country: { iso_code: "FR", name: "France" } });

@@ -26,7 +26,7 @@
       assign free_text = free.textUnder
     endif
     assign threshold_text = threshold | money_without_trailing_zeros
-    assign free_text = free_text | replace: '{threshold}', threshold_text | replace: '{country}', country_name
+    assign free_text = free_text | replace: '{threshold}', threshold_text | replace: '{country}', country_name | replace: '{rate}', entry.rate
   endif
   assign shop_today = 'now' | date: '%Y-%m-%d'
   assign warning = config.warning
@@ -66,6 +66,7 @@
     data-free-threshold="{{ threshold }}"
     data-free-currency="{{ delivery.currency }}"
     data-country="{{ country_name | escape }}"
+    data-free-rate="{{ entry.rate | escape }}"
     data-variant-id="{{ variant.id }}"
     {{ block.shopify_attributes }}
   >

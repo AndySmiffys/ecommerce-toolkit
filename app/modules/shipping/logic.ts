@@ -15,8 +15,8 @@ type Logic = {
   dispatchView(nowMs: number, config: ShippingCountdownConfig, variant: StockVariant | null): DispatchView;
   warningVisible(nowMs: number, warning: ShippingCountdownConfig["warning"]): boolean;
   parseHighlight(text: string): Array<{ text: string; highlight: boolean }>;
-  fillThreshold(text: string, thresholdMinor: number, currency: string, country?: string): string;
-  freeShippingMessage(free: ShippingCountdownConfig["freeShipping"], input: { threshold: number | null; thresholdCurrency: string; country: string; cartCurrency: string; cartTotal: number; itemPrice: number; quantity: number }): { state: "hidden" | "under" | "add" | "over"; text: string };
+  fillThreshold(text: string, thresholdMinor: number, currency: string, country?: string, rate?: string): string;
+  freeShippingMessage(free: ShippingCountdownConfig["freeShipping"], input: { threshold: number | null; thresholdCurrency: string; country: string; rate: string; cartCurrency: string; cartTotal: number; itemPrice: number; quantity: number }): { state: "hidden" | "under" | "add" | "over"; text: string };
 };
 
 /**

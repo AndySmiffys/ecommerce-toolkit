@@ -94,6 +94,19 @@ export const defaultShippingConfig: ShippingCountdownConfig = {
   style: defaultShippingStyle,
 };
 
+/** What can be written in braces in a free-delivery message. The product page fills each one in for the shopper. */
+export const freePlaceholders = [
+  { name: "threshold", meaning: "The order total that unlocks free delivery, in the shopper's currency", example: "£50" },
+  { name: "country", meaning: "The shopper's country", example: "United Kingdom" },
+  { name: "rate", meaning: "The name of the free delivery option in your Shopify shipping settings", example: "Free delivery" },
+] as const;
+
+/** Anything in braces that is not a placeholder the product page fills in, so a typo is caught instead of shown to shoppers. */
+export function unknownPlaceholders(text: string): string[] {
+  const known = new Set<string>(freePlaceholders.map(item => item.name));
+  return [...new Set([...text.matchAll(/\{([^{}]*)\}/g)].map(match => match[1]).filter(name => !known.has(name)))].map(name => `{${name}}`);
+}
+
 export const limits = { text: 300, message: 600, holidays: 400 };
 
 export function isIsoDate(value: string) {
@@ -159,6 +172,12 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
   const delayDays = Number.isInteger(delayRaw) && delayRaw >= 0 && delayRaw <= 60 ? delayRaw : 0;
 
   const freeEnabled = flag(free.enabled, d.freeShipping.enabled);
+  const freeText = (value: unknown, label: string, fallback: string, required: boolean) => {
+    const clean = text(value, label, fallback, limits.text, required);
+    const unknown = unknownPlaceholders(clean);
+    if (unknown.length) errors.push(`${label} uses ${unknown.join(", ")}, which is not a placeholder. You can use ${freePlaceholders.map(item => `{${item.name}}`).join(", ")}.`);
+    return clean;
+  };
 
   // Settings saved before out of stock and back-order were told apart had one pair of fields: keep their wording for back-order.
   const legacy = typeof availability.preorderMessage === "string" || availability.preorderMode !== undefined ? { mode: availability.preorderMode, message: availability.preorderMessage } : undefined;
@@ -233,9 +252,9 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     countdownSuffix: text(source.countdownSuffix, "Countdown suffix", d.countdownSuffix),
     freeShipping: {
       enabled: freeEnabled,
-      textUnder: text(free.textUnder, "Message under the threshold", d.freeShipping.textUnder, limits.text, freeEnabled),
-      textAdd: text(free.textAdd, "Add this item message", d.freeShipping.textAdd),
-      textOver: text(free.textOver, "Message over the threshold", d.freeShipping.textOver),
+      textUnder: freeText(free.textUnder, "Message under the threshold", d.freeShipping.textUnder, freeEnabled),
+      textAdd: freeText(free.textAdd, "Add this item message", d.freeShipping.textAdd, false),
+      textOver: freeText(free.textOver, "Message over the threshold", d.freeShipping.textOver, false),
     },
     availability: {
       outOfStock: stock(availability.outOfStock, "Out of stock", d.availability.outOfStock),

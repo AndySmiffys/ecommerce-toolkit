@@ -152,9 +152,9 @@
     }
   }
 
-  /** Fills {threshold} (every occurrence) and {country} in a message. */
-  function fillThreshold(text, thresholdMinor, currency, country) {
-    return String(text || '').split('{threshold}').join(formatMoney(thresholdMinor, currency)).split('{country}').join(country || '');
+  /** Fills {threshold}, {country} and {rate} (every occurrence of each) in a free-delivery message. */
+  function fillThreshold(text, thresholdMinor, currency, country, rate) {
+    return String(text || '').split('{threshold}').join(formatMoney(thresholdMinor, currency)).split('{country}').join(country || '').split('{rate}').join(rate || '');
   }
 
   /**
@@ -168,7 +168,7 @@
     }
     var cart = input.cartTotal || 0;
     var item = (input.itemPrice || 0) * (input.quantity || 1);
-    var fill = function (text) { return fillThreshold(text, threshold, input.thresholdCurrency, input.country); };
+    var fill = function (text) { return fillThreshold(text, threshold, input.thresholdCurrency, input.country, input.rate); };
     if (cart >= threshold) return { state: 'over', text: fill(free.textOver) };
     if (item > 0 && cart + item >= threshold) return { state: 'add', text: fill(free.textAdd) };
     return { state: 'under', text: fill(free.textUnder) };
@@ -259,6 +259,7 @@
       this.freeThreshold = this.dataset.freeThreshold === undefined || this.dataset.freeThreshold === '' ? null : Number(this.dataset.freeThreshold);
       this.freeCurrency = this.dataset.freeCurrency || '';
       this.country = this.dataset.country || '';
+      this.freeRate = this.dataset.freeRate || '';
       this.variantId = Number(this.dataset.variantId) || null;
       this.listeners = [];
 
@@ -377,7 +378,7 @@
       if (!this.freeLine) return;
       var variant = this.selectedVariant();
       var result = freeShippingMessage(this.config.freeShipping, {
-        threshold: this.freeThreshold, thresholdCurrency: this.freeCurrency, country: this.country,
+        threshold: this.freeThreshold, thresholdCurrency: this.freeCurrency, country: this.country, rate: this.freeRate,
         // An item that is out of stock cannot be added, so it never counts towards the threshold.
         cartCurrency: this.cart.currency, cartTotal: this.cart.total, itemPrice: variant && stockState(variant) !== 'out' ? variant.price : 0, quantity: this.selectedQuantity()
       });
