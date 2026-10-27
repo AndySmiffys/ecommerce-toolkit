@@ -19,7 +19,15 @@ export type DeliveryRate = {
   /** Null for a carrier rate. */
   price: Money | null;
   conditions: RateCondition[];
+  /**
+   * The delivery time set on the option in Shopify, in business days. Absent when Shopify gave none or could not be asked (see
+   * `ShippingSnapshot.transit`), in which case the days typed into the app are used.
+   */
+  transit?: Transit | null;
 };
+
+/** Business days from dispatch to delivery, a minimum and a maximum (the same number when Shopify has one figure). */
+export type Transit = { minDays: number; maxDays: number };
 
 export type DeliveryZone = {
   id: string;
@@ -49,7 +57,15 @@ export type ShippingSnapshot = {
   profiles: DeliveryProfile[];
   /** Null when the app has not been given access to Markets. */
   markets: Market[] | null;
+  /** Whether delivery times were read from Shopify. They are only offered by its unstable API, so this can stop working without warning. */
+  transit?: "shopify" | "unavailable";
 };
+
+/** "2 business days", "1 business day", "2 to 3 business days". */
+export function transitText(transit: Transit): string {
+  const days = (n: number) => `${n} business day${n === 1 ? "" : "s"}`;
+  return transit.minDays === transit.maxDays ? days(transit.maxDays) : `${transit.minDays} to ${days(transit.maxDays)}`;
+}
 
 /** "49.99" to 4999. */
 export function toMinor(amount: string | number): number {

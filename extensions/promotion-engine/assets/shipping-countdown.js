@@ -188,6 +188,112 @@
     return { state: 'under', text: fill(free.textUnder) };
   }
 
+  /* ------------------------------------------------------------ delivery services */
+
+  var WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  /** A service with nothing set: Monday to Friday, not guaranteed, no cut-off of its own, shown. Nothing is promised that was not chosen. */
+  var DEFAULT_SERVICE = { show: true, label: '', guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null };
+
+  function ordinal(n) {
+    var tens = n % 100;
+    if (tens >= 11 && tens <= 13) return n + 'th';
+    return n + ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th');
+  }
+
+  /** "Wed 28th Oct", or "Wed 28th" when the month is turned off. */
+  function formatDeliveryDate(date, showMonth) {
+    var p = parseDate(date);
+    return WEEKDAY_SHORT[weekday(date)] + ' ' + ordinal(p.d) + (showMonth === false ? '' : ' ' + MONTH_NAMES[p.m - 1]);
+  }
+
+  /** Whether the carrier delivers on this day: one of the service's delivery days, and not a bank holiday unless it delivers on those. */
+  function isDeliveryDay(date, service, bankHolidays) {
+    return Boolean(service.days && service.days[weekday(date)]) && (Boolean(service.onBankHolidays) || (bankHolidays || []).indexOf(date) < 0);
+  }
+
+  /**
+   * The Nth delivery day after the dispatch day, counting only days this service delivers (the business days Shopify's delivery times are in).
+   * Zero days is the first delivery day on or after dispatch. Null when the service delivers on no day.
+   */
+  function addDeliveryDays(dispatchDate, days, service, bankHolidays) {
+    var wanted = Math.max(0, Math.floor(days || 0));
+    var counted = 0;
+    for (var i = wanted === 0 ? 0 : 1; i <= 400; i++) {
+      var date = addDays(dispatchDate, i);
+      if (!isDeliveryDay(date, service, bankHolidays)) continue;
+      if (wanted === 0 || ++counted >= wanted) return date;
+    }
+    return null;
+  }
+
+  /**
+   * When an order placed now reaches the customer by this service: it is dispatched by the service's own cut-off (the shop's when it has none),
+   * or on the warehouse delay date when one is set, then travels the shortest and longest delivery times. Null when no date can be given.
+   */
+  function deliveryEstimate(nowMs, config, service, transit) {
+    var own = Object.assign({}, DEFAULT_SERVICE, service || {});
+    var dispatch;
+    if (Math.floor(config.delayDays || 0) > 0) {
+      var delayed = delayedDispatch(nowMs, config);
+      dispatch = delayed ? { date: delayed } : null;
+    } else {
+      dispatch = nextDispatch(nowMs, Object.assign({}, config, { cutoffTime: own.cutoffTime || config.cutoffTime }));
+    }
+    if (!dispatch || !transit) return null;
+    var from = addDeliveryDays(dispatch.date, transit.minDays, own, config.bankHolidays);
+    var to = addDeliveryDays(dispatch.date, transit.maxDays, own, config.bankHolidays);
+    if (!from || !to) return null;
+    return { dispatchDate: dispatch.date, from: from, to: to, cutoffAt: dispatch.cutoffAt || null, msUntilCutoff: dispatch.msUntilCutoff === undefined ? null : dispatch.msUntilCutoff };
+  }
+
+  /** Fills {date} (the latest date), {from} (the earliest) and {service} in a delivery message. */
+  function fillDelivery(text, values) {
+    return String(text || '').split('{date}').join(values.date || '').split('{from}').join(values.from || '').split('{service}').join(values.service || '');
+  }
+
+  /**
+   * What a service costs, from its price bands: "£4.99, or £2.99 on orders of £30 or more", "£3.99, or free on orders of £30 or more". A service
+   * whose price also depends on something other than the order total says "From" its lowest price.
+   */
+  function servicePrice(service, currency) {
+    var tiers = (service.tiers || []).slice().sort(function (a, b) { return a.from - b.from; });
+    if (!tiers.length) return '';
+    var money = function (minor) { return minor === 0 ? 'free' : formatMoney(minor, currency); };
+    if (service.complex) {
+      var lowest = Math.min.apply(null, tiers.map(function (tier) { return tier.price; }));
+      return lowest === 0 ? 'Free' : 'From ' + formatMoney(lowest, currency);
+    }
+    var first = tiers[0];
+    var text = first.from > 0 ? money(first.price) + ' on orders of ' + formatMoney(first.from, currency) + ' or more' : (first.price === 0 ? 'Free' : formatMoney(first.price, currency));
+    for (var i = 1; i < tiers.length; i++) text += ', or ' + money(tiers[i].price) + ' on orders of ' + formatMoney(tiers[i].from, currency) + ' or more';
+    return text;
+  }
+
+  /**
+   * The delivery options for the dropdown, soonest first. Each service is a Shopify shipping option for the shopper's country ({ name, tiers,
+   * transit }) with what the app adds in config.delivery.services. A service with no delivery time (typed in the app, else Shopify's) is left out,
+   * because no date can be promised for it. Nothing is shown for a variant that cannot be dispatched now.
+   */
+  function deliveryOptions(nowMs, config, services, currency, variant) {
+    var delivery = config.delivery;
+    if (!delivery || !delivery.enabled || stockState(variant) !== 'in') return [];
+    var options = [];
+    (services || []).forEach(function (service) {
+      var found = (delivery.services || []).filter(function (item) { return item.name === service.name; })[0];
+      var setting = Object.assign({}, DEFAULT_SERVICE, found || {});
+      if (setting.show === false) return;
+      var typed = typeof setting.transitMin === 'number' && typeof setting.transitMax === 'number' ? { minDays: setting.transitMin, maxDays: setting.transitMax } : null;
+      var estimate = deliveryEstimate(nowMs, config, setting, typed || service.transit);
+      if (!estimate) return;
+      var label = setting.label || service.name;
+      var template = setting.guaranteed ? delivery.guaranteedText : delivery.estimatedText;
+      var values = { date: formatDeliveryDate(estimate.to, delivery.showMonth), from: formatDeliveryDate(estimate.from, delivery.showMonth), service: label };
+      var lowest = Math.min.apply(null, (service.tiers || [{ price: 0 }]).map(function (tier) { return tier.price; }));
+      options.push({ name: service.name, label: label, price: servicePrice(service, currency), guaranteed: Boolean(setting.guaranteed), text: fillDelivery(template, values), to: estimate.to, from: estimate.from, dispatchDate: estimate.dispatchDate, lowest: lowest });
+    });
+    return options.sort(function (a, b) { return a.to < b.to ? -1 : a.to > b.to ? 1 : a.lowest - b.lowest || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0); });
+  }
+
   /**
    * Whether a variant can be dispatched now. "out" is unavailable altogether. "backorder" is sold while stock is zero or below (the
    * variant's "continue selling when out of stock" setting), so there is no dispatch date to promise either.
@@ -229,7 +335,7 @@
     londonParts: londonParts, addDays: addDays, weekday: weekday, londonTimeToUtc: londonTimeToUtc, parseCutoff: parseCutoff,
     isDispatchDay: isDispatchDay, nextDispatch: nextDispatch, delayedDispatch: delayedDispatch, countdownText: countdownText,
     formatDispatchDate: formatDispatchDate, parseRich: parseRich, formatMoney: formatMoney, fillThreshold: fillThreshold,
-    freeShippingMessage: freeShippingMessage, stockState: stockState, warningVisible: warningVisible, dispatchView: dispatchView
+    freeShippingMessage: freeShippingMessage, stockState: stockState, formatDeliveryDate: formatDeliveryDate, isDeliveryDay: isDeliveryDay, addDeliveryDays: addDeliveryDays, deliveryEstimate: deliveryEstimate, fillDelivery: fillDelivery, servicePrice: servicePrice, deliveryOptions: deliveryOptions, warningVisible: warningVisible, dispatchView: dispatchView
   };
   root.ShippingCountdownLogic = logic;
   if (typeof module !== 'undefined' && module.exports) module.exports = logic;

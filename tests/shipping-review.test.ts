@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import type { DeliveryProfile, DeliveryRate, DeliveryZone, Market, RateCondition, ShippingSnapshot } from "../app/modules/shipping/delivery/deliveryModel";
 import { describeFree, describeRate, freeDeliveryFor, freeDeliveryTable, freeOption, priceRange, zoneFree, zoneForCountry } from "../app/modules/shipping/delivery/freeService";
 import { marketCoverage, priceGaps, reviewShipping, summarise, usualThreshold, type Finding } from "../app/modules/shipping/delivery/shippingReview";
-import { formatMinor } from "../app/modules/shipping/delivery/deliveryModel";
-import { loadShippingSnapshot, parseMarket, parseRate, parseZone, ShippingAccessError, type RawMarket, type RawRate, type RawZone } from "../app/modules/shipping/delivery/shippingReader.server";
+import { formatMinor, transitText } from "../app/modules/shipping/delivery/deliveryModel";
+import { loadShippingSnapshot, parseMarket, parseRate, parseTransit, parseZone, ShippingAccessError, type RawMarket, type RawRate, type RawTransitZone, type RawZone } from "../app/modules/shipping/delivery/shippingReader.server";
 
 // ---- builders
 const gbp = (amount: number) => ({ amount, currency: "GBP" });
@@ -275,11 +275,22 @@ test("zones and markets are read, with rest of world, provinces and non-country 
 });
 
 /** A pretend Shopify: two profiles, one zone each, with the general profile's rates arriving over two pages. */
-function fakeAdmin(options: { marketsError?: string; profilesError?: string } = {}) {
+function fakeAdmin(options: { marketsError?: string; profilesError?: string; transit?: "ok" | "errors" | "throws" | "none" } = {}) {
   const calls: string[] = [];
+  const versions: Record<string, string | undefined> = {};
   const page = (nodes: RawRate[], next: string | null) => ({ nodes, pageInfo: { hasNextPage: next !== null, endCursor: next } });
   const respond = (query: string, variables: Record<string, unknown> = {}) => {
     calls.push(query.match(/query (\w+)/)![1]);
+    if (query.includes("ShippingTransitTimes")) {
+      if (options.transit === "throws") throw new Error("socket hang up");
+      if (options.transit === "errors") return { errors: [{ message: "Field 'rateGroups' doesn't exist on type 'DeliveryMethodDefinition'" }] };
+      const general = variables.profile === "p1";
+      const rate = (min: number, max: number) => ({ minTransitTime: min * 86400, maxTransitTime: max * 86400 });
+      const methods = options.transit === "none" ? [] : general
+        ? [{ name: "Standard", rateGroups: { nodes: [{ rateProviders: { nodes: [rate(2, 3)] } }] } }, { name: "Free delivery", rateGroups: { nodes: [{ rateProviders: { nodes: [rate(2, 3)] } }] } }]
+        : [];
+      return { data: { deliveryProfile: { profileLocationGroups: [{ locationGroupZones: { nodes: [{ zone: { id: general ? "z1" : "z2" }, methodDefinitions: { nodes: methods, pageInfo: { hasNextPage: false, endCursor: null } } }], pageInfo: { hasNextPage: false, endCursor: null } } }] } } };
+    }
     if (query.includes("ShippingReviewProfiles")) {
       if (options.profilesError) return { errors: [{ message: options.profilesError }] };
       return { data: { shop: { currencyCode: "GBP", shipsToCountries: ["GB"] }, deliveryProfiles: { nodes: [
@@ -298,7 +309,7 @@ function fakeAdmin(options: { marketsError?: string; profilesError?: string } = 
     if (options.marketsError) return { errors: [{ message: options.marketsError }] };
     return { data: { markets: { nodes: [{ id: "m1", name: "UK", status: "ACTIVE", conditions: { regionsCondition: { regions: { nodes: [{ name: "United Kingdom", code: "GB" }], pageInfo: { hasNextPage: false } } } } }], pageInfo: { hasNextPage: false, endCursor: null } } } };
   };
-  return { calls, admin: { graphql: async (query: string, opts?: { variables?: Record<string, unknown> }) => Response.json(respond(query, opts?.variables)) } };
+  return { calls, versions, admin: { graphql: async (query: string, opts?: { variables?: Record<string, unknown>; apiVersion?: string }) => { versions[query.match(/query (\w+)/)![1]] = opts?.apiVersion; return Response.json(respond(query, opts?.variables)); } } };
 }
 
 test("the whole setup is read from Shopify, following every page, and a clean setup reviews clean", async () => {
@@ -317,4 +328,60 @@ test("without access to Markets the review still works, and without access to sh
   assert.equal((await loadShippingSnapshot(fakeAdmin({ marketsError: "Access denied for markets field. Required access: `read_markets` access scope." }).admin)).markets, null);
   await assert.rejects(loadShippingSnapshot(fakeAdmin({ profilesError: "Access denied for deliveryProfiles field." }).admin), ShippingAccessError);
   await assert.rejects(loadShippingSnapshot(fakeAdmin({ marketsError: "Internal server error" }).admin), /Internal server error|Shopify/, "other failures are not hidden");
+});
+
+test("delivery times are read in business days from the seconds Shopify keeps, matched to an option by zone and name", () => {
+  const day = 86400;
+  const zones = (methods: RawTransitZone["methodDefinitions"]["nodes"], id = "z1"): RawTransitZone[] => [{ zone: { id }, methodDefinitions: { nodes: methods } }];
+  const method = (name: string, ...rates: Array<{ minTransitTime?: number | null; maxTransitTime?: number | null }>) => ({ name, rateGroups: { nodes: [{ rateProviders: { nodes: rates } }] } });
+  const read = parseTransit(zones([method("Standard", { minTransitTime: 2 * day, maxTransitTime: 3 * day }), method("Next day", { minTransitTime: day, maxTransitTime: day })]));
+  assert.deepEqual(read.get("z1|Standard"), { minDays: 2, maxDays: 3 });
+  assert.deepEqual(read.get("z1|Next day"), { minDays: 1, maxDays: 1 });
+  assert.equal(read.get("z2|Standard"), undefined, "another zone's option of the same name is its own");
+  assert.deepEqual(parseTransit(zones([method("Tiered", { minTransitTime: 2 * day, maxTransitTime: 2 * day }, { minTransitTime: 3 * day, maxTransitTime: 4 * day })])).get("z1|Tiered"), { minDays: 2, maxDays: 4 }, "price bands that differ: the widest span, so a date is never too early");
+  assert.deepEqual(parseTransit(zones([method("Only max", { maxTransitTime: 3 * day })])).get("z1|Only max"), { minDays: 3, maxDays: 3 }, "one figure is both ends");
+  assert.deepEqual(parseTransit(zones([method("Only min", { minTransitTime: 2 * day })])).get("z1|Only min"), { minDays: 2, maxDays: 2 });
+  assert.deepEqual(parseTransit(zones([method("Rounded", { minTransitTime: 172900, maxTransitTime: 259000 })])).get("z1|Rounded"), { minDays: 2, maxDays: 3 }, "seconds are rounded to whole days");
+  assert.equal(parseTransit(zones([method("None", { minTransitTime: null, maxTransitTime: null }), method("Empty")])).size, 0, "an option with no time says nothing");
+  assert.equal(parseTransit(zones([{ name: "No groups", rateGroups: null } as never])).size, 0);
+  assert.deepEqual(parseTransit(zones([method("Same day", { minTransitTime: 0, maxTransitTime: 0 })])).get("z1|Same day"), { minDays: 0, maxDays: 0 });
+  assert.equal(parseTransit([]).size, 0);
+});
+
+test("a delivery time is written in words, and shows beside the rate in the review", () => {
+  assert.equal(transitText({ minDays: 1, maxDays: 1 }), "1 business day");
+  assert.equal(transitText({ minDays: 2, maxDays: 2 }), "2 business days");
+  assert.equal(transitText({ minDays: 2, maxDays: 3 }), "2 to 3 business days");
+  assert.equal(describeRate({ ...standard(4999), transit: { minDays: 2, maxDays: 3 } }), "Standard: £4.99 (up to £49.99), 2 to 3 business days");
+  assert.equal(describeRate({ ...free(5000, false), transit: { minDays: 1, maxDays: 1 } }), "Free delivery: free (from £50), 1 business day (switched off)");
+  assert.equal(describeRate(standard(4999)), "Standard: £4.99 (up to £49.99)", "no time, nothing added");
+});
+
+test("delivery times come from Shopify's unstable API for that one question only, and join the rates already read", async () => {
+  const { admin, versions } = fakeAdmin();
+  const result = await loadShippingSnapshot(admin);
+  assert.equal(result.transit, "shopify");
+  assert.equal(versions.ShippingTransitTimes, "unstable", "only this request asks for the unstable version");
+  assert.equal(versions.ShippingReviewProfiles, undefined);
+  assert.equal(versions.ShippingReviewZone, undefined);
+  assert.equal(versions.ShippingReviewMarkets, undefined, "everything else stays on the version the app is built for");
+  const [standardRate, freeRate] = result.profiles[0].zones[0].rates;
+  assert.deepEqual(standardRate.transit, { minDays: 2, maxDays: 3 });
+  assert.deepEqual(freeRate.transit, { minDays: 2, maxDays: 3 }, "each price band of the option gets its time");
+  assert.equal(result.profiles[1].zones[0].rates.length, 0);
+});
+
+test("when Shopify cannot give delivery times the rest of the review is unaffected, and the review says so", async () => {
+  for (const transit of ["errors", "throws"] as const) {
+    const { admin } = fakeAdmin({ transit });
+    const result = await loadShippingSnapshot(admin);
+    assert.equal(result.transit, "unavailable", transit);
+    assert.deepEqual(result.profiles[0].zones[0].rates.map(rate => rate.name), ["Standard", "Free delivery"], "rates, zones and Markets are still read");
+    assert.equal(result.profiles[0].zones[0].rates[0].transit, undefined);
+    assert.equal(result.markets?.length, 1);
+    assert.deepEqual(reviewShipping(result).filter(f => f.severity === "problem"), []);
+  }
+  const quiet = await loadShippingSnapshot(fakeAdmin({ transit: "none" }).admin);
+  assert.equal(quiet.transit, "shopify", "Shopify answered; this store has no delivery times");
+  assert.equal(quiet.profiles[0].zones[0].rates[0].transit, undefined);
 });

@@ -1,4 +1,4 @@
-import { formatMinor, type DeliveryProfile, type DeliveryRate, type DeliveryZone, type ShippingSnapshot } from "./deliveryModel";
+import { formatMinor, transitText, type DeliveryProfile, type DeliveryRate, type DeliveryZone, type ShippingSnapshot } from "./deliveryModel";
 
 /**
  * Which of a zone's rates is "the free service". Shopify has no such thing as a free-shipping setting: free delivery is a rate that costs
@@ -126,5 +126,5 @@ export function describeRate(rate: DeliveryRate, money: (minor: number, currency
     else if (range.min > 0) when = `from ${money(range.min, currency)}`;
     else if (range.max !== Infinity) when = `up to ${money(range.max, currency)}`;
   }
-  return `${rate.name}: ${price}${when ? ` (${when})` : ""}${rate.active ? "" : " (switched off)"}`;
+  return `${rate.name}: ${price}${when ? ` (${when})` : ""}${rate.transit ? `, ${transitText(rate.transit)}` : ""}${rate.active ? "" : " (switched off)"}`;
 }
