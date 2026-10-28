@@ -69,3 +69,9 @@ test("the dates in the delivery options use the same colour as the dispatch date
   assert.match(css, /\.sc__dispatch \{ color: var\(--sc-dispatch, #28a745\); font-weight: 700; \}/, "one class, one colour: Dispatch day and border in Appearance");
   assert.doesNotMatch(css, /\.sc__option-date \{[^}]*--sc-dispatch/, "the colour is on the date, not the whole line");
 });
+
+test("the header banner fills the width of whatever the theme puts it in, whether that is a block, a flex row or a grid", () => {
+  const css = readFileSync("extensions/promotion-engine/assets/shipping-countdown.css", "utf8");
+  const rule = css.match(/shipping-countdown-banner \{([^}]*)\}/)![1];
+  for (const declaration of ["display: block", "width: 100%", "flex: 1 1 100%", "align-self: stretch", "justify-self: stretch", "grid-column: 1 / -1", "min-width: 0"]) assert.ok(rule.includes(declaration), declaration);
+});

@@ -127,6 +127,14 @@ shipping-countdown .sc__warning[hidden] { display: none; }
 shipping-countdown-banner {
   display: block;
   box-sizing: border-box;
+  /* Fill whatever it is placed in. Theme sections are often flex or grid containers that shrink a child to its text, so ask to stretch in all of them. */
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 100%;
+  align-self: stretch;
+  justify-self: stretch;
+  grid-column: 1 / -1;
   padding: 10px 16px;
   background-color: var(--scb-bg, #009edb);
   color: var(--scb-text, #fff);
