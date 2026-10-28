@@ -66,7 +66,7 @@ test("the delivery options button has an arrow drawn by the stylesheet, so a the
 
 test("the dates in the delivery options use the same colour as the dispatch date", () => {
   const css = readFileSync("extensions/promotion-engine/assets/shipping-countdown.css", "utf8");
-  assert.match(css, /\.sc__dispatch \{ color: var\(--sc-dispatch, #28a745\); font-weight: 700; \}/, "one class, one colour: Dispatch day and border in Appearance");
+  assert.match(css, /\.sc__dispatch \{ color: var\(--sc-dispatch, #1e7e34\); font-weight: 700; \}/, "one class, one colour: Dispatch day and border in Appearance");
   assert.doesNotMatch(css, /\.sc__option-date \{[^}]*--sc-dispatch/, "the colour is on the date, not the whole line");
 });
 

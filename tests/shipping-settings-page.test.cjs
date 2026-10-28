@@ -581,8 +581,8 @@ test('the header banner step: switched on it shows in the preview above the prod
     assert.equal(find(banner, '.sc__countdown').textContent, '5 hours', 'the time left takes the highlight colour');
     assert.equal(find(banner, '.sc__dispatch').textContent, 'Tuesday 20 Oct', 'and the day its own');
     assert.equal(banner.getAttribute('data-align'), 'center');
-    assert.equal(banner.style.getPropertyValue('--scb-bg'), '#009edb');
-    assert.equal(banner.style.getPropertyValue('--scb-highlight'), '#ff3d8b');
+    assert.equal(banner.style.getPropertyValue('--scb-bg'), '#00507a');
+    assert.equal(banner.style.getPropertyValue('--scb-highlight'), '#ffa3c8');
     assert.ok(banner.compareDocumentPosition(find(container, 'aside shipping-countdown')) & 4, 'the header comes before the product page block');
     const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
     assert.deepEqual(rows.map(row => [row[0], row[2]]), [['{time}', '5 hours'], ['{date}', 'Tuesday 20 Oct']]);
@@ -599,7 +599,7 @@ test('the header banner step: switched on it shows in the preview above the prod
     await click(save(container));
     await wait(60);
     const sent = JSON.parse(page.posts[0].config).banner;
-    assert.deepEqual(sent, { enabled: true, message: 'Ships [bold]{date}[/bold]', textSize: 18, align: 'left', background: '#112233', text: '#ffffff', highlight: '#ff3d8b', dispatch: '#ffee00' });
+    assert.deepEqual(sent, { enabled: true, message: 'Ships [bold]{date}[/bold]', textSize: 18, align: 'left', background: '#112233', text: '#ffffff', highlight: '#ffa3c8', dispatch: '#ffee00' });
   } finally { await page.unmount(); }
 });
 
@@ -622,12 +622,14 @@ test('the header banner: colours that are hard to read are questioned', async ()
     const card = find(page.container, 'details[data-step=banner]');
     await check(find(card, 's-checkbox'), true);
     const notes = () => (find(card, 's-banner') ? find(card, 's-banner').textContent : '');
-    assert.match(notes(), /Time left on the banner background is [\d.]+ to 1/, 'the pink on blue is flagged, as the product block flags its own colours');
-    await type(find(card, 's-color-field[label="Highlight and time left"]'), '#000000', 'change');
-    assert.doesNotMatch(notes(), /Time left/, 'black on blue is readable');
-    await type(find(card, 's-color-field[label="Background"]'), '#000000', 'change');
-    assert.doesNotMatch(notes(), /Text on the banner background is [\d.]+ to 1; /, 'white on black is readable');
-    assert.match(notes(), /Time left on the banner background/, 'but black on black is not');
+    assert.equal(notes(), '', 'the colours it starts with can all be read');
+    await type(find(card, 's-color-field[label="Highlight and time left"]'), '#ff3d8b', 'change');
+    assert.match(notes(), /Time left on the banner background is [\d.]+ to 1/, 'pink on this blue is flagged, as the product block flags its own colours');
+    await type(find(card, 's-color-field[label="Highlight and time left"]'), '#ffffff', 'change');
+    assert.doesNotMatch(notes(), /Time left/, 'white on this blue is readable');
+    await type(find(card, 's-color-field[label="Background"]'), '#ffffff', 'change');
+    assert.match(notes(), /Time left on the banner background is 1\.0 to 1/, 'white on white is not');
+    assert.match(notes(), /Text on the banner background is 1\.0 to 1/, 'and neither is the text');
   } finally { await page.unmount(); }
 });
 
@@ -638,7 +640,7 @@ test('the header banner: its colours and size can be reset, and it stays on', as
     await check(find(card, 's-checkbox'), true);
     await type(find(card, 's-color-field[label="Background"]'), '#112233', 'change');
     await click(byText(card, 's-button', 'Reset the banner colours and size'));
-    assert.equal(find(card, 's-color-field[label="Background"]').value, '#009edb');
+    assert.equal(find(card, 's-color-field[label="Background"]').value, '#00507a');
     assert.equal(find(card, 's-checkbox').checked, true);
   } finally { await page.unmount(); }
 });

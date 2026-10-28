@@ -20,7 +20,7 @@ shipping-countdown .sc__content {
   box-sizing: border-box;
   padding: var(--sc-pad-v) var(--sc-pad-h);
   background-color: var(--sc-bg, #f8f9fa);
-  border: var(--sc-border-width, 6px) double var(--sc-dispatch, #28a745);
+  border: var(--sc-border-width, 6px) double var(--sc-dispatch, #1e7e34);
   border-radius: var(--sc-radius, 8px);
 }
 shipping-countdown[data-border="solid"] .sc__content { border-style: solid; }
@@ -39,8 +39,8 @@ shipping-countdown .sc__free {
 /* Holds one line for the dispatch line until the script has the time. It must not hold more: a taller reserve leaves a bigger gap below a short message than between the other lines. */
 shipping-countdown .sc__main { min-height: 1.4em; }
 shipping-countdown .sc__free[hidden] { display: none; }
-shipping-countdown .sc__countdown { color: var(--sc-accent, #d63384); font-weight: 600; }
-shipping-countdown .sc__dispatch { color: var(--sc-dispatch, #28a745); font-weight: 700; }
+shipping-countdown .sc__countdown { color: var(--sc-accent, #c2185b); font-weight: 600; }
+shipping-countdown .sc__dispatch { color: var(--sc-dispatch, #1e7e34); font-weight: 700; }
 shipping-countdown strong { font-weight: 700; }
 shipping-countdown .sc__expired { color: var(--sc-muted, #666); font-style: italic; }
 shipping-countdown .sc__days {
@@ -136,7 +136,7 @@ shipping-countdown-banner {
   justify-self: stretch;
   grid-column: 1 / -1;
   padding: 10px 16px;
-  background-color: var(--scb-bg, #009edb);
+  background-color: var(--scb-bg, #00507a);
   color: var(--scb-text, #fff);
   font-size: var(--scb-size, 14px);
   line-height: 1.4;
@@ -158,6 +158,6 @@ shipping-countdown-banner[data-align="right"] { text-align: right; }
 shipping-countdown-banner[hidden] { display: none; }
 shipping-countdown-banner .scb__line { margin: 0; min-height: 1.4em; }
 shipping-countdown-banner .scb__hold { visibility: hidden; }
-shipping-countdown-banner .sc__countdown { color: var(--scb-highlight, #ff3d8b); font-weight: 600; }
+shipping-countdown-banner .sc__countdown { color: var(--scb-highlight, #ffa3c8); font-weight: 600; }
 shipping-countdown-banner .sc__dispatch { color: var(--scb-dispatch, #ffc83d); font-weight: 700; }
 shipping-countdown-banner strong { font-weight: 700; }

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { bannerPlaceholders, defaultBannerSettings, defaultDeliverySettings, defaultServiceSetting, defaultShippingConfig, defaultShippingStyle, deliveryPlaceholders, freePlaceholders, isIsoDate, parseBankHolidays, richProblem, stripRich, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
+import { contrastRatio } from "../app/modules/promotions/design/design";
 import { mergeBankHolidays, upcomingBankHolidays } from "../app/modules/shipping/bankHolidays.server";
 
 const valid = (changes: Record<string, unknown> = {}) => ({ ...defaultShippingConfig, ...changes });
@@ -77,7 +78,7 @@ test("the gov.uk list keeps England and Wales dates from today on, and merges wi
 });
 
 test("the appearance has the old block's look by default and is checked field by field", () => {
-  assert.deepEqual(defaultShippingStyle, { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff" });
+  assert.deepEqual(defaultShippingStyle, { align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6, background: "#f8f9fa", text: "#333333", accent: "#c2185b", dispatch: "#1e7e34", muted: "#666666", icon: "#007bff" });
   const look = (changes: Record<string, unknown>) => valid({ style: { ...defaultShippingStyle, ...changes } });
   const good = validateShippingConfig(look({ align: "right", textSize: "20", border: "solid", padding: "compact", background: "#FFFFFF" }));
   assert.equal(good.ok && good.config.style.textSize, 20, "numbers typed as text are accepted");
@@ -265,4 +266,14 @@ test("the header banner starts switched off, with the message the shop already u
   assert.equal(validateShippingConfig(banner({ enabled: false, message: "{dat}" })).ok, false);
   const kept = validateShippingConfig(banner({ background: "#ABCDEF", textSize: "18" }));
   assert.deepEqual(kept.ok && [kept.config.banner.background, kept.config.banner.textSize], ["#abcdef", 18], "colours are lower-cased and sizes read as numbers");
+});
+
+test("every colour the app starts with can be read: text 4.5 to 1 on its background, the icon 3 to 1", () => {
+  const style = defaultShippingStyle;
+  for (const [name, colour] of [["text", style.text], ["time left", style.accent], ["dispatch day", style.dispatch], ["secondary text", style.muted]]) assert.ok(contrastRatio(colour, style.background) >= 4.5, `block ${name}`);
+  assert.ok(contrastRatio(style.icon, style.background) >= 3, "block icon");
+  const banner = defaultBannerSettings;
+  for (const [name, colour] of [["text", banner.text], ["highlight and time left", banner.highlight], ["dispatch day", banner.dispatch]]) assert.ok(contrastRatio(colour, banner.background) >= 4.5, `banner ${name}`);
+  const warning = defaultShippingConfig.warning;
+  assert.ok(contrastRatio(warning.textColor, warning.backgroundColor) >= 4.5, "warning notice");
 });

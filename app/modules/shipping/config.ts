@@ -135,15 +135,15 @@ export const defaultBannerSettings: BannerSettings = {
   message: "Order in the next {time} for dispatch on {date}",
   textSize: 14,
   align: "center",
-  background: "#009edb",
+  background: "#00507a",
   text: "#ffffff",
-  highlight: "#ff3d8b",
+  highlight: "#ffa3c8",
   dispatch: "#ffc83d",
 };
 
 export const defaultShippingStyle: ShippingStyle = {
   align: "center", showIcon: true, textSize: 16, fontWeight: "500", padding: "standard", margin: 16, lineGap: 8, radius: 8, border: "double", borderWidth: 6,
-  background: "#f8f9fa", text: "#333333", accent: "#d63384", dispatch: "#28a745", muted: "#666666", icon: "#007bff",
+  background: "#f8f9fa", text: "#333333", accent: "#c2185b", dispatch: "#1e7e34", muted: "#666666", icon: "#007bff",
 };
 
 export const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
