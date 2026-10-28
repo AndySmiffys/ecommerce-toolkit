@@ -122,3 +122,22 @@ shipping-countdown .sc__warning[hidden] { display: none; }
   shipping-countdown .sc__free { font-size: calc(var(--sc-size, 16px) * 0.9); }
   shipping-countdown .sc__days { font-size: calc(var(--sc-size, 16px) * 0.875 * 0.9); }
 }
+
+/* The header banner: one line across the top of every page. Its colours and size come from the app, as variables on the element. */
+shipping-countdown-banner {
+  display: block;
+  box-sizing: border-box;
+  padding: 10px 16px;
+  background-color: var(--scb-bg, #009edb);
+  color: var(--scb-text, #fff);
+  font-size: var(--scb-size, 14px);
+  line-height: 1.4;
+  text-align: center;
+}
+shipping-countdown-banner[data-align="left"] { text-align: left; }
+shipping-countdown-banner[data-align="right"] { text-align: right; }
+shipping-countdown-banner[hidden] { display: none; }
+shipping-countdown-banner .scb__line { margin: 0; min-height: 1.4em; }
+shipping-countdown-banner .sc__countdown { color: var(--scb-highlight, #ff3d8b); font-weight: 600; }
+shipping-countdown-banner .sc__dispatch { color: var(--scb-dispatch, #ffc83d); font-weight: 700; }
+shipping-countdown-banner strong { font-weight: 700; }

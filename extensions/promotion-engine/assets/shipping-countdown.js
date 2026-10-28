@@ -131,6 +131,8 @@
   var OPEN_BOLD = '[bold]', CLOSE_BOLD = '[/bold]', OPEN_HIGHLIGHT = '[highlight]', CLOSE_HIGHLIGHT = '[/highlight]';
   // Marks put round the dates in a delivery message so they can take the dispatch colour. Private-use characters, so nothing typed can be one.
   var OPEN_DATE = '\uE000', CLOSE_DATE = '\uE001';
+  // The same for the time left in the header banner.
+  var OPEN_TIME = '\uE002', CLOSE_TIME = '\uE003';
 
   /**
    * Reads the formatting in a message: "Order [bold]now[/bold] for [highlight]free[/highlight] delivery" (the two can be nested).
@@ -139,14 +141,15 @@
    */
   function parseRich(text) {
     var source = String(text || '');
-    var runs = [], bold = 0, highlight = 0, date = 0, buffer = '', i = 0;
+    var runs = [], bold = 0, highlight = 0, date = 0, time = 0, buffer = '', i = 0;
     function flush() {
       if (!buffer) return;
       var last = runs[runs.length - 1];
-      if (last && last.bold === (bold > 0) && last.highlight === (highlight > 0) && Boolean(last.date) === (date > 0)) last.text += buffer;
+      if (last && last.bold === (bold > 0) && last.highlight === (highlight > 0) && Boolean(last.date) === (date > 0) && Boolean(last.time) === (time > 0)) last.text += buffer;
       else {
         var run = { text: buffer, bold: bold > 0, highlight: highlight > 0 };
         if (date > 0) run.date = true;
+        if (time > 0) run.time = true;
         runs.push(run);
       }
       buffer = '';
@@ -158,6 +161,8 @@
       else if (source.substr(i, CLOSE_HIGHLIGHT.length) === CLOSE_HIGHLIGHT) { flush(); if (highlight > 0) highlight--; i += CLOSE_HIGHLIGHT.length; }
       else if (source.charAt(i) === OPEN_DATE) { flush(); date++; i++; }
       else if (source.charAt(i) === CLOSE_DATE) { flush(); if (date > 0) date--; i++; }
+      else if (source.charAt(i) === OPEN_TIME) { flush(); time++; i++; }
+      else if (source.charAt(i) === CLOSE_TIME) { flush(); if (time > 0) time--; i++; }
       else { buffer += source.charAt(i); i++; }
     }
     flush();
@@ -254,13 +259,21 @@
     return { dispatchDate: dispatch.date, from: from, to: to, cutoffAt: dispatch.cutoffAt || null, msUntilCutoff: dispatch.msUntilCutoff === undefined ? null : dispatch.msUntilCutoff };
   }
 
+  /** A cut-off as people say it: "14:00" is "2pm", "14:15" is "2:15pm". */
+  function formatCutoff(text) {
+    var minutes = parseCutoff(text);
+    if (minutes === null) return '';
+    var hour = Math.floor(minutes / 60), minute = minutes % 60;
+    return ((hour % 12) || 12) + (minute ? ':' + pad(minute) : '') + (hour >= 12 ? 'pm' : 'am');
+  }
+
   /**
-   * Fills {date} (the latest date), {from} (the earliest) and {service} in a delivery message. With `mark`, each date is put between marks, so it
+   * Fills {date} (the latest date), {from} (the earliest), {service} and {cutoff} (the time to order by) in a delivery message. With `mark`, each date is put between marks, so it
    * is written in the dispatch day's colour like the dispatch date is; the words round it are not, so "(Non-Guaranteed)" never looks like good news.
    */
   function fillDelivery(text, values, mark) {
     var date = function (value) { return mark && value ? OPEN_DATE + value + CLOSE_DATE : value || ''; };
-    return String(text || '').split('{date}').join(date(values.date)).split('{from}').join(date(values.from)).split('{service}').join(values.service || '');
+    return String(text || '').split('{date}').join(date(values.date)).split('{from}').join(date(values.from)).split('{service}').join(values.service || '').split('{cutoff}').join(values.cutoff || '');
   }
 
   /**
@@ -302,9 +315,10 @@
       if (!estimate) return;
       var label = setting.label || service.name;
       var template = setting.guaranteed ? delivery.guaranteedText : delivery.estimatedText;
-      var values = { date: formatDeliveryDate(estimate.to), from: formatDeliveryDate(estimate.from), service: label };
+      var cutoff = formatCutoff(setting.cutoffTime || config.cutoffTime);
+      var values = { date: formatDeliveryDate(estimate.to), from: formatDeliveryDate(estimate.from), service: label, cutoff: cutoff };
       var lowest = Math.min.apply(null, (service.tiers || [{ price: 0 }]).map(function (tier) { return tier.price; }));
-      options.push({ seq: options.length, name: service.name, label: label, price: servicePrice(service, currency), guaranteed: Boolean(setting.guaranteed), text: fillDelivery(template, values), marked: fillDelivery(template, values, true), to: estimate.to, from: estimate.from, dispatchDate: estimate.dispatchDate, lowest: lowest });
+      options.push({ seq: options.length, name: service.name, label: label, cutoff: cutoff, price: servicePrice(service, currency), guaranteed: Boolean(setting.guaranteed), text: fillDelivery(template, values), marked: fillDelivery(template, values, true), to: estimate.to, from: estimate.from, dispatchDate: estimate.dispatchDate, lowest: lowest });
     });
     if (delivery.sort === 'manual') {
       // The order set in the app: services in the order listed there, and any not listed after them in the order Shopify gives them.
@@ -350,20 +364,35 @@
     if (!next) return unavailable(config);
     return { kind: 'countdown', countdown: countdownText(next.msUntilCutoff), date: formatDispatchDate(next.date) };
   }
+  /**
+   * The header banner's message right now. It is the dispatch message for a shopper not looking at a product, so stock does not come into it, and
+   * it is left out when there is nothing true to say: a header on every page should never show an error or "no dispatch day".
+   */
+  function bannerView(nowMs, config) {
+    var banner = config.banner;
+    if (!banner || !banner.enabled) return { kind: 'hidden' };
+    var view = dispatchView(nowMs, config, null);
+    if (view.kind === 'countdown') {
+      var date = OPEN_DATE + view.date + CLOSE_DATE;
+      return { kind: 'message', marked: String(banner.message || '').split('{time}').join(OPEN_TIME + view.countdown + CLOSE_TIME).split('{date}').join(date) };
+    }
+    if (view.kind === 'delay') return { kind: 'message', marked: String(config.delayMessage || '') + ' ' + OPEN_DATE + view.date + CLOSE_DATE };
+    return { kind: 'hidden' };
+  }
   function unavailable(config) { return config.hideIfUnavailable ? { kind: 'hidden' } : { kind: 'none' }; }
 
   var logic = {
     londonParts: londonParts, addDays: addDays, weekday: weekday, londonTimeToUtc: londonTimeToUtc, parseCutoff: parseCutoff,
     isDispatchDay: isDispatchDay, nextDispatch: nextDispatch, delayedDispatch: delayedDispatch, countdownText: countdownText,
     formatDispatchDate: formatDispatchDate, parseRich: parseRich, formatMoney: formatMoney, fillThreshold: fillThreshold,
-    freeShippingMessage: freeShippingMessage, stockState: stockState, formatDeliveryDate: formatDeliveryDate, isDeliveryDay: isDeliveryDay, addDeliveryDays: addDeliveryDays, deliveryEstimate: deliveryEstimate, fillDelivery: fillDelivery, servicePrice: servicePrice, deliveryOptions: deliveryOptions, warningVisible: warningVisible, dispatchView: dispatchView
+    freeShippingMessage: freeShippingMessage, stockState: stockState, formatDeliveryDate: formatDeliveryDate, isDeliveryDay: isDeliveryDay, addDeliveryDays: addDeliveryDays, deliveryEstimate: deliveryEstimate, fillDelivery: fillDelivery, servicePrice: servicePrice, deliveryOptions: deliveryOptions, warningVisible: warningVisible, dispatchView: dispatchView, bannerView: bannerView, formatCutoff: formatCutoff
   };
   root.ShippingCountdownLogic = logic;
   if (typeof module !== 'undefined' && module.exports) module.exports = logic;
 
   /* ---------------------------------------------------------------- the element */
 
-  if (typeof HTMLElement === 'undefined' || typeof customElements === 'undefined' || customElements.get('shipping-countdown')) return;
+  if (typeof HTMLElement === 'undefined' || typeof customElements === 'undefined') return;
 
   var CART_EVENTS = ['cart:update', 'cart:updated', 'cart:change', 'cart:refresh', 'cart-drawer:updated', 'product:added', 'quantity-selector:update'];
   var VARIANT_EVENTS = ['variant:update', 'variant:change', 'variantChange'];
@@ -382,7 +411,7 @@
     parseRich(text).forEach(function (run) {
       var piece = document.createTextNode(run.text);
       if (run.bold) { var strong = document.createElement('strong'); strong.appendChild(piece); piece = strong; }
-      if (run.highlight) { var mark = el('span', 'sc__countdown'); mark.appendChild(piece); piece = mark; }
+      if (run.highlight || run.time) { var mark = el('span', 'sc__countdown'); mark.appendChild(piece); piece = mark; }
       if (run.date) { var when = el('span', 'sc__dispatch'); when.appendChild(piece); piece = when; }
       node.appendChild(piece);
     });
@@ -598,5 +627,36 @@
     }
   }
 
-  customElements.define('shipping-countdown', ShippingCountdown);
+  /** The dispatch message as a header banner: one line, on every page, kept right by the clock. */
+  class ShippingCountdownBanner extends HTMLElement {
+    connectedCallback() {
+      var self = this;
+      try { this.config = JSON.parse(this.querySelector('script[data-config]').textContent); } catch (error) { this.config = null; }
+      this.line = this.querySelector('[data-role="line"]');
+      if (!this.config || !this.line) return;
+      this.render();
+      this.onVisible = function () { if (!document.hidden) self.render(); };
+      document.addEventListener('visibilitychange', this.onVisible);
+      this.tick();
+    }
+    disconnectedCallback() {
+      clearTimeout(this.timer);
+      if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
+    }
+    render() {
+      var view = bannerView(Date.now(), this.config);
+      this.hidden = view.kind === 'hidden';
+      this.line.textContent = '';
+      if (view.kind === 'message') appendRich(this.line, view.marked);
+    }
+    /** On the minute, so the time left counts down and the day rolls over by itself. */
+    tick() {
+      var self = this;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(function () { self.render(); self.tick(); }, 60000 - (Date.now() % 60000) + 50);
+    }
+  }
+
+  if (!customElements.get('shipping-countdown')) customElements.define('shipping-countdown', ShippingCountdown);
+  if (!customElements.get('shipping-countdown-banner')) customElements.define('shipping-countdown-banner', ShippingCountdownBanner);
 })(typeof window !== 'undefined' ? window : {});

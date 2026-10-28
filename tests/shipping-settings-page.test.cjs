@@ -102,11 +102,11 @@ test('the page is laid out like the promotion editor: a preview that stays in vi
   try {
     const { container } = page;
     const steps = findAll(container, 'details[data-step]');
-    assert.deepEqual(steps.map(item => item.getAttribute('data-step')), ['appearance', 'dispatch', 'holidays', 'delivery', 'free', 'stock', 'delay', 'warning']);
+    assert.deepEqual(steps.map(item => item.getAttribute('data-step')), ['appearance', 'dispatch', 'holidays', 'delivery', 'free', 'stock', 'delay', 'warning', 'banner']);
     assert.deepEqual(steps.filter(item => item.open).map(item => item.getAttribute('data-step')), ['appearance'], 'one step open at a time, the look first');
     const titles = steps.map(item => item.querySelector('summary').textContent.replace(/\s+/g, ' '));
     assert.match(titles[0], /1\s*Appearance/);
-    assert.deepEqual(titles.map(title => title.match(/^\d+\s*([A-Za-z -]+?)(?=Cut-off|On|Off|\d|Out of stock:|$)/)?.[0].replace(/\s+/g, ' ').trim()).slice(3), ['4Delivery services', '5Free shipping', '6Out of stock and back-order', '7Warehouse delay', '8Warning notice'], 'in the order the settings are used');
+    assert.deepEqual(titles.map(title => title.match(/^\d+\s*([A-Za-z -]+?)(?=Cut-off|On|Off|\d|Out of stock:|$)/)?.[0].replace(/\s+/g, ' ').trim()).slice(3), ['4Delivery services', '5Free shipping', '6Out of stock and back-order', '7Warehouse delay', '8Warning notice', '9Header banner'], 'in the order the settings are used');
     assert.ok(find(container, '.create-discount-layout aside.desktop-preview-panel'), 'the same two-column layout as the promotion editor');
     assert.match(find(container, 'aside.desktop-preview-panel').textContent, /Storefront preview/);
     assert.ok(find(container, 's-button[data-preview-toggle]'), 'a Preview button for narrow screens');
@@ -421,12 +421,12 @@ test('the delivery messages can be formatted, use their own placeholders, and a 
     await previewAt(container, '2026-10-20', '10', '00');
     assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Button text', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
     const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
-    assert.deepEqual(rows.map(row => row[0]), ['{date}', '{from}', '{service}']);
-    assert.deepEqual(rows.map(row => row[2]), ['Wed 21st Oct', 'Wed 21st Oct', DPD], 'filled in for the first service in the preview');
+    assert.deepEqual(rows.map(row => row[0]), ['{date}', '{from}', '{service}', '{cutoff}']);
+    assert.deepEqual(rows.map(row => row[2]), ['Wed 21st Oct', 'Wed 21st Oct', DPD, '3pm'], 'filled in for the first service in the preview, the cut-off being the shop\'s');
     await writeIn(boxOf(card, 'Message for a service that is not guaranteed'), '{service}: arrives {from} to {date}');
     assert.equal(options(container)[0][2], DPD + ': arrives Wed 21st Oct to Wed 21st Oct');
     await writeIn(boxOf(card, 'Message for a service that is not guaranteed'), 'Arrives {dat}');
-    assert.match(find(editorOf(card, 'Message for a service that is not guaranteed'), '.rt-error').textContent, /\{dat\} is not a placeholder\. Use \{date\}, \{from\}, \{service\}\./);
+    assert.match(find(editorOf(card, 'Message for a service that is not guaranteed'), '.rt-error').textContent, /\{dat\} is not a placeholder\. Use \{date\}, \{from\}, \{service\}, \{cutoff\}\./);
     assert.equal(save(container).disabled, true);
     await writeIn(boxOf(card, 'Message for a service that is not guaranteed'), 'No date at all');
     assert.match(container.textContent, /must include \{date\} \(or \{from\}\)/);
@@ -560,5 +560,85 @@ test('the dates in the preview are in the dispatch colour, like the dispatch dat
     const rows = findAll(container, 'aside .sc__option-date');
     assert.equal(rows[0].innerHTML, 'Delivery by <span class="sc__dispatch">Wed 21st Oct</span> (Non-Guaranteed)');
     assert.equal(find(container, 'aside .sc__main .sc__dispatch').textContent.length > 0, true, 'the dispatch date is the same class');
+  } finally { await page.unmount(); }
+});
+
+test('the header banner step: switched on it shows in the preview above the product page, in its own colours, and is saved', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    const card = find(container, 'details[data-step=banner]');
+    assert.match(card.querySelector('summary').textContent, /Header banner\s*Off/);
+    assert.equal(find(container, 'aside shipping-countdown-banner'), null, 'nothing in the preview while it is off');
+    assert.equal(find(card, '.rt-field'), null, 'and nothing to set');
+    await previewAt(container, '2026-10-20', '10', '00');
+    await check(find(card, 's-checkbox'), true);
+    assert.match(card.querySelector('summary').textContent, /On · 14px text · centre/);
+    const banner = find(container, 'aside shipping-countdown-banner');
+    assert.ok(banner, "the block's own markup");
+    assert.equal(banner.getAttribute('classname'), null, 'no stray attribute');
+    assert.equal(banner.textContent.replace(/\s+/g, ' ').trim(), 'Order in the next 5 hours for dispatch on Tuesday 20 Oct');
+    assert.equal(find(banner, '.sc__countdown').textContent, '5 hours', 'the time left takes the highlight colour');
+    assert.equal(find(banner, '.sc__dispatch').textContent, 'Tuesday 20 Oct', 'and the day its own');
+    assert.equal(banner.getAttribute('data-align'), 'center');
+    assert.equal(banner.style.getPropertyValue('--scb-bg'), '#009edb');
+    assert.equal(banner.style.getPropertyValue('--scb-highlight'), '#ff3d8b');
+    assert.ok(banner.compareDocumentPosition(find(container, 'aside shipping-countdown')) & 4, 'the header comes before the product page block');
+    const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
+    assert.deepEqual(rows.map(row => [row[0], row[2]]), [['{time}', '5 hours'], ['{date}', 'Tuesday 20 Oct']]);
+    await writeIn(boxOf(card, 'Message'), 'Ships [bold]{date}[/bold]');
+    assert.equal(find(container, 'aside shipping-countdown-banner').textContent.trim(), 'Ships Tuesday 20 Oct');
+    await change(find(card, 's-select[label="Text alignment"]'), 'left');
+    assert.equal(find(container, 'aside shipping-countdown-banner').getAttribute('data-align'), 'left');
+    await type(find(card, 's-number-field[label="Text size (px)"]'), '18');
+    assert.equal(find(container, 'aside shipping-countdown-banner').style.getPropertyValue('--scb-size'), '18px');
+    await type(find(card, 's-color-field[label="Background"]'), '#112233', 'change');
+    await type(find(card, 's-color-field[label="Dispatch day"]'), '#ffee00', 'change');
+    assert.equal(find(container, 'aside shipping-countdown-banner').style.getPropertyValue('--scb-bg'), '#112233');
+    assert.equal(find(container, 'aside shipping-countdown-banner').style.getPropertyValue('--scb-dispatch'), '#ffee00');
+    await click(save(container));
+    await wait(60);
+    const sent = JSON.parse(page.posts[0].config).banner;
+    assert.deepEqual(sent, { enabled: true, message: 'Ships [bold]{date}[/bold]', textSize: 18, align: 'left', background: '#112233', text: '#ffffff', highlight: '#ff3d8b', dispatch: '#ffee00' });
+  } finally { await page.unmount(); }
+});
+
+test('the header banner: a typo in its message is pointed out, and it must say when', async () => {
+  const page = await mountPage();
+  try {
+    const card = find(page.container, 'details[data-step=banner]');
+    await check(find(card, 's-checkbox'), true);
+    await writeIn(boxOf(card, 'Message'), 'Ships {dat}');
+    assert.match(find(editorOf(card, 'Message'), '.rt-error').textContent, /\{dat\} is not a placeholder\. Use \{time\}, \{date\}\./);
+    assert.equal(save(page.container).disabled, true);
+    await writeIn(boxOf(card, 'Message'), 'No placeholders at all');
+    assert.match(page.container.textContent, /must include \{time\} or \{date\}/);
+  } finally { await page.unmount(); }
+});
+
+test('the header banner: colours that are hard to read are questioned', async () => {
+  const page = await mountPage();
+  try {
+    const card = find(page.container, 'details[data-step=banner]');
+    await check(find(card, 's-checkbox'), true);
+    const notes = () => (find(card, 's-banner') ? find(card, 's-banner').textContent : '');
+    assert.match(notes(), /Time left on the banner background is [\d.]+ to 1/, 'the pink on blue is flagged, as the product block flags its own colours');
+    await type(find(card, 's-color-field[label="Highlight and time left"]'), '#000000', 'change');
+    assert.doesNotMatch(notes(), /Time left/, 'black on blue is readable');
+    await type(find(card, 's-color-field[label="Background"]'), '#000000', 'change');
+    assert.doesNotMatch(notes(), /Text on the banner background is [\d.]+ to 1; /, 'white on black is readable');
+    assert.match(notes(), /Time left on the banner background/, 'but black on black is not');
+  } finally { await page.unmount(); }
+});
+
+test('the header banner: its colours and size can be reset, and it stays on', async () => {
+  const page = await mountPage();
+  try {
+    const card = find(page.container, 'details[data-step=banner]');
+    await check(find(card, 's-checkbox'), true);
+    await type(find(card, 's-color-field[label="Background"]'), '#112233', 'change');
+    await click(byText(card, 's-button', 'Reset the banner colours and size'));
+    assert.equal(find(card, 's-color-field[label="Background"]').value, '#009edb');
+    assert.equal(find(card, 's-checkbox').checked, true);
   } finally { await page.unmount(); }
 });

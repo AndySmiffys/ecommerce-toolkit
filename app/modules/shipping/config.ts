@@ -67,6 +67,25 @@ export type DeliverySettings = {
   services: DeliveryServiceSetting[];
 };
 
+/**
+ * The dispatch message as a one-line banner in the theme's header, on every page. It follows the same cut-off, shipping days, bank holidays
+ * and delay as the product page block; only its wording and look are its own.
+ */
+export type BannerSettings = {
+  enabled: boolean;
+  /** One message. {time} is the time left, {date} the dispatch day. */
+  message: string;
+  /** Text size in px. */
+  textSize: number;
+  align: "left" | "center" | "right";
+  background: string;
+  text: string;
+  /** The time left, and any words highlighted in the message. */
+  highlight: string;
+  /** The dispatch day. */
+  dispatch: string;
+};
+
 /** Show a message, or hide the dispatch line altogether. */
 export type StockHandling = { mode: "message" | "hide"; message: string };
 
@@ -95,6 +114,7 @@ export type ShippingCountdownConfig = {
   warning: { enabled: boolean; startDate: string; endDate: string; message: string; textColor: string; backgroundColor: string; borderColor: string };
   style: ShippingStyle;
   delivery: DeliverySettings;
+  banner: BannerSettings;
 };
 
 export const defaultServiceSetting = (name: string): DeliveryServiceSetting => ({ name, label: "", show: true, guaranteed: false, cutoffTime: "", days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null });
@@ -108,6 +128,17 @@ export const defaultDeliverySettings: DeliverySettings = {
   guaranteedText: "Delivery by {date}",
   estimatedText: "Delivery by {date} (Non-Guaranteed)",
   services: [],
+};
+
+export const defaultBannerSettings: BannerSettings = {
+  enabled: false,
+  message: "Order in the next {time} for dispatch on {date}",
+  textSize: 14,
+  align: "center",
+  background: "#009edb",
+  text: "#ffffff",
+  highlight: "#ff3d8b",
+  dispatch: "#ffc83d",
 };
 
 export const defaultShippingStyle: ShippingStyle = {
@@ -144,6 +175,7 @@ export const defaultShippingConfig: ShippingCountdownConfig = {
   warning: { enabled: false, startDate: "", endDate: "", message: "", textColor: "#8a4b00", backgroundColor: "#fff4e5", borderColor: "#f59e0b" },
   style: defaultShippingStyle,
   delivery: defaultDeliverySettings,
+  banner: defaultBannerSettings,
 };
 
 /** What can be written in braces in a free-delivery message. The product page fills each one in for the shopper. */
@@ -158,6 +190,13 @@ export const deliveryPlaceholders = [
   { name: "date", meaning: "The latest date it can arrive", example: "Wed 28th Oct" },
   { name: "from", meaning: "The earliest date it can arrive", example: "Tue 27th Oct" },
   { name: "service", meaning: "The service's name, or the name you gave it here", example: "DPD Next Day" },
+  { name: "cutoff", meaning: "The time to order by for that service: its own cut-off, or the shop's when it has none", example: "2pm" },
+] as const;
+
+/** What can be written in braces in the header banner's message. */
+export const bannerPlaceholders = [
+  { name: "time", meaning: "The time left to order for dispatch, in the highlight colour", example: "1 hour 46 minutes" },
+  { name: "date", meaning: "The next dispatch day, in the dispatch day colour", example: "Wednesday 28 Oct" },
 ] as const;
 
 /** Anything in braces that is not a placeholder the product page fills in, so a typo is caught instead of shown to shoppers. */
@@ -365,6 +404,24 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     services,
   };
 
+  const bn = (source.banner && typeof source.banner === "object" ? source.banner : {}) as Record<string, unknown>;
+  const bd = defaultBannerSettings;
+  const bannerEnabled = flag(bn.enabled, bd.enabled);
+  const bannerMessage = text(bn.message, "Header banner message", bd.message, limits.text, bannerEnabled);
+  const bannerUnknown = unknownPlaceholders(bannerMessage, bannerPlaceholders);
+  if (bannerUnknown.length) errors.push(`Header banner message uses ${bannerUnknown.join(", ")}, which is not a placeholder. You can use ${bannerPlaceholders.map(item => `{${item.name}}`).join(", ")}.`);
+  else if (bannerEnabled && bannerMessage && !/\{(time|date)\}/.test(bannerMessage)) errors.push("Header banner message must include {time} or {date}, so it says when orders are dispatched.");
+  const banner: BannerSettings = {
+    enabled: bannerEnabled,
+    message: bannerMessage,
+    textSize: whole(bn.textSize, "Header banner text size", 10, 24, bd.textSize),
+    align: choice(bn.align, ["left", "center", "right"], bd.align, "Header banner alignment"),
+    background: colour(bn.background, "Header banner background colour", bd.background),
+    text: colour(bn.text, "Header banner text colour", bd.text),
+    highlight: colour(bn.highlight, "Header banner highlight colour", bd.highlight),
+    dispatch: colour(bn.dispatch, "Header banner dispatch day colour", bd.dispatch),
+  };
+
   const config: ShippingCountdownConfig = {
     version: 1,
     cutoffTime,
@@ -400,6 +457,7 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     },
     style,
     delivery,
+    banner,
   };
   return errors.length ? { ok: false, errors } : { ok: true, config };
 }

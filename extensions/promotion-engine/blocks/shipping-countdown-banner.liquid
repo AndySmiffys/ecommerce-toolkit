@@ -1,0 +1,33 @@
+{%- liquid
+  assign config = app.metafields.shipping_countdown.config.value
+  assign banner = config.banner
+-%}
+{%- if banner.enabled -%}
+  <shipping-countdown-banner
+    class="scb"
+    data-align="{{ banner.align }}"
+    style="--scb-size:{{ banner.textSize }}px;--scb-bg:{{ banner.background }};--scb-text:{{ banner.text }};--scb-highlight:{{ banner.highlight }};--scb-dispatch:{{ banner.dispatch }}"
+    {{ block.shopify_attributes }}
+  >
+    {%- comment -%} The message is written by the script from London's clock; the line is held so the page does not jump. {%- endcomment -%}
+    <p class="scb__line" data-role="line">&nbsp;</p>
+    <script type="application/json" data-config>{"cutoffTime":{{ config.cutoffTime | json }},"shippingDays":{{ config.shippingDays | json }},"bankHolidays":{{ config.bankHolidays | json }},"delayDays":{{ config.delayDays | json }},"delayMessage":{{ config.delayMessage | json }},"banner":{{ banner | json }}}</script>
+  </shipping-countdown-banner>
+{%- elsif request.design_mode -%}
+  <p class="sc-setup-note">Shipping countdown banner: open the eCommerce Toolkit app, choose Shipping countdown, switch on the Header banner step and save to show this block.</p>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Shipping countdown banner",
+  "target": "section",
+  "javascript": "shipping-countdown.js",
+  "stylesheet": "shipping-countdown.css",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Add this to your header group as an announcement. Its wording, colours and size are set in the eCommerce Toolkit app under Shipping countdown, in the Header banner step. It uses the same cut-off, shipping days, bank holidays and delay as the product page block."
+    }
+  ]
+}
+{% endschema %}

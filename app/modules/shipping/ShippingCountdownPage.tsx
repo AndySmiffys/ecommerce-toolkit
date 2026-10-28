@@ -11,17 +11,19 @@ import { editorCss } from "../promotions/components/editor/editorStyles";
 import { PolarisCheckbox, PolarisCheckboxList, PolarisNumberField, PolarisRadioList, PolarisSelect } from "../promotions/components/PolarisControls";
 import { contrastRatio } from "../promotions/design/design";
 import blockCss from "../../../extensions/promotion-engine/assets/shipping-countdown.css?raw";
-import { dayNames, defaultShippingConfig, deliveryPlaceholders, freePlaceholders, parseBankHolidays, unknownPlaceholders, validateShippingConfig, type DeliveryServiceSetting, type ShippingCountdownConfig } from "./config";
+import { bannerPlaceholders, dayNames, defaultShippingConfig, deliveryPlaceholders, freePlaceholders, parseBankHolidays, unknownPlaceholders, validateShippingConfig, type DeliveryServiceSetting, type ShippingCountdownConfig } from "./config";
 import { formatMinor } from "./delivery/deliveryModel";
 import { serviceCatalogue, serviceLabel, servicesFor, type PublishedServices } from "./delivery/deliveryServices";
 import { freeDeliveryFor, type FreeDeliveryTable } from "./delivery/freeService";
-import { shippingLogic, type DeliveryOption, type StockVariant } from "./logic";
+import { shippingLogic, type BannerView, type DeliveryOption, type StockVariant } from "./logic";
 import { RichTextField } from "./RichTextField";
-import { styleAttributes } from "./appearance";
+import { bannerAttributes, styleAttributes } from "./appearance";
 
 export type ShippingResult = { ok: boolean; intent: string; errors: string[]; config?: ShippingCountdownConfig; dates?: string[] };
 
 type DeliveryForm = { enabled: boolean; heading: string; buttonSize: string; buttonAlign: string; guaranteedText: string; estimatedText: string };
+
+type BannerForm = { enabled: boolean; message: string; textSize: string; align: string; background: string; text: string; highlight: string; dispatch: string };
 
 type Form = {
   cutoffTime: string; days: boolean[]; holidays: string; delayDays: string; delayMessage: string;
@@ -31,6 +33,7 @@ type Form = {
   outMode: "message" | "hide"; outMessage: string; backMode: "message" | "hide"; backMessage: string;
   warnEnabled: boolean; warnStart: string; warnEnd: string; warnMessage: string; warnText: string; warnBackground: string; warnBorder: string;
   delivery: DeliveryForm;
+  banner: BannerForm;
   look: { align: string; showIcon: boolean; textSize: string; fontWeight: string; padding: string; margin: string; lineGap: string; radius: string; border: string; borderWidth: string; background: string; text: string; accent: string; dispatch: string; muted: string; icon: string };
 };
 
@@ -45,6 +48,7 @@ const toForm = (c: ShippingCountdownConfig): Form => ({
   warnEnabled: c.warning.enabled, warnStart: c.warning.startDate, warnEnd: c.warning.endDate, warnMessage: c.warning.message,
   warnText: c.warning.textColor, warnBackground: c.warning.backgroundColor, warnBorder: c.warning.borderColor,
   delivery: { enabled: c.delivery.enabled, heading: c.delivery.heading, buttonSize: String(c.delivery.buttonSize), buttonAlign: c.delivery.buttonAlign, guaranteedText: c.delivery.guaranteedText, estimatedText: c.delivery.estimatedText },
+  banner: { ...c.banner, textSize: String(c.banner.textSize) },
   look: { ...c.style, textSize: String(c.style.textSize), margin: String(c.style.margin), lineGap: String(c.style.lineGap), radius: String(c.style.radius), borderWidth: String(c.style.borderWidth) },
 });
 
@@ -64,6 +68,7 @@ function toInput(f: Form, services: DeliveryServiceSetting[], sort: "soonest" | 
       warning: { enabled: f.warnEnabled, startDate: f.warnStart, endDate: f.warnEnd, message: f.warnMessage, textColor: f.warnText, backgroundColor: f.warnBackground, borderColor: f.warnBorder },
       style: f.look,
       delivery: { enabled: f.delivery.enabled, heading: f.delivery.heading, buttonSize: f.delivery.buttonSize, buttonAlign: f.delivery.buttonAlign, guaranteedText: f.delivery.guaranteedText, estimatedText: f.delivery.estimatedText, sort, services },
+      banner: f.banner,
     },
   };
 }
@@ -96,7 +101,7 @@ function Rich({ text }: { text: string }) {
   return <>{shippingLogic.parseRich(text).map((run, index) => {
     let node: ReactNode = run.text;
     if (run.bold) node = <strong>{node}</strong>;
-    if (run.highlight) node = <span className="sc__countdown">{node}</span>;
+    if (run.highlight || run.time) node = <span className="sc__countdown">{node}</span>;
     if (run.date) node = <span className="sc__dispatch">{node}</span>;
     return <Fragment key={index}>{node}</Fragment>;
   })}</>;
@@ -138,6 +143,22 @@ function ShippingPreview({ config, view, freeText, warningShowing, options }: { 
         </details>}
       </div>)}
   </>;
+}
+
+/** The header banner as the theme block builds it (same markup, stylesheet and variables). */
+function BannerPreview({ config, view }: { config: ShippingCountdownConfig; view: BannerView }) {
+  const { data, vars } = bannerAttributes(config.banner);
+  return <>
+    <style>{blockCss}</style>
+    {createElement("shipping-countdown-banner", { class: "scb", ...data, style: vars as CSSProperties }, <p className="scb__line"><Rich text={view.kind === "message" ? view.marked : ""} /></p>)}
+  </>;
+}
+
+/** Banner text that is hard to read on the banner's background. */
+function bannerContrastNotes(config: ShippingCountdownConfig) {
+  const { banner } = config;
+  return ([["Text", banner.text], ["Time left", banner.highlight], ["Dispatch day", banner.dispatch]] as Array<[string, string]>)
+    .map(([label, foreground]) => ({ label, ratio: contrastRatio(foreground, banner.background) })).filter(item => item.ratio < 4.5);
 }
 
 /** Text that is hard to read on its background, so a colour choice can be questioned before it reaches the shop. */
@@ -211,9 +232,9 @@ const stockScenarios: Record<string, { label: string; variant: StockVariant | nu
   backorder: { label: "Zero stock, continue selling", variant: { available: true, policy: "continue", managed: true, qty: 0 } },
 };
 
-const stepOrder = ["appearance", "dispatch", "holidays", "delivery", "free", "stock", "delay", "warning"] as const;
+const stepOrder = ["appearance", "dispatch", "holidays", "delivery", "free", "stock", "delay", "warning", "banner"] as const;
 type StepId = (typeof stepOrder)[number];
-const stepTitles: Record<StepId, string> = { appearance: "Appearance", dispatch: "Dispatch", holidays: "Bank holidays", delivery: "Delivery services", delay: "Warehouse delay", free: "Free shipping", stock: "Out of stock and back-order", warning: "Warning notice" };
+const stepTitles: Record<StepId, string> = { appearance: "Appearance", dispatch: "Dispatch", holidays: "Bank holidays", delivery: "Delivery services", delay: "Warehouse delay", free: "Free shipping", stock: "Out of stock and back-order", warning: "Warning notice", banner: "Header banner" };
 
 /** A card with the preview's own look, matching the promotion editor's preview panel. */
 const panelStyle: CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)", padding: 16, display: "grid", gap: 16, minWidth: 0 };
@@ -311,8 +332,18 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
   const serviceList = published ? (previewCountry === "*" ? servicesFor({ ...published, countries: {} }, "") : servicesFor(published, previewCountry)) : [];
   const deliveryLines = config && published && sampleMs !== null && config.delivery.enabled ? shippingLogic.deliveryOptions(sampleMs, config, serviceList, published.currency, scenario.variant) : [];
   const deliveryExamples: Record<string, string> = deliveryLines[0]
-    ? { date: shippingLogic.formatDeliveryDate(deliveryLines[0].to), from: shippingLogic.formatDeliveryDate(deliveryLines[0].from), service: deliveryLines[0].label }
+    ? { date: shippingLogic.formatDeliveryDate(deliveryLines[0].to), from: shippingLogic.formatDeliveryDate(deliveryLines[0].from), service: deliveryLines[0].label, cutoff: deliveryLines[0].cutoff }
     : {};
+  const bannerView = config && sampleMs !== null ? shippingLogic.bannerView(sampleMs, config) : null;
+  const bannerExamples: Record<string, string> = (() => {
+    const view = config && sampleMs !== null ? shippingLogic.dispatchView(sampleMs, config, null) : null;
+    return view?.kind === "countdown" ? { time: view.countdown, date: view.date } : ({} as Record<string, string>);
+  })();
+  const bannerPlaceholderError = (text: string) => {
+    const unknown = unknownPlaceholders(text, bannerPlaceholders);
+    return unknown.length ? `${unknown.join(", ")} is not a placeholder. Use ${bannerPlaceholders.map(item => `{${item.name}}`).join(", ")}.` : undefined;
+  };
+  const setBanner = (changes: Partial<BannerForm>) => setForm(current => ({ ...current, banner: { ...current.banner, ...changes } }));
   const warningShowing = Boolean(config && sampleMs !== null && shippingLogic.warningVisible(sampleMs, config.warning));
   const shownAt = sampleMs === null ? "" : new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(sampleMs);
 
@@ -337,13 +368,18 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
     </s-stack>
     {view === null || config === null
       ? <s-banner tone="warning">Fix the problem shown above the settings to see a preview.</s-banner>
-      : <div style={{ border: "1px solid #e3e3e3", borderRadius: 8, padding: 16, background: "#fff", display: "grid", gap: 4 }}>
+      : <>
+        {config.banner.enabled && bannerView && <div style={{ border: "1px solid #e3e3e3", borderRadius: 8, overflow: "hidden", background: "#fff", display: "grid" }}>
+          <span style={{ fontSize: 13, color: "#616161", padding: "8px 16px" }}>Header, every page</span>
+          {bannerView.kind === "message" ? <BannerPreview config={config} view={bannerView} /> : <span style={{ padding: "8px 16px", fontSize: 13 }}>The banner is hidden now: no dispatch day is available.</span>}
+        </div>}
+        <div style={{ border: "1px solid #e3e3e3", borderRadius: 8, padding: 16, background: "#fff", display: "grid", gap: 4 }}>
         <span style={{ fontSize: 13, color: "#616161" }}>Product page</span>
         <span style={{ fontWeight: 600 }}>Example product</span>
         <span>£9.99</span>
         <ShippingPreview config={config} view={view} freeText={freeText} warningShowing={warningShowing} options={deliveryLines} />
         <span aria-hidden="true" style={{ background: "#202223", color: "#fff", borderRadius: 8, padding: "10px 16px", textAlign: "center", fontSize: 14 }}>Add to basket</span>
-      </div>}
+      </div></>}
   </div>;
 
   const step = (id: StepId, summary: string, children: ReactNode) => (
@@ -497,6 +533,33 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
                   <ColourField label="Background colour" value={form.warnBackground} onChange={value => set({ warnBackground: value })} />
                   <ColourField label="Border colour" value={form.warnBorder} onChange={value => set({ warnBorder: value })} />
                 </s-grid>
+              </>}
+            </>)}
+
+            {step("banner", form.banner.enabled ? `On · ${form.banner.textSize}px text · ${{ left: "left", center: "centre", right: "right" }[form.banner.align] ?? form.banner.align}` : "Off", <>
+              <PolarisCheckbox label="Show the dispatch message as a banner in the header" checked={form.banner.enabled} details="One line on every page, for example “Order in the next 1 hour 46 minutes for dispatch on Wednesday 28 Oct”. It uses the same cut-off, shipping days, bank holidays and delay as the product page block. Add the Shipping countdown banner block to your theme's header group to place it." onChange={event => setBanner({ enabled: event.currentTarget.checked })} />
+              {form.banner.enabled && <>
+                <PlaceholderList placeholders={bannerPlaceholders} examples={bannerExamples} onCopy={copyPlaceholder} heading="Placeholders you can use in the banner message" exampleHeading="At the day and time in the preview" />
+                <RichTextField accent={form.banner.highlight} label="Message" lines={2} value={form.banner.message} onChange={value => setBanner({ message: value })} error={bannerPlaceholderError(form.banner.message)} details="For example “Order in the next {time} for dispatch on {date}”. Select words and use Bold or Highlight; highlighted words use the highlight colour below. When dispatch is delayed, the delay message from the Warehouse delay step is shown instead. The banner is hidden when no dispatch day is available." />
+                <s-grid gridTemplateColumns="1fr 1fr" gap="base" alignItems="start">
+                  <PolarisNumberField label="Text size (px)" min={10} max={24} step={1} value={form.banner.textSize} onInput={event => setBanner({ textSize: event.currentTarget.value })} />
+                  <PolarisSelect label="Text alignment" value={form.banner.align} onChange={event => setBanner({ align: event.currentTarget.value })}>
+                    <s-option value="left">Left</s-option><s-option value="center">Centre</s-option><s-option value="right">Right</s-option>
+                  </PolarisSelect>
+                </s-grid>
+                <section aria-label="Banner colours" style={{ display: "grid", gap: 12, borderTop: "1px solid #e3e3e3", paddingTop: 16 }}>
+                  <s-heading>Colours</s-heading>
+                  <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+                    <ColourField label="Background" value={form.banner.background} onChange={value => setBanner({ background: value })} />
+                    <ColourField label="Text" value={form.banner.text} onChange={value => setBanner({ text: value })} />
+                    <ColourField label="Highlight and time left" value={form.banner.highlight} onChange={value => setBanner({ highlight: value })} />
+                    <ColourField label="Dispatch day" value={form.banner.dispatch} onChange={value => setBanner({ dispatch: value })} />
+                  </s-grid>
+                  {config && bannerContrastNotes(config).length > 0 && <s-banner tone="warning" heading="Some banner text may be hard to read">
+                    {bannerContrastNotes(config).map(item => `${item.label} on the banner background is ${item.ratio.toFixed(1)} to 1`).join("; ")}. Aim for at least 4.5 to 1.
+                  </s-banner>}
+                  <div><s-button type="button" variant="tertiary" onClick={() => setBanner({ ...toForm(defaultShippingConfig).banner, enabled: form.banner.enabled, message: form.banner.message })}>Reset the banner colours and size</s-button></div>
+                </section>
               </>}
             </>)}
           </s-stack>

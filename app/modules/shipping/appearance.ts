@@ -1,4 +1,4 @@
-import type { ShippingStyle } from "./config";
+import type { BannerSettings, ShippingStyle } from "./config";
 
 /**
  * The block's look as the stylesheet reads it: three data attributes for the choices (alignment, padding, border) and CSS variables
@@ -28,4 +28,12 @@ export function styleAttributes(style: ShippingStyle) {
 /** The same variables as a style attribute value, in the order the block's Liquid writes them. */
 export function styleText(style: ShippingStyle) {
   return Object.entries(styleAttributes(style).vars).map(([name, value]) => `${name}:${value}`).join(";");
+}
+
+/** The header banner's look, the same way: a data attribute for the alignment and CSS variables for the values. The banner block's Liquid writes the same ones. */
+export function bannerAttributes(banner: BannerSettings) {
+  return {
+    data: { "data-align": banner.align },
+    vars: { "--scb-size": `${banner.textSize}px`, "--scb-bg": banner.background, "--scb-text": banner.text, "--scb-highlight": banner.highlight, "--scb-dispatch": banner.dispatch },
+  };
 }

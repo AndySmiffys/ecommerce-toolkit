@@ -561,3 +561,108 @@ test("delay mode shows the highlighted message and the date", async () => {
   assert.equal(p.document.querySelector(".sc__countdown").textContent, "from");
   p.close();
 });
+
+// ---------------------------------------------------------------- the header banner
+
+const bannerSource = readFileSync("extensions/promotion-engine/blocks/shipping-countdown-banner.liquid", "utf8");
+const [bannerTemplate, bannerSchemaPart] = bannerSource.split("{% schema %}");
+const bannerSchema = JSON.parse(bannerSchemaPart.split("{% endschema %}")[0]);
+const bannerSettings = (changes = {}) => ({ enabled: true, message: "Order in the next {time} for dispatch on {date}", textSize: 14, align: "center", background: "#009edb", text: "#ffffff", highlight: "#ff3d8b", dispatch: "#ffc83d", ...changes });
+
+async function bannerPage({ banner = bannerSettings(), now = "2026-10-20T09:00:00Z", cfg = {}, design = false } = {}) {
+  const html = await liquid.parseAndRender(bannerTemplate, {
+    app: { metafields: { shipping_countdown: { config: { value: { ...config, ...cfg, banner } } } } },
+    block: { id: "template_abc_123", settings: {}, shopify_attributes: "" },
+    request: { design_mode: design },
+  });
+  const dom = new JSDOM(`<body><header>${html}</header></body>`, { url: "https://shop.example/", runScripts: "outside-only" });
+  const { window } = dom;
+  const state = { now: Date.parse(now) };
+  window.Date.now = () => state.now;
+  window.eval(script);
+  return { html, window, document: window.document, state, close: () => window.close(), banner: () => window.document.querySelector("shipping-countdown-banner") };
+}
+const said = node => node.querySelector(".scb__line").textContent.replace(/\s+/g, " ").trim();
+
+test("the banner block is placed in the theme's header and has nothing to set in the theme editor", () => {
+  assert.equal(bannerSchema.name, "Shipping countdown banner");
+  assert.equal(bannerSchema.target, "section");
+  assert.equal(bannerSchema.enabled_on, undefined, "any page: it is a header announcement");
+  assert.deepEqual(bannerSchema.settings.filter(setting => setting.id), [], "everything is set in the app");
+  assert.equal(bannerSchema.javascript, "shipping-countdown.js", "the same script as the product block, so the two never disagree");
+  assert.equal(bannerSchema.stylesheet, "shipping-countdown.css");
+});
+
+test("the banner shows the time left and the dispatch day, in its own colours, and carries no more than it needs", async () => {
+  const p = await bannerPage();
+  const banner = p.banner();
+  assert.equal(banner.hidden, false);
+  assert.equal(said(banner), "Order in the next 5 hours for dispatch on Tuesday 20 Oct");
+  assert.equal(banner.querySelector(".sc__countdown").textContent, "5 hours");
+  assert.equal(banner.querySelector(".sc__dispatch").textContent, "Tuesday 20 Oct");
+  assert.equal(banner.getAttribute("data-align"), "center");
+  assert.equal(banner.style.getPropertyValue("--scb-size"), "14px");
+  assert.equal(banner.style.getPropertyValue("--scb-bg"), "#009edb");
+  assert.equal(banner.style.getPropertyValue("--scb-text"), "#ffffff");
+  assert.equal(banner.style.getPropertyValue("--scb-highlight"), "#ff3d8b");
+  assert.equal(banner.style.getPropertyValue("--scb-dispatch"), "#ffc83d");
+  const data = JSON.parse(banner.querySelector("script[data-config]").textContent);
+  assert.deepEqual(Object.keys(data).sort(), ["bankHolidays", "banner", "cutoffTime", "delayDays", "delayMessage", "shippingDays"], "no free delivery, services or warning in the header on every page");
+  p.close();
+});
+
+test("the banner uses the shop's cut-off, shipping days, bank holidays and delay, like the product page", async () => {
+  const after = await bannerPage({ now: "2026-10-20T15:00:00Z" });
+  assert.equal(said(after.banner()), "Order in the next 23 hours for dispatch on Wednesday 21 Oct", "after the 15:00 BST cut-off");
+  after.close();
+  const holiday = await bannerPage({ now: "2026-10-20T15:00:00Z", cfg: { bankHolidays: ["2026-10-21"] } });
+  assert.match(holiday.banner().textContent, /Thursday 22 Oct/, "a bank holiday is skipped");
+  holiday.close();
+  const delayed = await bannerPage({ cfg: { delayDays: 2 } });
+  assert.equal(said(delayed.banner()), "Delayed from Thursday 22 Oct", "the delay message, with the date");
+  assert.equal(delayed.banner().querySelector(".sc__countdown").textContent, "from", "highlighted words take the highlight colour");
+  delayed.close();
+});
+
+test("the banner is hidden when there is nothing true to say, and nothing is written when it is off", async () => {
+  const none = await bannerPage({ cfg: { shippingDays: [false, false, false, false, false, false, false] } });
+  assert.equal(none.banner().hidden, true, "no dispatch day: no banner on every page");
+  none.close();
+  const off = await bannerPage({ banner: bannerSettings({ enabled: false }) });
+  assert.equal(off.banner(), null);
+  assert.equal(off.html.trim(), "");
+  off.close();
+  const design = await bannerPage({ banner: bannerSettings({ enabled: false }), design: true });
+  assert.match(design.html, /Header banner step/, "in the theme editor, a note says how to switch it on");
+  design.close();
+  const old = await bannerPage({ banner: null });
+  assert.equal(old.banner(), null, "settings saved before the banner existed");
+  old.close();
+});
+
+test("the banner's message is formatted and written without becoming markup, and is kept right by the clock", async () => {
+  const p = await bannerPage({ banner: bannerSettings({ message: "<b>Order</b> [bold]now[/bold], {time} left, ships {date}" }) });
+  const line = p.document.querySelector(".scb__line");
+  assert.equal(line.querySelector("b"), null, "typed markup is only text");
+  assert.equal(line.querySelector("strong").textContent, "now");
+  assert.equal(line.textContent, "<b>Order</b> now, 5 hours left, ships Tuesday 20 Oct");
+  Object.defineProperty(p.document, "hidden", { configurable: true, value: false });
+  p.state.now = Date.parse("2026-10-20T13:59:00Z");
+  p.window.document.dispatchEvent(new p.window.Event("visibilitychange"));
+  assert.match(line.textContent, /1 minute left, ships Tuesday 20 Oct/, "the time is brought up to date when the tab comes back");
+  p.state.now = Date.parse("2026-10-20T14:01:00Z");
+  p.window.document.dispatchEvent(new p.window.Event("visibilitychange"));
+  assert.match(line.textContent, /23 hours 59 minutes left, ships Wednesday 21 Oct/, "and it rolls to the next day");
+  p.close();
+});
+
+test("the product block and the banner can be on one page", async () => {
+  const product = await render();
+  const banner = await liquid.parseAndRender(bannerTemplate, { app: { metafields: { shipping_countdown: { config: { value: { ...config, banner: bannerSettings() } } } } }, block: { id: "b", settings: {}, shopify_attributes: "" }, request: { design_mode: false } });
+  const dom = new JSDOM(`<body><header>${banner}</header><section class="shopify-section">${product}<form action="/cart/add"><input name="id" value="1"></form></section></body>`, { url: "https://shop.example/", runScripts: "outside-only" });
+  dom.window.Date.now = () => Date.parse("2026-10-20T09:00:00Z");
+  dom.window.eval(script);
+  assert.match(dom.window.document.querySelector("shipping-countdown-banner").textContent, /5 hours/);
+  assert.match(dom.window.document.querySelector("shipping-countdown [data-role=dispatch]").textContent, /5 hours/);
+  dom.window.close();
+});

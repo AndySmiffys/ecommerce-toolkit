@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { defaultDeliverySettings, defaultServiceSetting, defaultShippingConfig, defaultShippingStyle, deliveryPlaceholders, freePlaceholders, isIsoDate, parseBankHolidays, richProblem, stripRich, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
+import { bannerPlaceholders, defaultBannerSettings, defaultDeliverySettings, defaultServiceSetting, defaultShippingConfig, defaultShippingStyle, deliveryPlaceholders, freePlaceholders, isIsoDate, parseBankHolidays, richProblem, stripRich, unknownPlaceholders, validateShippingConfig } from "../app/modules/shipping/config";
 import { mergeBankHolidays, upcomingBankHolidays } from "../app/modules/shipping/bankHolidays.server";
 
 const valid = (changes: Record<string, unknown> = {}) => ({ ...defaultShippingConfig, ...changes });
@@ -166,10 +166,10 @@ test("delivery options start switched off, with wording that says Non-Guaranteed
   assert.equal("showMonth" in defaultDeliverySettings, false, "the month is always shown, so there is nothing to set");
   assert.deepEqual(defaultDeliverySettings.services, []);
   assert.deepEqual(defaultServiceSetting("Standard"), { name: "Standard", label: "", show: true, guaranteed: false, cutoffTime: "", days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null }, "a service is a non-guaranteed weekday one until set otherwise");
-  assert.deepEqual(deliveryPlaceholders.map(item => item.name), ["date", "from", "service"]);
+  assert.deepEqual(deliveryPlaceholders.map(item => item.name), ["date", "from", "service", "cutoff"]);
   const old = validateShippingConfig({ ...defaultShippingConfig, delivery: undefined });
   assert.deepEqual(old.ok && old.config.delivery, defaultDeliverySettings, "settings saved before delivery options existed get the defaults");
-  assert.deepEqual(unknownPlaceholders("{date} {from} {service}", deliveryPlaceholders), []);
+  assert.deepEqual(unknownPlaceholders("{date} {from} {service} {cutoff}", deliveryPlaceholders), []);
   assert.deepEqual(unknownPlaceholders("{threshold}", deliveryPlaceholders), ["{threshold}"], "each message has its own placeholders");
   assert.deepEqual(unknownPlaceholders("{date}"), ["{date}"], "and the free-delivery ones do not take the delivery ones");
 });
@@ -180,7 +180,7 @@ test("the delivery wording must say when it arrives and use only its own placeho
   assert.equal(validateShippingConfig(delivery({ estimatedText: "{service}: {from} to {date}" })).ok, true);
   assert.equal(validateShippingConfig(delivery({ guaranteedText: "Arrives [bold]{from}[/bold]" })).ok, true, "formatting works here too, and {from} alone is enough");
   assert.match(errorsOf(delivery({ guaranteedText: "Delivery soon" })).join(" "), /Guaranteed delivery message must include \{date\} \(or \{from\}\)/);
-  assert.match(errorsOf(delivery({ estimatedText: "Delivery by {dat}" })).join(" "), /Estimated delivery message uses \{dat\}, which is not a placeholder\. You can use \{date\}, \{from\}, \{service\}\./);
+  assert.match(errorsOf(delivery({ estimatedText: "Delivery by {dat}" })).join(" "), /Estimated delivery message uses \{dat\}, which is not a placeholder\. You can use \{date\}, \{from\}, \{service\}, \{cutoff\}\./);
   assert.match(errorsOf(delivery({ estimatedText: "Over {threshold}" })).join(" "), /uses \{threshold\}/);
   assert.match(errorsOf(delivery({ guaranteedText: "[bold]Delivery by {date}" })).join(" "), /Guaranteed delivery message has formatting/);
   assert.match(errorsOf(delivery({ heading: "[bold][/bold]" })).join(" "), /Delivery options button text cannot be empty/);
@@ -239,4 +239,30 @@ test("the delivery options are ordered soonest first unless an order is set, and
   assert.match(errorsOf(delivery({ sort: "alphabetical" })).join(" "), /Delivery options order is not one of the choices/);
   const old = validateShippingConfig(valid({ delivery: { enabled: true, heading: "x", guaranteedText: "{date}", estimatedText: "{date}", services: [] } }));
   assert.equal(old.ok && old.config.delivery.sort, "soonest", "settings saved before an order could be set keep today's behaviour");
+});
+
+test("the header banner starts switched off, with the message the shop already uses, and is checked when it is switched on", () => {
+  assert.equal(defaultBannerSettings.enabled, false, "nothing appears in the header until it is turned on");
+  assert.equal(defaultBannerSettings.message, "Order in the next {time} for dispatch on {date}");
+  assert.deepEqual(bannerPlaceholders.map(item => item.name), ["time", "date"]);
+  const old = validateShippingConfig({ ...defaultShippingConfig, banner: undefined });
+  assert.deepEqual(old.ok && old.config.banner, defaultBannerSettings, "settings saved before the banner existed get the defaults");
+  const banner = (changes: Record<string, unknown>) => valid({ banner: { ...defaultBannerSettings, enabled: true, ...changes } });
+  assert.equal(validateShippingConfig(banner({})).ok, true);
+  assert.equal(validateShippingConfig(banner({ message: "Ships [bold]{date}[/bold]" })).ok, true, "{date} alone is enough, and it can be formatted");
+  assert.equal(validateShippingConfig(banner({ message: "{time} left" })).ok, true);
+  assert.match(errorsOf(banner({ message: "Fast dispatch" })).join(" "), /Header banner message must include \{time\} or \{date\}/);
+  assert.match(errorsOf(banner({ message: "Ships {dat}" })).join(" "), /Header banner message uses \{dat\}, which is not a placeholder\. You can use \{time\}, \{date\}\./);
+  assert.match(errorsOf(banner({ message: "Over {threshold} {date}" })).join(" "), /uses \{threshold\}/);
+  assert.match(errorsOf(banner({ message: "" })).join(" "), /Header banner message cannot be empty/);
+  assert.match(errorsOf(banner({ message: "[bold]Ships {date}" })).join(" "), /Header banner message has formatting/);
+  assert.match(errorsOf(banner({ textSize: 40 })).join(" "), /Header banner text size must be a whole number from 10 to 24/);
+  assert.match(errorsOf(banner({ align: "top" })).join(" "), /Header banner alignment is not one of the choices/);
+  assert.match(errorsOf(banner({ background: "blue" })).join(" "), /Header banner background colour must be a colour/);
+  for (const field of ["text", "highlight", "dispatch"]) assert.match(errorsOf(banner({ [field]: "red" })).join(" "), /must be a colour such as #f59e0b/, field);
+  // Switched off, the message is not needed, but a typo is still caught.
+  assert.equal(validateShippingConfig(banner({ enabled: false, message: "" })).ok, true);
+  assert.equal(validateShippingConfig(banner({ enabled: false, message: "{dat}" })).ok, false);
+  const kept = validateShippingConfig(banner({ background: "#ABCDEF", textSize: "18" }));
+  assert.deepEqual(kept.ok && [kept.config.banner.background, kept.config.banner.textSize], ["#abcdef", 18], "colours are lower-cased and sizes read as numbers");
 });

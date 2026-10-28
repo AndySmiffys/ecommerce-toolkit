@@ -281,3 +281,42 @@ test("in a set order the options are listed as the app lists them, not soonest f
   assert.deepEqual(names({ sort: "manual", services: [listed("Old courier"), listed("Evening")] }), ["Evening", "Cheap 2 Day", "DPD Next Day", "Amazon 2 Day"], "a name that is not there any more is ignored");
   assert.deepEqual(names({ sort: "manual", services: [listed("Evening")] }, [{ name: "No time", tiers: [{ from: 0, price: 100 }] }, ...all]), ["Evening", "Cheap 2 Day", "DPD Next Day", "Amazon 2 Day"], "one with no delivery time is still left out");
 });
+
+test("a cut-off is said the way people say it", () => {
+  const say = text => logic.formatCutoff(text);
+  assert.deepEqual(["14:00", "14:15", "09:30", "00:00", "12:00", "12:05", "23:59", "00:10"].map(say), ["2pm", "2:15pm", "9:30am", "12am", "12pm", "12:05pm", "11:59pm", "12:10am"]);
+  assert.equal(say(""), "");
+  assert.equal(say("25:00"), "");
+  assert.equal(say(undefined), "");
+});
+
+test("{cutoff} in a delivery message is the service's own cut-off, or the shop's when it has none", () => {
+  const list = options({ estimatedText: "Order before {cutoff}: {date}", services: [{ name: "Amazon 2 Day", cutoffTime: "11:30" }] });
+  assert.deepEqual(list.map(item => [item.label, item.cutoff, item.text]), [
+    ["DPD Next Working Day", "2pm", "Order before 2pm: Tue 27th Oct"],
+    ["Amazon 2 Day", "11:30am", "Order before 11:30am: Wed 28th Oct"],
+    ["Economy 2 Day", "2pm", "Order before 2pm: Wed 28th Oct"],
+  ]);
+  assert.equal(list[0].marked, "Order before 2pm: \uE000Tue 27th Oct\uE001", "only dates are coloured, not the time");
+  assert.equal(logic.fillDelivery("By {cutoff} {cutoff}", { cutoff: "2pm" }), "By 2pm 2pm", "more than once");
+  assert.equal(logic.fillDelivery("By {cutoff}", {}), "By ", "no cut-off, nothing");
+});
+
+const banner = (extra = {}) => ({ enabled: true, message: "Order in the next {time} for dispatch on {date}", ...extra });
+const bannerAt = (iso, configExtra = {}) => logic.bannerView(at(iso), config({ delayMessage: "Busy. [highlight]Dispatch from[/highlight]", banner: banner(), ...configExtra }));
+
+test("the header banner says the time left and the dispatch day, with each marked for its own colour", () => {
+  assert.deepEqual(bannerAt("2026-10-27T09:00:00Z"), { kind: "message", marked: "Order in the next \uE0025 hours\uE003 for dispatch on \uE000Tuesday 27 Oct\uE001" }, "before the 14:00 cut-off");
+  assert.deepEqual(logic.parseRich(bannerAt("2026-10-27T09:00:00Z").marked).map(run => [run.text, run.time ?? false, run.date ?? false]), [["Order in the next ", false, false], ["5 hours", true, false], [" for dispatch on ", false, false], ["Tuesday 27 Oct", false, true]]);
+  assert.match(bannerAt("2026-10-27T15:00:00Z").marked, /\uE000Wednesday 28 Oct\uE001/, "after the cut-off, the next shipping day");
+  assert.equal(bannerAt("2026-10-27T09:00:00Z", { banner: banner({ message: "Ships {date}. {date} again" }) }).marked, "Ships \uE000Tuesday 27 Oct\uE001. \uE000Tuesday 27 Oct\uE001 again", "each placeholder can be used more than once");
+  assert.equal(bannerAt("2026-10-27T09:00:00Z", { banner: banner({ message: "[bold]{time}[/bold]" }) }).marked, "[bold]\uE0025 hours\uE003[/bold]", "and formatted");
+});
+
+test("in a delay the header banner shows the delay message and the date; with nothing true to say it is hidden", () => {
+  assert.deepEqual(bannerAt("2026-10-27T09:00:00Z", { delayDays: 2 }), { kind: "message", marked: "Busy. [highlight]Dispatch from[/highlight] \uE000Thursday 29 Oct\uE001" });
+  assert.deepEqual(bannerAt("2026-10-27T09:00:00Z", { banner: banner({ enabled: false }) }), { kind: "hidden" }, "switched off");
+  assert.deepEqual(bannerAt("2026-10-27T09:00:00Z", { banner: undefined }), { kind: "hidden" }, "settings saved before the banner existed");
+  assert.deepEqual(bannerAt("2026-10-27T09:00:00Z", { shippingDays: [false, false, false, false, false, false, false] }), { kind: "hidden" }, "no dispatch day: not 'no dispatch' on every page");
+  assert.deepEqual(bannerAt("2026-10-27T09:00:00Z", { cutoffTime: "soon" }), { kind: "hidden" }, "an error is never shown in the header");
+});
