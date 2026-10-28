@@ -323,10 +323,22 @@ test('the free delivery step lists the placeholders, with what each becomes for 
     const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
     assert.deepEqual(rows.map(row => row[0]), ['{threshold}', '{country}', '{rate}']);
     assert.match(rows[0][1], /order total that unlocks free delivery/);
-    assert.match(rows[2][1], /name of the free delivery option in your Shopify shipping settings/);
+    assert.match(rows[2][1], /name of the free delivery option: the name you gave that service in Delivery services, or its name in your Shopify shipping settings/);
     assert.deepEqual(rows.map(row => row[2]), ['£50', 'United Kingdom', 'Free delivery'], 'examples for the preview country');
     await change(field(container, 's-select', 'Country of the shopper'), 'IE');
     assert.deepEqual(findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell')[2].textContent.trim()), ['£75', 'Ireland', 'Free delivery']);
+  } finally { await page.unmount(); }
+});
+
+test('{rate} in the preview is the name given to the service in the app, and its example says so', async () => {
+  const named = { enabled: false, heading: 'View Delivery Options', buttonSize: 16, buttonAlign: 'left', guaranteedText: 'Delivery by {date}', estimatedText: 'Delivery by {date} (Non-Guaranteed)', services: [{ name: ' free  DELIVERY', label: 'Free standard delivery', show: true, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null }] };
+  const page = await mountPage({ config: { delivery: named, freeShipping: { enabled: true, textUnder: 'Spend {threshold} to get {rate}', textAdd: 'Add this', textOver: 'Done' } } });
+  try {
+    const { container } = page;
+    assert.match(find(container, 'aside .sc__free').textContent, /^Spend £50 to get Free standard delivery$/, 'the name given to the service, not Shopify\'s "Free delivery"');
+    const card = find(container, 'details[data-step=free]');
+    const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
+    assert.equal(rows[2][2], 'Free standard delivery');
   } finally { await page.unmount(); }
 });
 

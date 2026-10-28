@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { DeliveryProfile, DeliveryRate, DeliveryZone, RateCondition, ShippingSnapshot, Transit } from "../app/modules/shipping/delivery/deliveryModel";
-import { deliveryServicesTable, serviceCatalogue, servicesFor, zoneServices } from "../app/modules/shipping/delivery/deliveryServices";
+import { deliveryServicesTable, serviceCatalogue, serviceLabel, servicesFor, zoneServices } from "../app/modules/shipping/delivery/deliveryServices";
 
 const gbp = (amount: number) => ({ amount, currency: "GBP" });
 const atLeast = (minor: number): RateCondition => ({ field: "TOTAL_PRICE", operator: "GREATER_THAN_OR_EQUAL_TO", money: gbp(minor) });
@@ -96,4 +96,15 @@ test("the catalogue lists each service once, with every zone it is offered in", 
   assert.deepEqual(catalogue.map(item => [item.name, item.zones]), [["Standard", ["Domestic", "Northern Ireland"]], ["Next day", ["Domestic"]]]);
   assert.deepEqual(catalogue[0].service.transit, two, "shown as it is in the first zone it appears in");
   assert.deepEqual(serviceCatalogue({ version: 1, currency: "GBP", zones: {}, countries: {}, restOfWorld: null }), []);
+});
+
+test("a service goes by the name given to it in the app, or Shopify's when it has none", () => {
+  const settings = [{ name: "Amazon 2 Day (Order Before 2pm) Non Guaranteed", label: "Amazon 2 Day" }, { name: "DPD Next Working Day", label: "  " }, { name: "Collection", label: "" }];
+  assert.equal(serviceLabel(settings, "Amazon 2 Day (Order Before 2pm) Non Guaranteed"), "Amazon 2 Day");
+  assert.equal(serviceLabel(settings, "  amazon 2 day (order before 2pm)   NON guaranteed "), "Amazon 2 Day", "however it was spaced or capitalised");
+  assert.equal(serviceLabel(settings, "DPD Next Working Day"), "DPD Next Working Day", "a blank name is no name");
+  assert.equal(serviceLabel(settings, "Collection"), "Collection");
+  assert.equal(serviceLabel(settings, "Something else"), "Something else");
+  assert.equal(serviceLabel([], "Free delivery"), "Free delivery");
+  assert.equal(serviceLabel([{ name: "X", label: " Tidy " }], "X"), "Tidy", "trimmed");
 });

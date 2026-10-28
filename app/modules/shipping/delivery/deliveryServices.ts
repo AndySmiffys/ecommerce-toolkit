@@ -33,6 +33,12 @@ export type PublishedServices = {
 /** The name as a shopper would read it: stray and doubled spaces removed. */
 export const cleanName = (name: string) => name.trim().replace(/\s+/g, " ");
 
+/** The name a service goes by on the product page: the name given to it in the app when there is one, else Shopify's. */
+export function serviceLabel(settings: Array<{ name: string; label: string }>, name: string): string {
+  const found = settings.find(setting => serviceKey(setting.name) === serviceKey(name) && setting.label.trim());
+  return found ? found.label.trim() : name;
+}
+
 /** What makes two lines the same service. Shopify needs a separate line for each price band, so the lines of one service share a name. */
 export const serviceKey = (name: string) => cleanName(name).toLowerCase();
 

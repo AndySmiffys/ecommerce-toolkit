@@ -163,6 +163,33 @@ test("the delivery option's name from Shopify's shipping settings can be used in
   p.close();
 });
 
+test("{rate} is the name given to the service in the app, matched forgivingly, and Shopify's name when there is none", async () => {
+  const named = (services, extra = {}) => ({ ...config, freeShipping: { ...config.freeShipping, textUnder: "Spend {threshold} to get {rate}", textAdd: "Add this to get {rate}", textOver: "You have {rate}" }, delivery: { ...config.delivery, services }, ...extra });
+  const service = (name, label) => ({ name, label, show: true, guaranteed: false, cutoffTime: "", days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null });
+  const labelled = await render({ cfg: named([service("Free delivery", "Free standard delivery")]) });
+  assert.match(labelled, /Spend £50 to get Free standard delivery/);
+  assert.match(labelled, /data-free-rate="Free standard delivery"/, "the script is given the same name");
+  assert.match(await render({ cfg: named([service("Free delivery", "Free standard delivery")]), cartTotal: 4500 }), /Add this to get Free standard delivery/);
+  assert.match(await render({ cfg: named([service("Free delivery", "Free standard delivery")]), cartTotal: 6000 }), /You have Free standard delivery/);
+  for (const name of ["free delivery", "  FREE   DELIVERY ", "Free  delivery"]) assert.match(await render({ cfg: named([service(name, "Our free delivery")]) }), /Spend £50 to get Our free delivery/, `matched "${name}"`);
+  for (const none of [[], [service("Free delivery", "")], [service("Free delivery", "   ")], [service("Something else", "Not this one")]]) {
+    assert.match(await render({ cfg: named(none) }), /Spend £50 to get Free delivery/, "no name given to this service: Shopify's own");
+  }
+  const old = { ...named([]), delivery: undefined };
+  assert.match(await render({ cfg: old }), /Spend £50 to get Free delivery/, "settings saved before delivery options existed");
+  const markup = visible(await render({ cfg: named([service("Free delivery", "<b>Fast</b> & free")]) }));
+  assert.match(markup, /Spend £50 to get &lt;b&gt;Fast&lt;\/b&gt; &amp; free/, "a name typed in the app cannot inject markup either");
+  const ireland = { ...delivery, countries: { ...delivery.countries, IE: { free: true, thresholdMinor: 7500, rate: "Free Irish delivery" } } };
+  assert.match(await render({ cfg: named([service("Free delivery", "UK free"), service("Free Irish delivery", "Irish free")]), table: ireland, country: { iso_code: "IE", name: "Ireland" } }), /Spend £75 to get Irish free/, "each country's own free option, with its own name");
+  assert.match(await render({ cfg: named([service("Free delivery", "UK free"), service("Free Irish delivery", "Irish free")]), table: ireland }), /Spend £50 to get UK free/);
+  const p = await page({ cfg: named([service("Free delivery", "Free standard delivery")]) });
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 4500, currency: "GBP" } } }));
+  assert.equal(p.free().textContent, "Add this to get Free standard delivery", "and in the browser after the cart changes");
+  p.document.dispatchEvent(new p.window.CustomEvent("cart:updated", { detail: { resource: { total_price: 6000, currency: "GBP" } } }));
+  assert.equal(p.free().textContent, "You have Free standard delivery");
+  p.close();
+});
+
 test("each shopper sees the threshold for their own country: a different one, none, always free, or the rest of the world's", async () => {
   assert.match(await render({ country: { iso_code: "IE", name: "Ireland" } }), /Free to Ireland over £75, only £75/);
   const france = await render({ country: { iso_code: "FR", name: "France" } });

@@ -13,7 +13,7 @@ import { contrastRatio } from "../promotions/design/design";
 import blockCss from "../../../extensions/promotion-engine/assets/shipping-countdown.css?raw";
 import { dayNames, defaultShippingConfig, deliveryPlaceholders, freePlaceholders, parseBankHolidays, unknownPlaceholders, validateShippingConfig, type DeliveryServiceSetting, type ShippingCountdownConfig } from "./config";
 import { formatMinor } from "./delivery/deliveryModel";
-import { serviceCatalogue, servicesFor, type PublishedServices } from "./delivery/deliveryServices";
+import { serviceCatalogue, serviceLabel, servicesFor, type PublishedServices } from "./delivery/deliveryServices";
 import { freeDeliveryFor, type FreeDeliveryTable } from "./delivery/freeService";
 import { shippingLogic, type DeliveryOption, type StockVariant } from "./logic";
 import { RichTextField } from "./RichTextField";
@@ -300,10 +300,10 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
   const view = config && sampleMs !== null ? shippingLogic.dispatchView(sampleMs, config, scenario.variant) : null;
   const entry = delivery ? (previewCountry === "*" ? delivery.restOfWorld : freeDeliveryFor(delivery, previewCountry)) : null;
   const freeText = config && delivery && entry?.free && stock !== "out"
-    ? shippingLogic.freeShippingMessage(config.freeShipping, { threshold: entry.thresholdMinor, thresholdCurrency: delivery.currency, country: previewCountry === "*" ? "your country" : countryName(previewCountry), rate: entry.rate, cartCurrency: delivery.currency, cartTotal: 0, itemPrice: 0, quantity: 1 }).text
+    ? shippingLogic.freeShippingMessage(config.freeShipping, { threshold: entry.thresholdMinor, thresholdCurrency: delivery.currency, country: previewCountry === "*" ? "your country" : countryName(previewCountry), rate: serviceLabel(savedServices, entry.rate), cartCurrency: delivery.currency, cartTotal: 0, itemPrice: 0, quantity: 1 }).text
     : "";
   const examples: Record<string, string> = delivery && entry?.free
-    ? { threshold: formatMinor(entry.thresholdMinor, delivery.currency), country: previewCountry === "*" ? "your country" : countryName(previewCountry), rate: entry.rate }
+    ? { threshold: formatMinor(entry.thresholdMinor, delivery.currency), country: previewCountry === "*" ? "your country" : countryName(previewCountry), rate: serviceLabel(savedServices, entry.rate) }
     : {};
   const serviceList = published ? (previewCountry === "*" ? servicesFor({ ...published, countries: {} }, "") : servicesFor(published, previewCountry)) : [];
   const deliveryLines = config && published && sampleMs !== null && config.delivery.enabled ? shippingLogic.deliveryOptions(sampleMs, config, serviceList, published.currency, scenario.variant) : [];

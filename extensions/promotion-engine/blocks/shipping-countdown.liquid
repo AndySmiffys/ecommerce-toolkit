@@ -11,6 +11,17 @@
   if entry == nil
     assign entry = delivery.restOfWorld
   endif
+  assign rate_label = entry.rate
+  if entry.rate != blank
+    assign rate_key = entry.rate | strip | downcase | replace: '  ', ' ' | replace: '  ', ' '
+    for service_setting in config.delivery.services
+      assign setting_key = service_setting.name | strip | downcase | replace: '  ', ' ' | replace: '  ', ' '
+      if setting_key == rate_key and service_setting.label != blank
+        assign rate_label = service_setting.label | strip
+        break
+      endif
+    endfor
+  endif
   assign threshold = nil
   assign show_free = false
   assign free_text = ''
@@ -26,7 +37,7 @@
       assign free_text = free.textUnder
     endif
     assign threshold_text = threshold | money_without_trailing_zeros
-    assign free_text = free_text | replace: '{threshold}', threshold_text | replace: '{country}', country_name | replace: '{rate}', entry.rate
+    assign free_text = free_text | replace: '{threshold}', threshold_text | replace: '{country}', country_name | replace: '{rate}', rate_label
   endif
   assign services_table = app.metafields.shipping_countdown.delivery_services.value
   assign zone_key = services_table.countries[country_code]
@@ -76,7 +87,7 @@
     data-free-threshold="{{ threshold }}"
     data-free-currency="{{ delivery.currency }}"
     data-country="{{ country_name | escape }}"
-    data-free-rate="{{ entry.rate | escape }}"
+    data-free-rate="{{ rate_label | escape }}"
     data-delivery-currency="{{ services_table.currency }}"
     data-variant-id="{{ variant.id }}"
     {{ block.shopify_attributes }}

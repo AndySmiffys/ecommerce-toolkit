@@ -147,7 +147,7 @@ export const defaultShippingConfig: ShippingCountdownConfig = {
 export const freePlaceholders = [
   { name: "threshold", meaning: "The order total that unlocks free delivery, in the shopper's currency", example: "£50" },
   { name: "country", meaning: "The shopper's country", example: "United Kingdom" },
-  { name: "rate", meaning: "The name of the free delivery option in your Shopify shipping settings", example: "Free delivery" },
+  { name: "rate", meaning: "The name of the free delivery option: the name you gave that service in Delivery services, or its name in your Shopify shipping settings", example: "Free delivery" },
 ] as const;
 
 /** What can be written in braces in a delivery message. */

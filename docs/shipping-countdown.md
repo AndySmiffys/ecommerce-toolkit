@@ -40,7 +40,7 @@ The three free-delivery wordings (under the threshold, this item would reach it,
 | --- | --- | --- |
 | `{threshold}` | The order total that unlocks free delivery, in the shopper's currency (pence kept: £49.50) | £50 |
 | `{country}` | The shopper's country | United Kingdom |
-| `{rate}` | The name of the free delivery option in your Shopify shipping settings, for that shopper's country | Free delivery |
+| `{rate}` | The name of the free delivery option for that shopper's country: the name you gave that service in **Delivery services** when there is one (matched to Shopify's name ignoring spaces and capitals), otherwise its name in your Shopify shipping settings | Free delivery |
 
 Anything else in braces, such as `{thresold}`, is rejected when saving, so a typo is never shown to shoppers. The other messages (dispatch, delay, out of stock, back-order, warning) are fixed wording with no placeholders.
 
