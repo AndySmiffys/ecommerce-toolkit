@@ -634,6 +634,7 @@
       try { this.config = JSON.parse(this.querySelector('script[data-config]').textContent); } catch (error) { this.config = null; }
       this.line = this.querySelector('[data-role="line"]');
       if (!this.config || !this.line) return;
+      this.stretchWrapper();
       this.render();
       this.onVisible = function () { if (!document.hidden) self.render(); };
       document.addEventListener('visibilitychange', this.onVisible);
@@ -642,6 +643,20 @@
     disconnectedCallback() {
       clearTimeout(this.timer);
       if (this.onVisible) document.removeEventListener('visibilitychange', this.onVisible);
+    }
+    /**
+     * Shopify wraps an app block in an element of its own, and a theme's flex or grid section (Horizon's centred "Section") can shrink that to
+     * the text. The stylesheet stretches it where :has() is supported; this does the same for browsers and themes where it is not.
+     */
+    stretchWrapper() {
+      var wrapper = this.parentElement;
+      if (!wrapper || !wrapper.matches || !wrapper.matches('.shopify-block, .shopify-app-block, [id^="shopify-block"]')) return;
+      wrapper.style.width = '100%';
+      wrapper.style.maxWidth = 'none';
+      wrapper.style.minWidth = '0';
+      wrapper.style.flex = '1 1 100%';
+      wrapper.style.alignSelf = 'stretch';
+      wrapper.style.justifySelf = 'stretch';
     }
     render() {
       var view = bannerView(Date.now(), this.config);

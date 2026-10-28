@@ -142,6 +142,17 @@ shipping-countdown-banner {
   line-height: 1.4;
   text-align: center;
 }
+/* Shopify wraps an app block in its own element, which a theme's flex or grid section can shrink to the text. Stretch that wrapper too. */
+.shopify-block:has(> shipping-countdown-banner),
+.shopify-app-block:has(> shipping-countdown-banner) {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 100%;
+  align-self: stretch;
+  justify-self: stretch;
+  grid-column: 1 / -1;
+}
 shipping-countdown-banner[data-align="left"] { text-align: left; }
 shipping-countdown-banner[data-align="right"] { text-align: right; }
 shipping-countdown-banner[hidden] { display: none; }

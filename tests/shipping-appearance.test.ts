@@ -75,3 +75,9 @@ test("the header banner fills the width of whatever the theme puts it in, whethe
   const rule = css.match(/shipping-countdown-banner \{([^}]*)\}/)![1];
   for (const declaration of ["display: block", "width: 100%", "flex: 1 1 100%", "align-self: stretch", "justify-self: stretch", "grid-column: 1 / -1", "min-width: 0"]) assert.ok(rule.includes(declaration), declaration);
 });
+
+test("the wrapper Shopify puts round the banner is stretched too", () => {
+  const css = readFileSync("extensions/promotion-engine/assets/shipping-countdown.css", "utf8");
+  const rule = css.match(/\.shopify-block:has\(> shipping-countdown-banner\),\s*\.shopify-app-block:has\(> shipping-countdown-banner\) \{([^}]*)\}/)![1];
+  for (const declaration of ["width: 100%", "flex: 1 1 100%", "align-self: stretch", "justify-self: stretch"]) assert.ok(rule.includes(declaration), declaration);
+});

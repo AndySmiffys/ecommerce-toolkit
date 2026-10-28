@@ -666,3 +666,18 @@ test("the product block and the banner can be on one page", async () => {
   assert.match(dom.window.document.querySelector("shipping-countdown [data-role=dispatch]").textContent, /5 hours/);
   dom.window.close();
 });
+
+test("the banner stretches the wrapper Shopify puts round an app block, so a centred flex section cannot shrink it", async () => {
+  const html = await liquid.parseAndRender(bannerTemplate, { app: { metafields: { shipping_countdown: { config: { value: { ...config, banner: bannerSettings() } } } } }, block: { id: "b", settings: {}, shopify_attributes: "" }, request: { design_mode: false } });
+  const dom = new JSDOM(`<body><div class="shopify-section"><div id="shopify-block-AB" class="shopify-block shopify-app-block">${html}</div><div id="other" class="shopify-block">${html}<p>another thing</p></div></div></body>`, { url: "https://shop.example/", runScripts: "outside-only" });
+  dom.window.Date.now = () => Date.parse("2026-10-20T09:00:00Z");
+  dom.window.eval(script);
+  const wrapper = dom.window.document.getElementById("shopify-block-AB");
+  assert.deepEqual(["width", "flex", "alignSelf", "minWidth"].map(name => wrapper.style[name]), ["100%", "1 1 100%", "stretch", "0"]);
+  const section = dom.window.document.querySelector(".shopify-section");
+  assert.equal(section.style.width, "", "only the block's own wrapper is touched");
+  dom.window.close();
+  const bare = await bannerPage();
+  assert.equal(bare.document.querySelector("header").style.width, "", "no wrapper, nothing to change");
+  bare.close();
+});
