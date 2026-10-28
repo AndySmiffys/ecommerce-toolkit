@@ -231,3 +231,12 @@ test("the button that opens the delivery options has a size from 10 to 32 and si
   assert.deepEqual(old.ok && [old.config.delivery.buttonSize, old.config.delivery.buttonAlign], [16, "left"], "settings saved before the button had a size and position get the defaults");
   assert.equal(old.ok && old.config.delivery.heading, "Delivery options", "words that were saved are kept, not replaced by the new default");
 });
+
+test("the delivery options are ordered soonest first unless an order is set, and a bad choice is refused", () => {
+  assert.equal(defaultDeliverySettings.sort, "soonest");
+  const delivery = (changes: Record<string, unknown>) => valid({ delivery: { ...defaultDeliverySettings, ...changes } });
+  for (const sort of ["soonest", "manual"]) assert.equal(validateShippingConfig(delivery({ sort })).ok, true, sort);
+  assert.match(errorsOf(delivery({ sort: "alphabetical" })).join(" "), /Delivery options order is not one of the choices/);
+  const old = validateShippingConfig(valid({ delivery: { enabled: true, heading: "x", guaranteedText: "{date}", estimatedText: "{date}", services: [] } }));
+  assert.equal(old.ok && old.config.delivery.sort, "soonest", "settings saved before an order could be set keep today's behaviour");
+});

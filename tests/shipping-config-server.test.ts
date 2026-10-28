@@ -88,3 +88,28 @@ test("a failure to save is reported, not hidden", async () => {
   assert.equal(result.ok, false);
   assert.deepEqual(!result.ok && result.errors, ["Value is too large"]);
 });
+
+test("the order the options are shown in is saved with the services, and kept when Shipping countdown saves", async () => {
+  const { admin, stored } = fakeShopify();
+  await saveShippingConfig(admin, defaultShippingConfig);
+  const result = await saveDeliveryServices(admin, [dpd, { ...defaultServiceSetting("Amazon 2 Day") }], "manual");
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.sort, "manual");
+  assert.deepEqual(JSON.parse(stored.get("config")!).delivery.services.map((service: { name: string }) => service.name), ["DPD Next Day", "Amazon 2 Day"], "the order is the order of the list");
+  assert.equal(JSON.parse(stored.get("config")!).delivery.sort, "manual");
+  // Shipping countdown was opened before the order was set, so it still thinks the order is soonest first.
+  const stale = withServices([], { cutoffTime: "14:15", delivery: { ...defaultDeliverySettings, sort: "soonest" } });
+  await saveShippingConfig(admin, stale, { keepServices: true });
+  const saved = JSON.parse(stored.get("config")!);
+  assert.equal(saved.delivery.sort, "manual", "the order set on the Shipping page is not undone");
+  assert.deepEqual(saved.delivery.services.map((service: { name: string }) => service.name), ["DPD Next Day", "Amazon 2 Day"]);
+  assert.equal(saved.cutoffTime, "14:15");
+  // Saving the services without saying which order leaves the order as it is.
+  await saveDeliveryServices(admin, [dpd]);
+  assert.equal(JSON.parse(stored.get("config")!).delivery.sort, "manual");
+  const back = await saveDeliveryServices(admin, [dpd], "soonest");
+  assert.equal(back.ok && back.sort, "soonest");
+  const bad = await saveDeliveryServices(admin, [dpd], "random");
+  assert.equal(bad.ok, false);
+  assert.match(!bad.ok ? bad.errors.join(" ") : "", /Delivery options order is not one of the choices/);
+});

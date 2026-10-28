@@ -368,10 +368,42 @@ test("the box stays open while the list inside it is refreshed", async () => {
   p.close();
 });
 
+test("every delivery date is written in the dispatch day's colour, and the words round it are not", async () => {
+  const p = await page({ cfg: withDelivery({ services: [{ name: "DPD Next Working Day Delivery", label: "DPD Next Day", guaranteed: true }] }) });
+  const rows = [...p.document.querySelectorAll(".sc__option-date")];
+  assert.equal(rows[0].innerHTML, 'Delivery by <span class="sc__dispatch">Wed 21st Oct</span>', "guaranteed: the date only");
+  assert.equal(rows[1].innerHTML, 'Delivery by <span class="sc__dispatch">Thu 22nd Oct</span> (Non-Guaranteed)', "(Non-Guaranteed) is not coloured, so it never looks like good news");
+  assert.deepEqual(rows.map(row => [...row.querySelectorAll(".sc__dispatch")].map(item => item.textContent)), [["Wed 21st Oct"], ["Thu 22nd Oct"]]);
+  p.close();
+  const both = await page({ cfg: withDelivery({ estimatedText: "Arrives {from} to {date}, or {from} again", services: [] }) });
+  assert.deepEqual([...both.document.querySelector(".sc__option-date").querySelectorAll(".sc__dispatch")].map(item => item.textContent), ["Wed 21st Oct", "Wed 21st Oct", "Wed 21st Oct"], "{from} and {date} alike, every time they are used");
+  both.close();
+  const none = await page({ cfg: withDelivery({ estimatedText: "Arrives soon, {service}", services: [] }) });
+  assert.equal(none.document.querySelector(".sc__option-date").querySelectorAll(".sc__dispatch").length, 0, "no date, nothing coloured");
+  assert.equal(none.document.querySelector(".sc__option-date").textContent, "Arrives soon, DPD Next Working Day Delivery");
+  none.close();
+  const typed = await page({ cfg: withDelivery({ estimatedText: "Typed [date]Wed[/date] by {date}", services: [] }) });
+  assert.equal(typed.document.querySelector(".sc__option-date").textContent, "Typed [date]Wed[/date] by Wed 21st Oct", "a [date] typed in a message is only text: the marks are not something that can be typed");
+  assert.equal(typed.document.querySelector(".sc__option-date").querySelectorAll(".sc__dispatch").length, 1);
+  typed.close();
+});
+
+test("in a set order the dropdown lists the services as the app lists them", async () => {
+  const listed = name => ({ name, label: "", show: true, guaranteed: false, cutoffTime: "", days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null });
+  const names = async sort => {
+    const p = await page({ cfg: withDelivery({ sort, services: [listed("Amazon 2 Day (Order Before 2pm) Non Guaranteed"), listed("DPD Next Working Day Delivery")] }) });
+    const found = [...p.document.querySelectorAll(".sc__option-name")].map(item => item.textContent);
+    p.close();
+    return found;
+  };
+  assert.deepEqual(await names("soonest"), ["DPD Next Working Day Delivery", "Amazon 2 Day (Order Before 2pm) Non Guaranteed"], "soonest first");
+  assert.deepEqual(await names("manual"), ["Amazon 2 Day (Order Before 2pm) Non Guaranteed", "DPD Next Working Day Delivery"], "the order set");
+});
+
 test("the delivery messages can be formatted and use the service's name, and dates always carry the month", async () => {
   const p = await page({ cfg: withDelivery({ guaranteedText: "[bold]{service}[/bold]: arrives [highlight]{date}[/highlight]", estimatedText: "Arrives {from} to {date}" }) });
   const rows = [...p.document.querySelectorAll(".sc__option-date")];
-  assert.equal(rows[0].innerHTML, '<strong>DPD Next Day</strong>: arrives <span class="sc__countdown">Wed 21st Oct</span>');
+  assert.equal(rows[0].innerHTML, '<strong>DPD Next Day</strong>: arrives <span class="sc__dispatch"><span class="sc__countdown">Wed 21st Oct</span></span>');
   assert.equal(rows[1].textContent, "Arrives Thu 22nd Oct to Thu 22nd Oct");
   p.close();
 });

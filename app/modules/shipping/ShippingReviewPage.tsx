@@ -12,7 +12,7 @@ export type ShippingReviewData =
     ok: true; snapshot: ShippingSnapshot; findings: Finding[]; checkedAt: string;
     /** The delivery services in the general profile, and what the app has saved for them. Absent when the settings cannot be read. */
     services?: PublishedServices;
-    delivery?: { settings: DeliveryServiceSetting[]; enabled: boolean; cutoffTime: string } | null;
+    delivery?: { settings: DeliveryServiceSetting[]; sort: "soonest" | "manual"; enabled: boolean; cutoffTime: string } | null;
   }
   | { ok: false; access: boolean; error: string };
 
@@ -110,7 +110,7 @@ export function ShippingReviewPage({ data, checking, onCheck, fetcher }: { data:
       </s-section>
 
       {data.services && data.delivery && fetcher && <s-section heading="Delivery services">
-        <DeliveryServicesEditor services={data.services} settings={data.delivery.settings} shopCutoff={data.delivery.cutoffTime} enabled={data.delivery.enabled} fetcher={fetcher} />
+        <DeliveryServicesEditor services={data.services} settings={data.delivery.settings} sort={data.delivery.sort} shopCutoff={data.delivery.cutoffTime} enabled={data.delivery.enabled} fetcher={fetcher} />
       </s-section>}
 
       {actionable.length > 0 && <s-section heading="What to fix">

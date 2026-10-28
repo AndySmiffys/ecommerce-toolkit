@@ -49,7 +49,7 @@ const toForm = (c: ShippingCountdownConfig): Form => ({
 });
 
 /** The settings the form describes, plus anything in it that cannot even be read as a setting (the rest is checked by the shared validator). */
-function toInput(f: Form, services: DeliveryServiceSetting[]) {
+function toInput(f: Form, services: DeliveryServiceSetting[], sort: "soonest" | "manual") {
   const problems: string[] = [];
   const holidays = parseBankHolidays(f.holidays);
   if (holidays.invalid.length) problems.push(`Bank holidays must be dates written YYYY-MM-DD. Not valid: ${holidays.invalid.slice(0, 3).join(", ")}.`);
@@ -63,7 +63,7 @@ function toInput(f: Form, services: DeliveryServiceSetting[]) {
       availability: { outOfStock: { mode: f.outMode, message: f.outMessage }, backorder: { mode: f.backMode, message: f.backMessage } },
       warning: { enabled: f.warnEnabled, startDate: f.warnStart, endDate: f.warnEnd, message: f.warnMessage, textColor: f.warnText, backgroundColor: f.warnBackground, borderColor: f.warnBorder },
       style: f.look,
-      delivery: { enabled: f.delivery.enabled, heading: f.delivery.heading, buttonSize: f.delivery.buttonSize, buttonAlign: f.delivery.buttonAlign, guaranteedText: f.delivery.guaranteedText, estimatedText: f.delivery.estimatedText, services },
+      delivery: { enabled: f.delivery.enabled, heading: f.delivery.heading, buttonSize: f.delivery.buttonSize, buttonAlign: f.delivery.buttonAlign, guaranteedText: f.delivery.guaranteedText, estimatedText: f.delivery.estimatedText, sort, services },
     },
   };
 }
@@ -97,6 +97,7 @@ function Rich({ text }: { text: string }) {
     let node: ReactNode = run.text;
     if (run.bold) node = <strong>{node}</strong>;
     if (run.highlight) node = <span className="sc__countdown">{node}</span>;
+    if (run.date) node = <span className="sc__dispatch">{node}</span>;
     return <Fragment key={index}>{node}</Fragment>;
   })}</>;
 }
@@ -131,7 +132,7 @@ function ShippingPreview({ config, view, freeText, warningShowing, options }: { 
             {options.map(option => <li key={option.name} className="sc__option">
               <span className="sc__option-name">{option.label}</span>
               <span className="sc__option-price">{option.price}</span>
-              <span className="sc__option-date"><Rich text={option.text} /></span>
+              <span className="sc__option-date"><Rich text={option.marked} /></span>
             </li>)}
           </ul>
         </details>}
@@ -228,6 +229,7 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
   const published = services ?? null;
   // The services are set up on the Shipping page. They are kept here only so the preview can show them, and the server keeps what is saved there.
   const [savedServices, setSavedServices] = useState(initial.delivery.services);
+  const [savedSort, setSavedSort] = useState(initial.delivery.sort);
   const [baseline, setBaseline] = useState(() => toForm(initial));
   const [form, setForm] = useState(baseline);
   const [error, setError] = useState<string | null>(null);
@@ -247,7 +249,7 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
   const set = (changes: Partial<Form>) => setForm(current => ({ ...current, ...changes }));
   const setLook = (changes: Partial<Form["look"]>) => setForm(current => ({ ...current, look: { ...current.look, ...changes } }));
 
-  const { problems, input } = useMemo(() => toInput(form, savedServices), [form, savedServices]);
+  const { problems, input } = useMemo(() => toInput(form, savedServices, savedSort), [form, savedServices, savedSort]);
   const check = useMemo(() => validateShippingConfig(input), [input]);
   const errors = [...problems, ...(check.ok ? [] : check.errors)];
   const dirty = firstSave || JSON.stringify(form) !== JSON.stringify(baseline);
@@ -263,6 +265,7 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
     if (intent === "save" && fetcher.data.config) {
       const next = toForm(fetcher.data.config);
       setSavedServices(fetcher.data.config.delivery.services);
+      setSavedSort(fetcher.data.config.delivery.sort);
       setBaseline(next); setForm(next); setFirstSave(false);
       shopify.toast.show("Shipping countdown saved");
     }

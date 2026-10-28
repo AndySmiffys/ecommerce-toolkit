@@ -44,17 +44,17 @@ const snapshot = { shopCurrency: 'GBP', shipsTo: ['GB'], markets: null, profiles
 const setting = (name, changes = {}) => ({ name, label: '', show: true, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null, ...changes });
 
 /** The Shipping page, with a host that can change what it is given (as a fresh read of Shopify does). */
-async function mountPage({ servicesTable = services, settings = [], enabled = true, respond } = {}) {
+async function mountPage({ servicesTable = services, settings = [], enabled = true, respond, sort = 'soonest' } = {}) {
   const Page = await load();
   const container = document.createElement('div'); document.body.appendChild(container);
   const posts = [];
   let update;
   function Host() {
-    const [data, setData] = React.useState({ servicesTable, settings, enabled });
+    const [data, setData] = React.useState({ servicesTable, settings, enabled, sort });
     update = setData;
     const fetcher = useFetcher();
     return React.createElement(Page, {
-      data: { ok: true, snapshot, findings: [], checkedAt: '2026-10-27T10:30:00Z', services: data.servicesTable, delivery: { settings: data.settings, enabled: data.enabled, cutoffTime: '15:00' } },
+      data: { ok: true, snapshot, findings: [], checkedAt: '2026-10-27T10:30:00Z', services: data.servicesTable, delivery: { settings: data.settings, sort: data.sort, enabled: data.enabled, cutoffTime: '15:00' } },
       checking: false, onCheck: () => undefined, fetcher,
     });
   }
@@ -63,7 +63,7 @@ async function mountPage({ servicesTable = services, settings = [], enabled = tr
     action: async ({ request }) => {
       const data = Object.fromEntries((await request.formData()).entries());
       posts.push(data);
-      return respond ? respond(data) : { ok: true, intent: data.intent, errors: [], services: JSON.parse(data.services) };
+      return respond ? respond(data) : { ok: true, intent: data.intent, errors: [], services: JSON.parse(data.services), sort: data.sort };
     },
   }], { initialEntries: ['/app/shipping'] });
   const root = createRoot(container);
@@ -243,4 +243,116 @@ test('before the services have been read, and when there are none, the section s
     assert.ok(find(none.container, 's-banner[heading="No delivery services found"]'));
     assert.equal(findAll(none.container, 'details[data-service]').length, 0);
   } finally { await none.unmount(); }
+});
+
+const order = container => findAll(container, 'details[data-service]').map(item => item.getAttribute('data-service'));
+const orderSelect = container => control(container, 's-select', 'Order in the dropdown');
+const mover = (container, name, direction) => findAll(container, 's-button').find(button => button.getAttribute('accessibilityLabel') === `Move ${name} ${direction}`);
+
+test('the options are ordered soonest first unless an order is chosen, and the choice shows Move buttons', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    const select = orderSelect(container);
+    assert.deepEqual(findAll(select, 's-option').map(option => option.textContent), ['Soonest delivery first, then cheapest', 'The order set below']);
+    assert.equal(select.value, 'soonest');
+    assert.equal(findAll(container, 's-button').filter(button => /^Move (up|down)$/.test(button.textContent)).length, 0, 'no buttons while the order is the default');
+    await change(select, 'manual');
+    assert.equal(saveButton(container).disabled, false, 'choosing the order is a change');
+    assert.match(container.textContent, /Use Move up and Move down/);
+    assert.deepEqual(findAll(container, '[data-position]').map(item => item.getAttribute('data-position')), ['1', '2', '3']);
+    assert.equal(mover(container, DPD, 'up').hasAttribute('disabled'), true, 'the first cannot go up');
+    assert.equal(mover(container, 'Collection', 'down').hasAttribute('disabled'), true, 'the last cannot go down');
+    assert.equal(mover(container, AMAZON, 'up').hasAttribute('disabled'), false);
+    assert.equal(mover(container, AMAZON, 'down').hasAttribute('disabled'), false);
+    await change(select, 'soonest');
+    assert.equal(saveButton(container).disabled, true, 'back to what was saved');
+  } finally { await page.unmount(); }
+});
+
+test('services are moved up and down, and a set order is saved with every service in it', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    await change(orderSelect(container), 'manual');
+    assert.deepEqual(order(container), [DPD, AMAZON, 'Collection']);
+    await click(mover(container, 'Collection', 'up'));
+    assert.deepEqual(order(container), [DPD, 'Collection', AMAZON]);
+    await click(mover(container, 'Collection', 'up'));
+    assert.deepEqual(order(container), ['Collection', DPD, AMAZON]);
+    assert.equal(mover(container, 'Collection', 'up').hasAttribute('disabled'), true, 'now first');
+    await click(mover(container, DPD, 'down'));
+    assert.deepEqual(order(container), ['Collection', AMAZON, DPD]);
+    assert.deepEqual(findAll(container, '[data-position]').map(item => item.getAttribute('data-position')), ['1', '2', '3'], 'the numbers follow the cards');
+    await click(saveButton(container));
+    await wait(60);
+    assert.equal(page.posts[0].sort, 'manual');
+    assert.deepEqual(JSON.parse(page.posts[0].services).map(item => item.name), ['Collection', AMAZON, DPD], 'every service, in that order, even those left as they were: where a service sits is a setting too');
+    assert.deepEqual(JSON.parse(page.posts[0].services)[0], setting('Collection'));
+    assert.equal(saveButton(container).disabled, true, 'saved');
+    assert.deepEqual(order(container), ['Collection', AMAZON, DPD], 'and the order stays');
+  } finally { await page.unmount(); }
+});
+
+test('a saved order is shown when the page opens, with services it does not list after them', async () => {
+  const page = await mountPage({ sort: 'manual', settings: [setting('Collection'), setting(DPD, { guaranteed: true })] });
+  try {
+    const { container } = page;
+    assert.equal(orderSelect(container).value, 'manual');
+    assert.deepEqual(order(container), ['Collection', DPD, AMAZON], 'the order saved, then the service that was not in it');
+    assert.equal(saveButton(container).disabled, true, 'showing it is not a change');
+    assert.match(summary(card(container, DPD)), /Guaranteed/);
+  } finally { await page.unmount(); }
+});
+
+test('settings for a service Shopify no longer has stay at the end and cannot be moved', async () => {
+  const page = await mountPage({ sort: 'manual', settings: [setting('Old courier', { guaranteed: true, transitMin: 1, transitMax: 1 }), setting(AMAZON)] });
+  try {
+    const { container } = page;
+    assert.deepEqual(order(container), [AMAZON, DPD, 'Collection', 'Old courier'], 'listed first, the rest in Shopify\'s order, and what is not there any more last');
+    assert.equal(findAll(container, '[data-position]').length, 3, 'only the real ones have positions');
+    assert.equal(mover(container, 'Old courier', 'up'), undefined);
+    assert.equal(mover(container, 'Collection', 'down').hasAttribute('disabled'), true, 'the last real one cannot move into the old one\'s place');
+    await click(mover(container, 'Collection', 'up'));
+    assert.deepEqual(order(container), [AMAZON, 'Collection', DPD, 'Old courier']);
+    await click(saveButton(container));
+    await wait(60);
+    assert.deepEqual(JSON.parse(page.posts[0].services).map(item => item.name), [AMAZON, 'Collection', DPD, 'Old courier'], 'the old one is only kept because it has settings');
+  } finally { await page.unmount(); }
+});
+
+test('going back to soonest first saves only what differs from the defaults, and Discard restores the saved order', async () => {
+  const page = await mountPage({ sort: 'manual', settings: [setting(DPD), setting(AMAZON, { guaranteed: true }), setting('Collection')] });
+  try {
+    const { container } = page;
+    await click(mover(container, 'Collection', 'up'));
+    assert.deepEqual(order(container), [DPD, 'Collection', AMAZON]);
+    await click(byText(container, 'button', 'Discard'));
+    assert.deepEqual(order(container), [DPD, AMAZON, 'Collection'], 'the saved order is back');
+    assert.equal(orderSelect(container).value, 'manual');
+    await change(orderSelect(container), 'soonest');
+    assert.equal(find(container, '[data-position]'), null, 'no buttons again');
+    await click(saveButton(container));
+    await wait(60);
+    assert.equal(page.posts[0].sort, 'soonest');
+    assert.deepEqual(JSON.parse(page.posts[0].services).map(item => item.name), [AMAZON], 'only the service that differs from the defaults');
+    await change(orderSelect(container), 'manual');
+    await click(byText(container, 'button', 'Discard'));
+    assert.equal(orderSelect(container).value, 'soonest', 'Discard puts the choice back too');
+  } finally { await page.unmount(); }
+});
+
+test('a fresh read does not undo an order that has not been saved, and does show one saved elsewhere', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    await change(orderSelect(container), 'manual');
+    await click(mover(container, 'Collection', 'up'));
+    await page.refresh({ settings: [] });
+    assert.deepEqual(order(container), [DPD, 'Collection', AMAZON], 'unsaved work stays');
+    await click(byText(container, 'button', 'Discard'));
+    await page.refresh({ sort: 'manual', settings: [setting(AMAZON), setting('Collection'), setting(DPD)] });
+    assert.deepEqual(order(container), [AMAZON, 'Collection', DPD], 'an order saved elsewhere replaces the list');
+    assert.equal(orderSelect(container).value, 'manual');
+  } finally { await page.unmount(); }
 });

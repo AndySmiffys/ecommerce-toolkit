@@ -10,7 +10,7 @@ export type DispatchView =
 export type StockVariant = { available?: boolean; policy?: string; managed?: boolean; qty?: number | null };
 
 /** One line of the delivery options dropdown, as the engine works it out. */
-export type DeliveryOption = { name: string; label: string; price: string; guaranteed: boolean; text: string; to: string; from: string; dispatchDate: string; lowest: number };
+export type DeliveryOption = { name: string; label: string; price: string; guaranteed: boolean; text: string; /** The same message with its dates marked, for writing them in the dispatch colour. */ marked: string; to: string; from: string; dispatchDate: string; lowest: number };
 /** A service as published from Shopify: its name, price bands and delivery time. */
 export type ServiceInput = { name: string; tiers?: Array<{ from: number; price: number }>; complex?: boolean; transit?: { minDays: number; maxDays: number } };
 
@@ -22,7 +22,7 @@ type Logic = {
   deliveryOptions(nowMs: number, config: ShippingCountdownConfig, services: ServiceInput[], currency: string, variant: StockVariant | null): DeliveryOption[];
   servicePrice(service: ServiceInput, currency: string): string;
   formatDeliveryDate(date: string): string;
-  parseRich(text: string): Array<{ text: string; bold: boolean; highlight: boolean }>;
+  parseRich(text: string): Array<{ text: string; bold: boolean; highlight: boolean; date?: boolean }>;
   fillThreshold(text: string, thresholdMinor: number, currency: string, country?: string, rate?: string): string;
   freeShippingMessage(free: ShippingCountdownConfig["freeShipping"], input: { threshold: number | null; thresholdCurrency: string; country: string; rate: string; cartCurrency: string; cartTotal: number; itemPrice: number; quantity: number }): { state: "hidden" | "under" | "add" | "over"; text: string };
 };

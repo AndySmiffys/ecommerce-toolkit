@@ -60,6 +60,8 @@ export type DeliverySettings = {
   buttonSize: number;
   /** Where the button sits in the block. */
   buttonAlign: "left" | "center" | "right";
+  /** Soonest delivery first (then cheapest), or the order the services are listed in `services`. Services not listed come last, in Shopify's order. */
+  sort: "soonest" | "manual";
   guaranteedText: string;
   estimatedText: string;
   services: DeliveryServiceSetting[];
@@ -102,6 +104,7 @@ export const defaultDeliverySettings: DeliverySettings = {
   heading: "View Delivery Options",
   buttonSize: 16,
   buttonAlign: "left",
+  sort: "soonest",
   guaranteedText: "Delivery by {date}",
   estimatedText: "Delivery by {date} (Non-Guaranteed)",
   services: [],
@@ -356,6 +359,7 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
     heading: text(dl.heading, "Delivery options button text", dd.heading, limits.text, deliveryEnabled),
     buttonSize: whole(dl.buttonSize, "Delivery options button text size", 10, 32, dd.buttonSize),
     buttonAlign: choice(dl.buttonAlign, ["left", "center", "right"], dd.buttonAlign, "Delivery options button position"),
+    sort: choice(dl.sort, ["soonest", "manual"], dd.sort, "Delivery options order"),
     guaranteedText: deliveryText(dl.guaranteedText, "Guaranteed delivery message", dd.guaranteedText),
     estimatedText: deliveryText(dl.estimatedText, "Estimated delivery message", dd.estimatedText),
     services,

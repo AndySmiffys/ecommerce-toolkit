@@ -20,7 +20,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return {
       ok: true as const, snapshot, findings: reviewShipping(snapshot), checkedAt: new Date().toISOString(),
       services: deliveryServicesTable(snapshot),
-      delivery: settings ? { settings: settings.delivery.services, enabled: settings.delivery.enabled, cutoffTime: settings.cutoffTime } : null,
+      delivery: settings ? { settings: settings.delivery.services, sort: settings.delivery.sort, enabled: settings.delivery.enabled, cutoffTime: settings.cutoffTime } : null,
     };
   } catch (error) {
     const access = error instanceof ShippingAccessError;
@@ -37,8 +37,9 @@ export async function action({ request }: ActionFunctionArgs): Promise<ServicesR
   let services: unknown;
   try { services = JSON.parse(String(form.get("services") ?? "")); } catch { return { ok: false, intent, errors: ["The settings could not be read. Reload the page and try again."] }; }
   try {
-    const result = await saveDeliveryServices(admin, services);
-    return result.ok ? { ok: true, intent, errors: [], services: result.services } : { ok: false, intent, errors: result.errors };
+    const sort = form.get("sort");
+    const result = await saveDeliveryServices(admin, services, sort === null ? undefined : String(sort));
+    return result.ok ? { ok: true, intent, errors: [], services: result.services, sort: result.sort } : { ok: false, intent, errors: result.errors };
   } catch (error) {
     return { ok: false, intent, errors: [error instanceof Error ? error.message : "That could not be saved."] };
   }

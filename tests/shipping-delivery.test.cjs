@@ -252,3 +252,32 @@ test("a service is matched to its settings whatever the spacing and capitals of 
   assert.equal(list([{ name: "dpd next working day ", guaranteed: true, label: "DPD Next Day" }])[0].label, "DPD Next Day");
   assert.match(list([{ name: "Something else", guaranteed: true }])[0].text, /\(Non-Guaranteed\)$/, "a different name is a different service");
 });
+
+test("each delivery option has its message with the dates marked, for writing them in the dispatch colour", () => {
+  const list = logic.deliveryOptions(at("2026-10-26T09:00:00Z"), config({ delivery: delivery({ estimatedText: "By {date} (from {from}) {service}", services: [{ name: "Amazon 2 Day", guaranteed: false }] }) }), [{ name: "Amazon 2 Day", tiers: [{ from: 0, price: 399 }], transit: { minDays: 1, maxDays: 2 } }], "GBP", null);
+  assert.equal(list[0].text, "By Wed 28th Oct (from Tue 27th Oct) Amazon 2 Day", "the plain message is as before");
+  assert.equal(list[0].marked, "By \uE000Wed 28th Oct\uE001 (from \uE000Tue 27th Oct\uE001) Amazon 2 Day", "the dates, and only the dates, are marked");
+  assert.equal(logic.fillDelivery("By {date}", { date: "Wed 28th Oct" }), "By Wed 28th Oct", "unmarked unless asked");
+  assert.equal(logic.fillDelivery("By {date}", { date: "Wed 28th Oct" }, true), "By \uE000Wed 28th Oct\uE001");
+  assert.equal(logic.fillDelivery("By {date}", {}, true), "By ", "no date, no marks");
+});
+
+test("in a set order the options are listed as the app lists them, not soonest first, and new ones come last", () => {
+  const all = [
+    { name: "Cheap 2 Day", tiers: [{ from: 0, price: 199 }], transit: { minDays: 2, maxDays: 2 } },
+    { name: "DPD Next Day", tiers: [{ from: 0, price: 699 }], transit: { minDays: 1, maxDays: 1 } },
+    { name: "Amazon 2 Day", tiers: [{ from: 0, price: 399 }], transit: { minDays: 2, maxDays: 2 } },
+    { name: "Evening", tiers: [{ from: 0, price: 899 }], transit: { minDays: 1, maxDays: 1 } },
+  ];
+  const names = (deliveryExtra, list = all) => logic.deliveryOptions(at("2026-10-26T09:00:00Z"), config({ delivery: delivery(deliveryExtra) }), list, "GBP", null).map(item => item.name);
+  const listed = name => ({ name });
+  assert.deepEqual(names({}), ["DPD Next Day", "Evening", "Cheap 2 Day", "Amazon 2 Day"], "soonest first, then cheapest, as before");
+  assert.deepEqual(names({ sort: "soonest", services: [listed("Amazon 2 Day"), listed("Cheap 2 Day")] }), ["DPD Next Day", "Evening", "Cheap 2 Day", "Amazon 2 Day"], "an order that is not switched on changes nothing");
+  assert.deepEqual(names({ sort: "manual", services: [listed("Amazon 2 Day"), listed("DPD Next Day"), listed("Cheap 2 Day"), listed("Evening")] }), ["Amazon 2 Day", "DPD Next Day", "Cheap 2 Day", "Evening"], "the order set, even though the 2 day service arrives later");
+  assert.deepEqual(names({ sort: "manual", services: [listed("Evening"), listed("Amazon 2 Day")] }), ["Evening", "Amazon 2 Day", "Cheap 2 Day", "DPD Next Day"], "services not listed follow, in the order Shopify gives them");
+  assert.deepEqual(names({ sort: "manual", services: [] }), ["Cheap 2 Day", "DPD Next Day", "Amazon 2 Day", "Evening"], "nothing listed: Shopify's order");
+  assert.deepEqual(names({ sort: "manual", services: [listed("  AMAZON  2 day "), listed("dpd next day")] }), ["Amazon 2 Day", "DPD Next Day", "Cheap 2 Day", "Evening"], "names are matched ignoring spaces and capitals");
+  assert.deepEqual(names({ sort: "manual", services: [{ name: "Amazon 2 Day", show: false }, listed("DPD Next Day")] }), ["DPD Next Day", "Cheap 2 Day", "Evening"], "a hidden service is not listed, wherever it sits");
+  assert.deepEqual(names({ sort: "manual", services: [listed("Old courier"), listed("Evening")] }), ["Evening", "Cheap 2 Day", "DPD Next Day", "Amazon 2 Day"], "a name that is not there any more is ignored");
+  assert.deepEqual(names({ sort: "manual", services: [listed("Evening")] }, [{ name: "No time", tiers: [{ from: 0, price: 100 }] }, ...all]), ["Evening", "Cheap 2 Day", "DPD Next Day", "Amazon 2 Day"], "one with no delivery time is still left out");
+});

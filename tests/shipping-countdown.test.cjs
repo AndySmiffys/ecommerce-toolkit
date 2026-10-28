@@ -124,6 +124,17 @@ test("dispatch dates are written the en-GB way", () => {
   assert.equal(logic.formatDispatchDate("2027-01-04"), "Monday 4 Jan");
 });
 
+test("dates marked in a delivery message are read as dates, and the marks are never part of the words", () => {
+  const runs = text => logic.parseRich(text);
+  assert.deepEqual(runs("By \uE000Wed 28th Oct\uE001 (Non-Guaranteed)"), [{ text: "By ", bold: false, highlight: false }, { text: "Wed 28th Oct", bold: false, highlight: false, date: true }, { text: " (Non-Guaranteed)", bold: false, highlight: false }]);
+  assert.deepEqual(runs("[bold]\uE000Wed\uE001[/bold]"), [{ text: "Wed", bold: true, highlight: false, date: true }], "the formats combine");
+  assert.deepEqual(runs("\uE000a\uE001\uE000b\uE001").map(run => run.text), ["ab"], "dates that touch are joined");
+  assert.deepEqual(runs("a\uE001b"), [{ text: "ab", bold: false, highlight: false }], "a closing mark with nothing open is ignored");
+  assert.deepEqual(runs("\uE000 left open"), [{ text: " left open", bold: false, highlight: false, date: true }], "and one left open runs to the end");
+  assert.deepEqual(runs("no dates here"), [{ text: "no dates here", bold: false, highlight: false }], "a run that is not a date has no date key at all");
+  assert.deepEqual(runs("[date]Wed[/date]"), [{ text: "[date]Wed[/date]", bold: false, highlight: false }], "a typed [date] is only text");
+});
+
 test("a message's bold and highlighted words are read without producing any markup", () => {
   const runs = text => logic.parseRich(text);
   assert.deepEqual(runs("We are behind. [highlight]Dispatch from[/highlight]"), [{ text: "We are behind. ", bold: false, highlight: false }, { text: "Dispatch from", bold: false, highlight: true }]);

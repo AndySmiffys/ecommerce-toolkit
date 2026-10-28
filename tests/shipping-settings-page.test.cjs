@@ -56,7 +56,7 @@ async function previewAt(container, date, hour, minute) {
   await change(field(container, 's-select', 'Hour'), hour);
   await change(field(container, 's-select', 'Minute'), minute);
 }
-const options = container => findAll(container, 'aside .sc__option').map(row => findAll(row, 'span').map(item => item.textContent));
+const options = container => findAll(container, 'aside .sc__option').map(row => [...row.children].map(item => item.textContent));
 
 let exportsOf;
 async function mountPage({ saved = true, table = delivery, respond, services = null, config: patch = null } = {}) {
@@ -530,3 +530,35 @@ test('the Preview button opens the same preview in a modal on narrow screens', a
 });
 
 void window;
+
+test('the preview lists the options in the order set on the Shipping page, and saving here keeps that order', async () => {
+  const listed = name => ({ name, label: '', show: true, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null });
+  const delivery = sort => ({ enabled: true, heading: 'View Delivery Options', buttonSize: 16, buttonAlign: 'left', sort, guaranteedText: 'Delivery by {date}', estimatedText: 'Delivery by {date} (Non-Guaranteed)', services: [listed('Collection'), listed(AMAZON), listed(DPD)] });
+  const soonest = await mountPage({ services, config: { delivery: delivery('soonest') } });
+  try {
+    await previewAt(soonest.container, '2026-10-20', '10', '00');
+    assert.deepEqual(options(soonest.container).map(row => row[0]), [DPD, AMAZON], 'soonest first');
+  } finally { await soonest.unmount(); }
+  const manual = await mountPage({ services, config: { delivery: delivery('manual') } });
+  try {
+    const { container } = manual;
+    await previewAt(container, '2026-10-20', '10', '00');
+    assert.deepEqual(options(container).map(row => row[0]), [AMAZON, DPD], 'the order set, though DPD arrives sooner (Collection has no delivery time, so no line)');
+    await writeIn(boxOf(find(container, 'details[data-step=delivery]'), 'Button text'), 'Ways to get it');
+    await click(save(container));
+    await wait(60);
+    assert.equal(JSON.parse(manual.posts[0].config).delivery.sort, 'manual', 'the page passes on the order it was given; the server keeps what is saved on the Shipping page');
+  } finally { await manual.unmount(); }
+});
+
+test('the dates in the preview are in the dispatch colour, like the dispatch date, and the words round them are not', async () => {
+  const page = await mountPage({ services });
+  try {
+    const { container } = page;
+    await check(find(container, 'details[data-step=delivery] s-checkbox'), true);
+    await previewAt(container, '2026-10-20', '10', '00');
+    const rows = findAll(container, 'aside .sc__option-date');
+    assert.equal(rows[0].innerHTML, 'Delivery by <span class="sc__dispatch">Wed 21st Oct</span> (Non-Guaranteed)');
+    assert.equal(find(container, 'aside .sc__main .sc__dispatch').textContent.length > 0, true, 'the dispatch date is the same class');
+  } finally { await page.unmount(); }
+});

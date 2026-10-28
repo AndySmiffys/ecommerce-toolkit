@@ -129,6 +129,8 @@
   }
 
   var OPEN_BOLD = '[bold]', CLOSE_BOLD = '[/bold]', OPEN_HIGHLIGHT = '[highlight]', CLOSE_HIGHLIGHT = '[/highlight]';
+  // Marks put round the dates in a delivery message so they can take the dispatch colour. Private-use characters, so nothing typed can be one.
+  var OPEN_DATE = '\uE000', CLOSE_DATE = '\uE001';
 
   /**
    * Reads the formatting in a message: "Order [bold]now[/bold] for [highlight]free[/highlight] delivery" (the two can be nested).
@@ -137,12 +139,16 @@
    */
   function parseRich(text) {
     var source = String(text || '');
-    var runs = [], bold = 0, highlight = 0, buffer = '', i = 0;
+    var runs = [], bold = 0, highlight = 0, date = 0, buffer = '', i = 0;
     function flush() {
       if (!buffer) return;
       var last = runs[runs.length - 1];
-      if (last && last.bold === (bold > 0) && last.highlight === (highlight > 0)) last.text += buffer;
-      else runs.push({ text: buffer, bold: bold > 0, highlight: highlight > 0 });
+      if (last && last.bold === (bold > 0) && last.highlight === (highlight > 0) && Boolean(last.date) === (date > 0)) last.text += buffer;
+      else {
+        var run = { text: buffer, bold: bold > 0, highlight: highlight > 0 };
+        if (date > 0) run.date = true;
+        runs.push(run);
+      }
       buffer = '';
     }
     while (i < source.length) {
@@ -150,6 +156,8 @@
       else if (source.substr(i, CLOSE_BOLD.length) === CLOSE_BOLD) { flush(); if (bold > 0) bold--; i += CLOSE_BOLD.length; }
       else if (source.substr(i, OPEN_HIGHLIGHT.length) === OPEN_HIGHLIGHT) { flush(); highlight++; i += OPEN_HIGHLIGHT.length; }
       else if (source.substr(i, CLOSE_HIGHLIGHT.length) === CLOSE_HIGHLIGHT) { flush(); if (highlight > 0) highlight--; i += CLOSE_HIGHLIGHT.length; }
+      else if (source.charAt(i) === OPEN_DATE) { flush(); date++; i++; }
+      else if (source.charAt(i) === CLOSE_DATE) { flush(); if (date > 0) date--; i++; }
       else { buffer += source.charAt(i); i++; }
     }
     flush();
@@ -246,9 +254,13 @@
     return { dispatchDate: dispatch.date, from: from, to: to, cutoffAt: dispatch.cutoffAt || null, msUntilCutoff: dispatch.msUntilCutoff === undefined ? null : dispatch.msUntilCutoff };
   }
 
-  /** Fills {date} (the latest date), {from} (the earliest) and {service} in a delivery message. */
-  function fillDelivery(text, values) {
-    return String(text || '').split('{date}').join(values.date || '').split('{from}').join(values.from || '').split('{service}').join(values.service || '');
+  /**
+   * Fills {date} (the latest date), {from} (the earliest) and {service} in a delivery message. With `mark`, each date is put between marks, so it
+   * is written in the dispatch day's colour like the dispatch date is; the words round it are not, so "(Non-Guaranteed)" never looks like good news.
+   */
+  function fillDelivery(text, values, mark) {
+    var date = function (value) { return mark && value ? OPEN_DATE + value + CLOSE_DATE : value || ''; };
+    return String(text || '').split('{date}').join(date(values.date)).split('{from}').join(date(values.from)).split('{service}').join(values.service || '');
   }
 
   /**
@@ -292,8 +304,14 @@
       var template = setting.guaranteed ? delivery.guaranteedText : delivery.estimatedText;
       var values = { date: formatDeliveryDate(estimate.to), from: formatDeliveryDate(estimate.from), service: label };
       var lowest = Math.min.apply(null, (service.tiers || [{ price: 0 }]).map(function (tier) { return tier.price; }));
-      options.push({ name: service.name, label: label, price: servicePrice(service, currency), guaranteed: Boolean(setting.guaranteed), text: fillDelivery(template, values), to: estimate.to, from: estimate.from, dispatchDate: estimate.dispatchDate, lowest: lowest });
+      options.push({ seq: options.length, name: service.name, label: label, price: servicePrice(service, currency), guaranteed: Boolean(setting.guaranteed), text: fillDelivery(template, values), marked: fillDelivery(template, values, true), to: estimate.to, from: estimate.from, dispatchDate: estimate.dispatchDate, lowest: lowest });
     });
+    if (delivery.sort === 'manual') {
+      // The order set in the app: services in the order listed there, and any not listed after them in the order Shopify gives them.
+      var listed = (delivery.services || []).map(function (item) { return nameKey(item.name); });
+      var rank = function (option) { var at = listed.indexOf(nameKey(option.name)); return at < 0 ? listed.length : at; };
+      return options.sort(function (a, b) { return rank(a) - rank(b) || a.seq - b.seq; });
+    }
     return options.sort(function (a, b) { return a.to < b.to ? -1 : a.to > b.to ? 1 : a.lowest - b.lowest || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0); });
   }
 
@@ -365,6 +383,7 @@
       var piece = document.createTextNode(run.text);
       if (run.bold) { var strong = document.createElement('strong'); strong.appendChild(piece); piece = strong; }
       if (run.highlight) { var mark = el('span', 'sc__countdown'); mark.appendChild(piece); piece = mark; }
+      if (run.date) { var when = el('span', 'sc__dispatch'); when.appendChild(piece); piece = when; }
       node.appendChild(piece);
     });
   }
@@ -526,7 +545,7 @@
       options.forEach(function (option) {
         var item = el('li', 'sc__option');
         var when = el('span', 'sc__option-date');
-        appendRich(when, option.text);
+        appendRich(when, option.marked);
         item.append(el('span', 'sc__option-name', option.label), el('span', 'sc__option-price', option.price), when);
         this.deliveryList.appendChild(item);
       }, this);
