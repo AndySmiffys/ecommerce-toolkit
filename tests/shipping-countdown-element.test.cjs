@@ -697,3 +697,13 @@ test("before the script runs the banner holds the room its longest message needs
   assert.equal(p.document.querySelector(".scb__line").textContent, "<i>Order</i> within 5 hours for Tuesday 20 Oct");
   p.close();
 });
+
+test("the theme blocks keep braces out of {{ }} outputs, which Shopify's own Liquid parser refuses (the local one is more forgiving)", () => {
+  for (const file of ["shipping-countdown.liquid", "shipping-countdown-banner.liquid"]) {
+    const source = readFileSync(`extensions/promotion-engine/blocks/${file}`, "utf8").split("{% schema %}")[0];
+    for (const output of source.match(/\{\{-?[\s\S]*?-?\}\}/g) ?? []) {
+      const inner = output.replace(/^\{\{-?/, "").replace(/-?\}\}$/, "");
+      assert.doesNotMatch(inner, /[{}]/, `${file}: ${output.slice(0, 80)}`);
+    }
+  }
+});
