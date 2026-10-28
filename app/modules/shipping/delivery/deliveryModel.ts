@@ -34,6 +34,11 @@ export type DeliveryZone = {
   name: string;
   /** Two-letter country codes named in the zone. */
   countries: string[];
+  /**
+   * Regions (counties, nations) of a country the zone covers, by country, when it covers only some. A country missing here, or with an empty
+   * list, is covered whole. A country can be split across zones: "Domestic" (England, Scotland, Wales) and "Northern Ireland".
+   */
+  regions?: Record<string, string[]>;
   /** The zone also covers every shipping destination not named in another zone of the profile. */
   restOfWorld: boolean;
   rates: DeliveryRate[];

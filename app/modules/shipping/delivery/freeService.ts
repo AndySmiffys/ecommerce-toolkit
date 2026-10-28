@@ -74,7 +74,23 @@ export function defaultProfile(snapshot: ShippingSnapshot): DeliveryProfile | nu
  * is not given to the rest-of-world zone, matching how Shopify assigns destinations.
  */
 export function zoneForCountry(profile: DeliveryProfile, country: string): DeliveryZone | null {
-  return profile.zones.find(zone => zone.countries.includes(country)) ?? profile.zones.find(zone => zone.restOfWorld) ?? null;
+  return primaryZone(namingZones(profile, country), country) ?? profile.zones.find(zone => zone.restOfWorld) ?? null;
+}
+
+/** Every zone that names a country. More than one means the country is split by region. */
+export const namingZones = (profile: DeliveryProfile, country: string) => profile.zones.filter(zone => zone.countries.includes(country));
+
+/** How many regions of a country a zone covers: the number it lists, or Infinity when it covers the whole country. */
+export const regionsCovered = (zone: DeliveryZone, country: string) => (zone.regions?.[country]?.length ? zone.regions[country].length : Infinity);
+
+/**
+ * The zone to use for a country when only the country is known, as on a product page: the one covering the most regions, then the first
+ * listed. Checkout knows the shopper's address and uses the right zone, so this only decides what a product page shows.
+ */
+export function primaryZone(zones: DeliveryZone[], country: string): DeliveryZone | null {
+  let best: DeliveryZone | null = null;
+  for (const zone of zones) if (!best || regionsCovered(zone, country) > regionsCovered(best, country)) best = zone;
+  return best;
 }
 
 /** What one destination gets. `free: false` is written out because the theme's Liquid cannot tell a missing key from a null. */
@@ -101,10 +117,10 @@ export function freeDeliveryTable(snapshot: ShippingSnapshot): FreeDeliveryTable
     const effective = zoneFree(zone).effective;
     return effective && effective.kind !== "other" ? { free: true, thresholdMinor: effective.kind === "always" ? 0 : effective.thresholdMinor, rate: effective.rate.name } : { free: false };
   };
-  for (const zone of profile.zones) {
-    const found = entry(zone);
-    if (zone.restOfWorld) table.restOfWorld = found;
-    for (const country of zone.countries) table.countries[country] = found;
+  for (const zone of profile.zones) if (zone.restOfWorld) table.restOfWorld = entry(zone);
+  for (const country of new Set(profile.zones.flatMap(zone => zone.countries))) {
+    const zone = primaryZone(namingZones(profile, country), country);
+    if (zone) table.countries[country] = entry(zone);
   }
   return table;
 }

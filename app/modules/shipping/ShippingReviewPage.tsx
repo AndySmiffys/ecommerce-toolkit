@@ -18,6 +18,8 @@ export type ShippingReviewData =
 
 const names = new Intl.DisplayNames(["en-GB"], { type: "region" });
 const countryName = (code: string) => { try { return names.of(code) || code; } catch { return code; } };
+/** The countries of a zone, each with the regions it covers when it covers only some: "United Kingdom (England, Scotland, Wales)". */
+const zoneWhere = (zone: { countries: string[]; regions?: Record<string, string[]> }) => zone.countries.map(code => (zone.regions?.[code]?.length ? `${countryName(code)} (${zone.regions[code].join(", ")})` : countryName(code))).join(", ");
 const countryList = (codes: string[], limit = 6) => (codes.length <= limit ? codes.map(countryName).join(", ") : `${codes.slice(0, limit).map(countryName).join(", ")} and ${codes.length - limit} more`);
 
 const shopifyLinks = { shipping: "shopify://admin/settings/shipping", markets: "shopify://admin/settings/markets" } as const;
@@ -93,7 +95,7 @@ export function ShippingReviewPage({ data, checking, onCheck, fetcher }: { data:
                       {several && <s-text color="subdued">{profile.name}{profile.isDefault ? "" : ` · ${profile.variantCount} variants`}</s-text>}
                     </s-stack>
                   </s-table-cell>
-                  <s-table-cell>{[countryList(zone.countries), zone.restOfWorld ? "Rest of world" : ""].filter(Boolean).join(zone.countries.length && zone.restOfWorld ? " and " : "") || "No countries"}</s-table-cell>
+                  <s-table-cell>{[zone.countries.length > 6 ? countryList(zone.countries) : zoneWhere(zone), zone.restOfWorld ? "Rest of world" : ""].filter(Boolean).join(zone.countries.length && zone.restOfWorld ? " and " : "") || "No countries"}</s-table-cell>
                   <s-table-cell>{!anyRate ? <s-badge tone="critical">No rates</s-badge> : <s-badge tone={free.effective ? "success" : undefined}>{describeFree(free, money)}</s-badge>}</s-table-cell>
                   <s-table-cell>
                     <s-stack direction="block" gap="small-300">

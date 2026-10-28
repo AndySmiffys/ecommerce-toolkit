@@ -4,7 +4,7 @@ import type { ShopifyAdminClient } from "../../promotions/services/discount.serv
 import { toMinor, type DeliveryProfile, type DeliveryRate, type DeliveryZone, type Market, type RateCondition, type ShippingSnapshot, type Transit } from "./deliveryModel";
 
 type PageInfo = { hasNextPage: boolean; endCursor: string | null };
-type RawCountry = { name: string; code: { countryCode: string | null; restOfWorld: boolean } };
+type RawCountry = { name: string; code: { countryCode: string | null; restOfWorld: boolean }; provinces?: Array<{ name: string; code: string }> };
 type RawCondition = { field: string; operator: string; conditionCriteria: { __typename: string; amount?: string; currencyCode?: string; unit?: string; value?: number } };
 export type RawRate = { id: string; name: string; active: boolean; rateProvider: { __typename: string; price?: { amount: string; currencyCode: string } }; methodConditions: RawCondition[] };
 export type RawZone = { zone: { id: string; name: string; countries: RawCountry[] }; methodDefinitions: { nodes: RawRate[]; pageInfo: PageInfo } };
@@ -33,7 +33,7 @@ query ShippingReviewZone($profile: ID!, $group: ID!, $after: String, $methodsAft
     profileLocationGroups(locationGroupId: $group) {
       locationGroupZones(first: 1, after: $after) {
         nodes {
-          zone { id name countries { name code { countryCode restOfWorld } } }
+          zone { id name countries { name code { countryCode restOfWorld } provinces { name code } } }
           methodDefinitions(first: 100, after: $methodsAfter) {
             nodes {
               id
@@ -165,10 +165,15 @@ export function parseTransit(zones: RawTransitZone[]): Map<string, Transit> {
 }
 
 export function parseZone(raw: RawZone, rates: RawRate[], idPrefix = ""): DeliveryZone {
+  const regions: Record<string, string[]> = {};
+  for (const country of raw.zone.countries) {
+    if (country.code.countryCode && country.provinces?.length) regions[country.code.countryCode] = country.provinces.map(province => province.name);
+  }
   return {
     id: `${idPrefix}${raw.zone.id}`,
     name: raw.zone.name,
     countries: raw.zone.countries.flatMap(country => (country.code.countryCode ? [country.code.countryCode] : [])),
+    ...(Object.keys(regions).length ? { regions } : {}),
     restOfWorld: raw.zone.countries.some(country => country.code.restOfWorld),
     rates: rates.map(parseRate),
   };

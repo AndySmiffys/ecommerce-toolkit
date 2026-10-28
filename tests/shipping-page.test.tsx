@@ -87,3 +87,13 @@ test("several profiles are told apart, with how many products use the custom one
   assert.match(html, /Bulky items · 12 variants/);
   assert.match(html, /UK bulky/);
 });
+
+test("a zone that covers only some regions of a country says which", async () => {
+  const s = snapshot([zone("United Kingdom", ["GB"], [rate("Standard", 499, [atMost(4999)]), rate("Free delivery", 0, [atLeast(5000)])])], [market("UK", ["GB"])]);
+  s.profiles[0].zones[0].regions = { GB: ["England", "Scotland", "Wales"] };
+  s.profiles[0].zones.push({ ...zone("Northern Ireland", ["GB"], [rate("Standard", 899)]), regions: { GB: ["Northern Ireland"] } });
+  const html = await render(dataFor(s));
+  assert.match(html, /United Kingdom \(England, Scotland, Wales\)/);
+  assert.match(html, /United Kingdom \(Northern Ireland\)/);
+  assert.match(html, /United Kingdom is split into zones by region/, "and the review says what that means for the product page");
+});

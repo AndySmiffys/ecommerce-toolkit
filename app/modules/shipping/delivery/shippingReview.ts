@@ -1,5 +1,6 @@
 import { formatMinor, type DeliveryProfile, type DeliveryZone, type Market, type ShippingSnapshot } from "./deliveryModel";
-import { activeRates, defaultProfile, priceRange, zoneForCountry, zoneFree } from "./freeService";
+import { zoneServices } from "./deliveryServices";
+import { activeRates, defaultProfile, namingZones, primaryZone, priceRange, zoneForCountry, zoneFree } from "./freeService";
 
 export type Severity = "problem" | "suggestion" | "info";
 export type Finding = {
@@ -125,6 +126,19 @@ export function reviewShipping(snapshot: ShippingSnapshot): Finding[] {
   }
 
   if (base) {
+    // A country split into zones by region: a product page only knows the country, so it can show only one zone's options.
+    const signature = (zone: DeliveryZone) => {
+      const effective = zoneFree(zone).effective;
+      return JSON.stringify([zoneServices(zone).map(service => [service.name.toLowerCase(), service.tiers, service.transit ?? null]), effective ? [effective.kind, effective.kind === "threshold" ? effective.thresholdMinor : null] : null]);
+    };
+    for (const country of new Set(base.zones.flatMap(zone => zone.countries))) {
+      const zones = namingZones(base, country);
+      if (zones.length < 2 || new Set(zones.map(signature)).size < 2) continue;
+      const chosen = primaryZone(zones, country)!;
+      const regions = (zone: DeliveryZone) => (zone.regions?.[country]?.length ? zone.regions[country].join(", ") : "the rest of the country");
+      add({ id: `split-country:${country}`, severity: "info", fix: "shipping", profile: base.name, title: `${nameOf(country)} is split into zones by region`, detail: `${zones.map(zone => `${zone.name} (${regions(zone)})`).join("; ")}. A product page only knows the country, not the region, so it shows the options for ${chosen.name}, which covers the most. Shoppers in the other regions are shown options that may not apply to them; at checkout they are offered the right ones for their address.`, recommendation: "No change is needed if that is what you want. If the options are the same everywhere, the zones can be one." });
+    }
+
     const thresholds = base.zones.flatMap(zone => { const e = zoneFree(zone).effective; return e?.kind === "threshold" ? [{ zone, thresholdMinor: e.thresholdMinor, currency: e.currency }] : []; });
     if (new Set(thresholds.map(item => `${item.currency}:${item.thresholdMinor}`)).size > 1) {
       add({ id: "thresholds-differ", severity: "info", fix: "shipping", profile: base.name, title: "Free-delivery thresholds differ between zones", detail: thresholds.map(item => `${item.zone.name}: ${money(item.thresholdMinor, item.currency)}`).join(" · "), recommendation: "This is fine. The product page shows each shopper the threshold for their own country." });

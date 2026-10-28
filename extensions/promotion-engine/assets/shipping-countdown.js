@@ -274,12 +274,15 @@
    * transit }) with what the app adds in config.delivery.services. A service with no delivery time (typed in the app, else Shopify's) is left out,
    * because no date can be promised for it. Nothing is shown for a variant that cannot be dispatched now.
    */
+  /** What makes two names the same service: stray and doubled spaces and capital letters do not count. */
+  function nameKey(name) { return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+
   function deliveryOptions(nowMs, config, services, currency, variant) {
     var delivery = config.delivery;
     if (!delivery || !delivery.enabled || stockState(variant) !== 'in') return [];
     var options = [];
     (services || []).forEach(function (service) {
-      var found = (delivery.services || []).filter(function (item) { return item.name === service.name; })[0];
+      var found = (delivery.services || []).filter(function (item) { return nameKey(item.name) === nameKey(service.name); })[0];
       var setting = Object.assign({}, DEFAULT_SERVICE, found || {});
       if (setting.show === false) return;
       var typed = typeof setting.transitMin === 'number' && typeof setting.transitMax === 'number' ? { minDays: setting.transitMin, maxDays: setting.transitMax } : null;

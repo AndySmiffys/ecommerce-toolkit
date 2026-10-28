@@ -244,3 +244,11 @@ test("a delay in the warehouse is reflected in every delivery date", () => {
 });
 
 void readFileSync;
+
+test("a service is matched to its settings whatever the spacing and capitals of its name", () => {
+  const list = services => logic.deliveryOptions(at("2026-10-26T09:00:00Z"), config({ delivery: delivery({ services }) }), services_(), "GBP", null);
+  const services_ = () => [{ name: "DPD  Next Working Day", tiers: [{ from: 0, price: 699 }], transit: { minDays: 1, maxDays: 1 } }];
+  assert.equal(list([{ name: "dpd next working day ", guaranteed: true, label: "DPD Next Day" }])[0].text, "Delivery by Tue 27th Oct", "set as guaranteed, though typed differently");
+  assert.equal(list([{ name: "dpd next working day ", guaranteed: true, label: "DPD Next Day" }])[0].label, "DPD Next Day");
+  assert.match(list([{ name: "Something else", guaranteed: true }])[0].text, /\(Non-Guaranteed\)$/, "a different name is a different service");
+});
