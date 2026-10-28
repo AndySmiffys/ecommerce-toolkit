@@ -9,8 +9,9 @@
     style="--scb-size:{{ banner.textSize }}px;--scb-bg:{{ banner.background }};--scb-text:{{ banner.text }};--scb-highlight:{{ banner.highlight }};--scb-dispatch:{{ banner.dispatch }}"
     {{ block.shopify_attributes }}
   >
-    {%- comment -%} The message is written by the script from London's clock; the line is held so the page does not jump. {%- endcomment -%}
-    <p class="scb__line" data-role="line">&nbsp;</p>
+    {%- comment -%} The message is written by the script from London's clock. Until then the line holds the room the longest message will take (invisibly), so a message that wraps on a phone does not push the page down when it arrives. {%- endcomment -%}
+    {%- capture hold -%}{{ banner.message | replace: '{time}', '23 hours 59 minutes' | replace: '{date}', 'Wednesday 28 Oct' }}{%- endcapture -%}
+    <p class="scb__line" data-role="line"><span class="scb__hold" aria-hidden="true">{% render 'shipping-rich', text: hold %}</span></p>
     <script type="application/json" data-config>{"cutoffTime":{{ config.cutoffTime | json }},"shippingDays":{{ config.shippingDays | json }},"bankHolidays":{{ config.bankHolidays | json }},"delayDays":{{ config.delayDays | json }},"delayMessage":{{ config.delayMessage | json }},"banner":{{ banner | json }}}</script>
   </shipping-countdown-banner>
 {%- elsif request.design_mode -%}

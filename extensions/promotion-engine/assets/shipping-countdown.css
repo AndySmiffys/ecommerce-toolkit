@@ -157,6 +157,7 @@ shipping-countdown-banner[data-align="left"] { text-align: left; }
 shipping-countdown-banner[data-align="right"] { text-align: right; }
 shipping-countdown-banner[hidden] { display: none; }
 shipping-countdown-banner .scb__line { margin: 0; min-height: 1.4em; }
+shipping-countdown-banner .scb__hold { visibility: hidden; }
 shipping-countdown-banner .sc__countdown { color: var(--scb-highlight, #ff3d8b); font-weight: 600; }
 shipping-countdown-banner .sc__dispatch { color: var(--scb-dispatch, #ffc83d); font-weight: 700; }
 shipping-countdown-banner strong { font-weight: 700; }

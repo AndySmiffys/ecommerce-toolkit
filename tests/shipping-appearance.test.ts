@@ -81,3 +81,8 @@ test("the wrapper Shopify puts round the banner is stretched too", () => {
   const rule = css.match(/\.shopify-block:has\(> shipping-countdown-banner\),\s*\.shopify-app-block:has\(> shipping-countdown-banner\) \{([^}]*)\}/)![1];
   for (const declaration of ["width: 100%", "flex: 1 1 100%", "align-self: stretch", "justify-self: stretch"]) assert.ok(rule.includes(declaration), declaration);
 });
+
+test("the text held for the banner is invisible", () => {
+  const css = readFileSync("extensions/promotion-engine/assets/shipping-countdown.css", "utf8");
+  assert.match(css, /shipping-countdown-banner \.scb__hold \{ visibility: hidden; \}/);
+});

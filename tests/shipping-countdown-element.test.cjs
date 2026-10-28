@@ -681,3 +681,19 @@ test("the banner stretches the wrapper Shopify puts round an app block, so a cen
   assert.equal(bare.document.querySelector("header").style.width, "", "no wrapper, nothing to change");
   bare.close();
 });
+
+test("before the script runs the banner holds the room its longest message needs, invisibly, so a phone does not shift when it arrives", async () => {
+  const html = await liquid.parseAndRender(bannerTemplate, { app: { metafields: { shipping_countdown: { config: { value: { ...config, banner: bannerSettings({ message: "<i>Order</i> [bold]within[/bold] {time} for {date}" }) } } } } }, block: { id: "b", settings: {}, shopify_attributes: "" }, request: { design_mode: false } });
+  const line = html.match(/<p class="scb__line"[^>]*>([\s\S]*?)<\/p>/)[1];
+  assert.match(line, /^<span class="scb__hold" aria-hidden="true">/, "hidden from the page and from screen readers");
+  const text = line.replace(/<[^>]*>/g, "");
+  assert.match(text, /23 hours 59 minutes/, "the longest time left");
+  assert.match(text, /Wednesday 28 Oct/, "the longest day");
+  assert.doesNotMatch(text, /\{time\}|\{date\}|\[bold\]/, "placeholders and tags are filled and removed");
+  assert.match(text, /&lt;i&gt;Order&lt;\/i&gt;/, "typed markup is escaped, never written out");
+  // The script then replaces the held text with the real message.
+  const p = await bannerPage({ banner: bannerSettings({ message: "<i>Order</i> [bold]within[/bold] {time} for {date}" }) });
+  assert.equal(p.document.querySelector(".scb__hold"), null);
+  assert.equal(p.document.querySelector(".scb__line").textContent, "<i>Order</i> within 5 hours for Tuesday 20 Oct");
+  p.close();
+});
