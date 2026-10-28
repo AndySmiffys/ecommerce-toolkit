@@ -50,3 +50,16 @@ test("every line in the block is spaced by the one setting, with nothing extra t
   const heights = [...css.matchAll(/line-height: ([\d.]+)/g)].map(match => match[1]);
   assert.deepEqual([...new Set(heights)], ["1.4"], "the same line height for every line");
 });
+
+test("the delivery options button has an arrow drawn by the stylesheet, so a theme that hides the browser's own cannot hide it", () => {
+  const css = readFileSync("extensions/promotion-engine/assets/shipping-countdown.css", "utf8");
+  assert.match(css, /\.sc__delivery-heading::after \{[^}]*border-right: 2px solid currentColor;[^}]*border-bottom: 2px solid currentColor;[^}]*rotate\(45deg\)/, "a chevron");
+  assert.match(css, /\.sc__delivery\[open\] > \.sc__delivery-heading::after \{[^}]*rotate\(-135deg\)/, "turned over when open");
+  assert.match(css, /\.sc__delivery-heading \{[^}]*list-style: none/, "the browser's marker is removed, so there is never a second arrow");
+  assert.match(css, /\.sc__delivery-heading::-webkit-details-marker \{ display: none; \}/);
+  assert.match(css, /\.sc__delivery-heading::marker \{ content: ""; \}/);
+  assert.match(css, /\.sc__delivery-heading \{[^}]*font-size: var\(--sc-delivery-size, 16px\)/, "the button's own size");
+  assert.match(css, /data-button-align="center"\] > \.sc__delivery-heading \{ justify-content: center; \}/);
+  assert.match(css, /data-button-align="right"\] > \.sc__delivery-heading \{ justify-content: flex-end; \}/);
+  assert.match(css, /\.sc__delivery-heading \{[^}]*display: flex/, "so the arrow sits beside the words wherever they are placed");
+});

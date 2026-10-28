@@ -262,6 +262,16 @@ test("the delivery options box is written by the server with the shopper's servi
   assert.doesNotMatch(await render({ cfg: withDelivery(), services: { ...serviceTable, restOfWorld: null }, country: { iso_code: "US", name: "United States" } }), /sc__delivery/, "no zone for them at all");
 });
 
+test("the button's position and size are written on the box, and settings saved before they existed still work", async () => {
+  const html = visible(await render({ cfg: withDelivery({ buttonAlign: "center", buttonSize: 20 }) }));
+  assert.match(html, /<details class="sc__delivery" data-role="delivery" data-button-align="center" style="--sc-delivery-size:20px">/);
+  const left = visible(await render({ cfg: withDelivery({ buttonAlign: "left", buttonSize: 16 }) }));
+  assert.match(left, /data-button-align="left" style="--sc-delivery-size:16px"/);
+  const old = visible(await render({ cfg: withDelivery() }));
+  assert.match(old, /<details class="sc__delivery" data-role="delivery">/, "nothing written when it was never set, so the stylesheet's defaults apply");
+  assert.doesNotMatch(old, /data-button-align|--sc-delivery-size/);
+});
+
 test("the heading can be formatted, and nothing else in it can become markup", async () => {
   const html = visible(await render({ cfg: withDelivery({ heading: "[bold]Delivery[/bold] <img src=x onerror=alert(1)>" }) }));
   assert.match(html, /<summary class="sc__delivery-heading"><strong>Delivery<\/strong> &lt;img src=x onerror=alert\(1\)&gt;<\/summary>/);

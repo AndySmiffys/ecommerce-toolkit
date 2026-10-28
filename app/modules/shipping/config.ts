@@ -54,8 +54,12 @@ export type DeliveryServiceSetting = {
 
 export type DeliverySettings = {
   enabled: boolean;
-  /** The words on the dropdown. */
+  /** The words on the button that opens the list. */
   heading: string;
+  /** Text size of that button, px. */
+  buttonSize: number;
+  /** Where the button sits in the block. */
+  buttonAlign: "left" | "center" | "right";
   guaranteedText: string;
   estimatedText: string;
   services: DeliveryServiceSetting[];
@@ -95,7 +99,9 @@ export const defaultServiceSetting = (name: string): DeliveryServiceSetting => (
 
 export const defaultDeliverySettings: DeliverySettings = {
   enabled: false,
-  heading: "Delivery options",
+  heading: "View Delivery Options",
+  buttonSize: 16,
+  buttonAlign: "left",
   guaranteedText: "Delivery by {date}",
   estimatedText: "Delivery by {date} (Non-Guaranteed)",
   services: [],
@@ -347,7 +353,9 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
   }
   const delivery: DeliverySettings = {
     enabled: deliveryEnabled,
-    heading: text(dl.heading, "Delivery options heading", dd.heading, limits.text, deliveryEnabled),
+    heading: text(dl.heading, "Delivery options button text", dd.heading, limits.text, deliveryEnabled),
+    buttonSize: whole(dl.buttonSize, "Delivery options button text size", 10, 32, dd.buttonSize),
+    buttonAlign: choice(dl.buttonAlign, ["left", "center", "right"], dd.buttonAlign, "Delivery options button position"),
     guaranteedText: deliveryText(dl.guaranteedText, "Guaranteed delivery message", dd.guaranteedText),
     estimatedText: deliveryText(dl.estimatedText, "Estimated delivery message", dd.estimatedText),
     services,

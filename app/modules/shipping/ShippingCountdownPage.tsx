@@ -21,7 +21,7 @@ import { styleAttributes } from "./appearance";
 
 export type ShippingResult = { ok: boolean; intent: string; errors: string[]; config?: ShippingCountdownConfig; dates?: string[] };
 
-type DeliveryForm = { enabled: boolean; heading: string; guaranteedText: string; estimatedText: string };
+type DeliveryForm = { enabled: boolean; heading: string; buttonSize: string; buttonAlign: string; guaranteedText: string; estimatedText: string };
 
 type Form = {
   cutoffTime: string; days: boolean[]; holidays: string; delayDays: string; delayMessage: string;
@@ -44,7 +44,7 @@ const toForm = (c: ShippingCountdownConfig): Form => ({
   outMode: c.availability.outOfStock.mode, outMessage: c.availability.outOfStock.message, backMode: c.availability.backorder.mode, backMessage: c.availability.backorder.message,
   warnEnabled: c.warning.enabled, warnStart: c.warning.startDate, warnEnd: c.warning.endDate, warnMessage: c.warning.message,
   warnText: c.warning.textColor, warnBackground: c.warning.backgroundColor, warnBorder: c.warning.borderColor,
-  delivery: { enabled: c.delivery.enabled, heading: c.delivery.heading, guaranteedText: c.delivery.guaranteedText, estimatedText: c.delivery.estimatedText },
+  delivery: { enabled: c.delivery.enabled, heading: c.delivery.heading, buttonSize: String(c.delivery.buttonSize), buttonAlign: c.delivery.buttonAlign, guaranteedText: c.delivery.guaranteedText, estimatedText: c.delivery.estimatedText },
   look: { ...c.style, textSize: String(c.style.textSize), margin: String(c.style.margin), lineGap: String(c.style.lineGap), radius: String(c.style.radius), borderWidth: String(c.style.borderWidth) },
 });
 
@@ -63,7 +63,7 @@ function toInput(f: Form, services: DeliveryServiceSetting[]) {
       availability: { outOfStock: { mode: f.outMode, message: f.outMessage }, backorder: { mode: f.backMode, message: f.backMessage } },
       warning: { enabled: f.warnEnabled, startDate: f.warnStart, endDate: f.warnEnd, message: f.warnMessage, textColor: f.warnText, backgroundColor: f.warnBackground, borderColor: f.warnBorder },
       style: f.look,
-      delivery: { enabled: f.delivery.enabled, heading: f.delivery.heading, guaranteedText: f.delivery.guaranteedText, estimatedText: f.delivery.estimatedText, services },
+      delivery: { enabled: f.delivery.enabled, heading: f.delivery.heading, buttonSize: f.delivery.buttonSize, buttonAlign: f.delivery.buttonAlign, guaranteedText: f.delivery.guaranteedText, estimatedText: f.delivery.estimatedText, services },
     },
   };
 }
@@ -125,7 +125,7 @@ function ShippingPreview({ config, view, freeText, warningShowing, options }: { 
           {view.kind === "backorder" && <Rich text={config.availability.backorder.message} />}
         </p>
         {config.showShippingDays && days && <p className="sc__days"><Rich text={config.shippingDaysPrefix} /> {days}</p>}
-        {config.delivery.enabled && options.length > 0 && <details className="sc__delivery" open>
+        {config.delivery.enabled && options.length > 0 && <details className="sc__delivery" open data-button-align={config.delivery.buttonAlign} style={{ "--sc-delivery-size": `${config.delivery.buttonSize}px` } as CSSProperties}>
           <summary className="sc__delivery-heading"><Rich text={config.delivery.heading} /></summary>
           <ul className="sc__delivery-list">
             {options.map(option => <li key={option.name} className="sc__option">
@@ -437,7 +437,13 @@ export function ShippingCountdownPage({ initial, saved, today, delivery, service
                   ? "The services have not been read from Shopify yet. Open the Shipping page and the app will read your shipping options. Until then no delivery options are shown on the product page."
                   : `${shownServices} of ${catalogue.length} delivery service${catalogue.length === 1 ? " is" : "s are"} switched on. Which are guaranteed, the days each carrier delivers, and cut-offs are set per service on the Shipping page, next to the shipping options they come from.`}</s-text>
                 <PlaceholderList placeholders={deliveryPlaceholders} examples={deliveryExamples} onCopy={copyPlaceholder} heading="Placeholders you can use in the delivery messages" exampleHeading="For the first service in the preview" />
-                <RichTextField accent={form.look.accent} label="Dropdown heading" value={form.delivery.heading} onChange={value => setDelivery({ heading: value })} details="For example “Delivery options”." />
+                <RichTextField accent={form.look.accent} label="Button text" value={form.delivery.heading} onChange={value => setDelivery({ heading: value })} details="The words on the button that opens the list of delivery options, for example “View Delivery Options”." />
+                <s-grid gridTemplateColumns="1fr 1fr" gap="base" alignItems="start">
+                  <PolarisNumberField label="Button text size (px)" min={10} max={32} step={1} value={form.delivery.buttonSize} onInput={event => setDelivery({ buttonSize: event.currentTarget.value })} />
+                  <PolarisSelect label="Button position" value={form.delivery.buttonAlign} onChange={event => setDelivery({ buttonAlign: event.currentTarget.value })}>
+                    <s-option value="left">Left</s-option><s-option value="center">Centre</s-option><s-option value="right">Right</s-option>
+                  </PolarisSelect>
+                </s-grid>
                 <RichTextField accent={form.look.accent} label="Message for a guaranteed service" lines={2} value={form.delivery.guaranteedText} onChange={value => setDelivery({ guaranteedText: value })} error={deliveryPlaceholderError(form.delivery.guaranteedText)} details="For example “Delivery by {date}”. The month is always shown." />
                 <RichTextField accent={form.look.accent} label="Message for a service that is not guaranteed" lines={2} value={form.delivery.estimatedText} onChange={value => setDelivery({ estimatedText: value })} error={deliveryPlaceholderError(form.delivery.estimatedText)} details="For example “Delivery by {date} (Non-Guaranteed)”. This is what every service says unless it is set as guaranteed." />
               </>}

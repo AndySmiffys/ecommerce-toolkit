@@ -371,7 +371,7 @@ test('the delivery step has the switch, a link to the Shipping page right under 
     const placeholders = find(card, 's-table');
     assert.ok(placeholders, 'the list of placeholders');
     assert.equal(placeholders.compareDocumentPosition(firstMessage) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING, 'the placeholders come before the message boxes');
-    assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Dropdown heading', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
+    assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Button text', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
     assert.equal(findAll(card, 's-checkbox').length, 1, 'no month checkbox: it is always shown');
     assert.doesNotMatch(card.textContent, /Show the month/);
     // The services themselves are set up on the Shipping page, not here.
@@ -391,7 +391,7 @@ test('with delivery options on, the preview lists each service with its price an
       [DPD, '£6.99, or £4.99 on orders of £30 or more', 'Delivery by Wed 21st Oct (Non-Guaranteed)'],
       [AMAZON, '£3.99, or free on orders of £30 or more', 'Delivery by Thu 22nd Oct (Non-Guaranteed)'],
     ], 'soonest first; Collection has no delivery time, so no date');
-    assert.equal(find(container, 'aside .sc__delivery-heading').textContent, 'Delivery options');
+    assert.equal(find(container, 'aside .sc__delivery-heading').textContent, 'View Delivery Options', 'the default words on the button');
     await change(field(container, 's-select', 'Stock of the chosen variant'), 'out');
     assert.equal(find(container, 'aside .sc__delivery'), null, 'none for something that cannot be dispatched');
     await change(field(container, 's-select', 'Stock of the chosen variant'), 'in');
@@ -407,7 +407,7 @@ test('the delivery messages can be formatted, use their own placeholders, and a 
     const card = find(container, 'details[data-step=delivery]');
     await check(find(card, 's-checkbox'), true);
     await previewAt(container, '2026-10-20', '10', '00');
-    assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Dropdown heading', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
+    assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Button text', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
     const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
     assert.deepEqual(rows.map(row => row[0]), ['{date}', '{from}', '{service}']);
     assert.deepEqual(rows.map(row => row[2]), ['Wed 21st Oct', 'Wed 21st Oct', DPD], 'filled in for the first service in the preview');
@@ -432,7 +432,7 @@ test('what is saved for the services is used by the preview, and saving here nev
     { name: AMAZON, label: '', show: true, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: 3, transitMax: 4 },
     { name: 'Collection', label: '', show: false, guaranteed: false, cutoffTime: '', days: [false, true, true, true, true, true, false], onBankHolidays: false, transitMin: null, transitMax: null },
   ];
-  const page = await mountPage({ services, config: { delivery: { enabled: true, heading: 'Delivery options', guaranteedText: 'Delivery by {date}', estimatedText: 'Delivery by {date} (Non-Guaranteed)', services: saved } } });
+  const page = await mountPage({ services, config: { delivery: { enabled: true, heading: 'Delivery options', buttonSize: 16, buttonAlign: 'left', guaranteedText: 'Delivery by {date}', estimatedText: 'Delivery by {date} (Non-Guaranteed)', services: saved } } });
   try {
     const { container } = page;
     const card = find(container, 'details[data-step=delivery]');
@@ -440,12 +440,44 @@ test('what is saved for the services is used by the preview, and saving here nev
     // Friday 15:30: the shop's 15:00 has passed, this service's own 16:00 has not, and a Saturday carrier delivers on Saturday.
     await previewAt(container, '2026-10-23', '15', '30');
     assert.deepEqual(options(container).map(row => [row[0], row[2]]), [['DPD Next Day', 'Delivery by Sat 24th Oct'], [AMAZON, 'Delivery by Fri 30th Oct (Non-Guaranteed)']], 'guaranteed has no suffix; the typed 3 to 4 business days replace Shopify\'s two');
-    await writeIn(boxOf(card, 'Dropdown heading'), 'Ways to get it');
+    await writeIn(boxOf(card, 'Button text'), 'Ways to get it');
     await click(save(container));
     await wait(60);
     const sent = JSON.parse(page.posts[0].config);
     assert.equal(sent.delivery.heading, 'Ways to get it');
     assert.deepEqual(sent.delivery.services, saved, 'what the page last saw is passed on unchanged; the server keeps what is saved on the Shipping page anyway');
+  } finally { await page.unmount(); }
+});
+
+test('the button that opens the delivery options has its own words, size and position, in the preview and when saved', async () => {
+  const page = await mountPage({ services });
+  try {
+    const { container } = page;
+    const card = find(container, 'details[data-step=delivery]');
+    await check(find(card, 's-checkbox'), true);
+    assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Button text', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
+    assert.equal(boxOf(card, 'Button text').textContent, 'View Delivery Options', 'the default words');
+    assert.match(editorOf(card, 'Button text').textContent, /opens the list of delivery options/);
+    const button = () => find(container, 'aside .sc__delivery');
+    assert.equal(button().getAttribute('data-button-align'), 'left');
+    assert.equal(button().style.getPropertyValue('--sc-delivery-size'), '16px');
+    await writeIn(boxOf(card, 'Button text'), 'See how it can reach you');
+    assert.equal(find(container, 'aside .sc__delivery-heading').textContent, 'See how it can reach you');
+    await type(controls(card, 's-number-field', 'Button text size (px)'), '20');
+    assert.equal(button().style.getPropertyValue('--sc-delivery-size'), '20px');
+    await change(controls(card, 's-select', 'Button position'), 'center');
+    assert.equal(button().getAttribute('data-button-align'), 'center');
+    await type(controls(card, 's-number-field', 'Button text size (px)'), '9');
+    assert.match(container.textContent, /button text size must be a whole number from 10 to 32/);
+    assert.equal(save(container).disabled, true);
+    await type(controls(card, 's-number-field', 'Button text size (px)'), '20');
+    await selectChars(boxOf(card, 'Button text'), 0, 3);
+    await click(find(editorOf(card, 'Button text'), '.rt-toolbar button'));
+    assert.equal(find(container, 'aside .sc__delivery-heading strong').textContent, 'See', 'the words can be formatted too');
+    await click(save(container));
+    await wait(60);
+    const sent = JSON.parse(page.posts[0].config).delivery;
+    assert.deepEqual([sent.heading, sent.buttonSize, sent.buttonAlign], ['[bold]See[/bold] how it can reach you', 20, 'center']);
   } finally { await page.unmount(); }
 });
 

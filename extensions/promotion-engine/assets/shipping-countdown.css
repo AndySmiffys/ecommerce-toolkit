@@ -52,7 +52,38 @@ shipping-countdown .sc__days {
 /* The delivery options: a native disclosure, so it opens without a script, listing each service with its price and date. */
 shipping-countdown .sc__delivery { width: 100%; text-align: left; }
 shipping-countdown .sc__delivery[hidden] { display: none; }
-shipping-countdown .sc__delivery-heading { cursor: pointer; color: var(--sc-text, #333); font-size: var(--sc-size, 16px); font-weight: var(--sc-weight, 500); line-height: 1.4; }
+/* The button that opens the list. Themes often reset how <summary> looks and hide the browser's own arrow, so the arrow is drawn here. */
+shipping-countdown .sc__delivery-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--sc-text, #333);
+  font-size: var(--sc-delivery-size, 16px);
+  font-weight: var(--sc-weight, 500);
+  line-height: 1.4;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+shipping-countdown .sc__delivery-heading::-webkit-details-marker { display: none; }
+shipping-countdown .sc__delivery-heading::marker { content: ""; }
+shipping-countdown .sc__delivery-heading::after {
+  content: "";
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  margin-top: -0.2em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+shipping-countdown .sc__delivery[open] > .sc__delivery-heading::after { margin-top: 0.15em; transform: rotate(-135deg); }
+shipping-countdown .sc__delivery-heading:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+shipping-countdown .sc__delivery[data-button-align="center"] > .sc__delivery-heading { justify-content: center; }
+shipping-countdown .sc__delivery[data-button-align="right"] > .sc__delivery-heading { justify-content: flex-end; }
 shipping-countdown .sc__delivery-list { display: grid; gap: var(--sc-gap, 8px); margin: var(--sc-gap, 8px) 0 0; padding: 0; list-style: none; }
 shipping-countdown .sc__option { display: grid; gap: 2px; padding-top: var(--sc-gap, 8px); border-top: 1px solid rgba(0, 0, 0, 0.12); line-height: 1.4; }
 shipping-countdown .sc__option-name { color: var(--sc-text, #333); font-weight: 700; }

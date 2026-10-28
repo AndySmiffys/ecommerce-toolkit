@@ -158,6 +158,9 @@ test("formatting in a message must be closed properly, and the words under it co
 
 test("delivery options start switched off, with wording that says Non-Guaranteed unless a service is set as guaranteed", () => {
   assert.equal(defaultDeliverySettings.enabled, false, "nothing changes on the product page until it is turned on");
+  assert.equal(defaultDeliverySettings.heading, "View Delivery Options", "the words on the button that opens the list");
+  assert.equal(defaultDeliverySettings.buttonSize, 16);
+  assert.equal(defaultDeliverySettings.buttonAlign, "left");
   assert.equal(defaultDeliverySettings.guaranteedText, "Delivery by {date}");
   assert.equal(defaultDeliverySettings.estimatedText, "Delivery by {date} (Non-Guaranteed)");
   assert.equal("showMonth" in defaultDeliverySettings, false, "the month is always shown, so there is nothing to set");
@@ -180,7 +183,7 @@ test("the delivery wording must say when it arrives and use only its own placeho
   assert.match(errorsOf(delivery({ estimatedText: "Delivery by {dat}" })).join(" "), /Estimated delivery message uses \{dat\}, which is not a placeholder\. You can use \{date\}, \{from\}, \{service\}\./);
   assert.match(errorsOf(delivery({ estimatedText: "Over {threshold}" })).join(" "), /uses \{threshold\}/);
   assert.match(errorsOf(delivery({ guaranteedText: "[bold]Delivery by {date}" })).join(" "), /Guaranteed delivery message has formatting/);
-  assert.match(errorsOf(delivery({ heading: "[bold][/bold]" })).join(" "), /Delivery options heading cannot be empty/);
+  assert.match(errorsOf(delivery({ heading: "[bold][/bold]" })).join(" "), /Delivery options button text cannot be empty/);
   assert.match(errorsOf(delivery({ guaranteedText: "" })).join(" "), /Guaranteed delivery message cannot be empty/);
   // Switched off, the wording is not required, but a typo is still caught so it is not a surprise later.
   assert.equal(validateShippingConfig(delivery({ enabled: false, heading: "", guaranteedText: "", estimatedText: "" })).ok, true);
@@ -216,4 +219,15 @@ test("each delivery service is checked: name, delivery days, cut-off and deliver
 test("a month setting saved by an earlier version is ignored", () => {
   const old = validateShippingConfig({ ...defaultShippingConfig, delivery: { ...defaultDeliverySettings, showMonth: false } });
   assert.equal(old.ok && "showMonth" in old.config.delivery, false);
+});
+
+test("the button that opens the delivery options has a size from 10 to 32 and sits left, centre or right", () => {
+  const delivery = (changes: Record<string, unknown>) => valid({ delivery: { ...defaultDeliverySettings, ...changes } });
+  for (const size of [10, 16, 32, "20"]) assert.equal(validateShippingConfig(delivery({ buttonSize: size })).ok, true, String(size));
+  for (const size of [9, 33, 1.5, "big", ""]) assert.match(errorsOf(delivery({ buttonSize: size })).join(" "), /Delivery options button text size must be a whole number from 10 to 32/, String(size));
+  for (const align of ["left", "center", "right"]) assert.equal(validateShippingConfig(delivery({ buttonAlign: align })).ok, true, align);
+  assert.match(errorsOf(delivery({ buttonAlign: "middle" })).join(" "), /Delivery options button position is not one of the choices/);
+  const old = validateShippingConfig(valid({ delivery: { enabled: true, heading: "Delivery options", guaranteedText: "{date}", estimatedText: "{date}", services: [] } }));
+  assert.deepEqual(old.ok && [old.config.delivery.buttonSize, old.config.delivery.buttonAlign], [16, "left"], "settings saved before the button had a size and position get the defaults");
+  assert.equal(old.ok && old.config.delivery.heading, "Delivery options", "words that were saved are kept, not replaced by the new default");
 });
