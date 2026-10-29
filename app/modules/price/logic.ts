@@ -3,7 +3,7 @@ import script from "../../../extensions/promotion-engine/assets/discounted-price
 /** A rule as the product page gets it (see promotions/design/priceRule.ts), with `vs` naming the variants it covers when it is not all of them. */
 export type PriceRuleInput = { t: "p"; v: number; c: string; vs?: string[] } | { t: "a"; v: number; c: string; u: string; vs?: string[] };
 export type PriceVariant = { id: number; price: number; compare_at_price?: number | null };
-export type PriceState = { now: number; was: number; saving: number; percent: number; code: { price: number; name: string } | null };
+export type PriceState = { now: number; was: number; saving: number; percent: number; code: { price: number; name: string; saving: number; percent: number } | null };
 
 type Logic = {
   priceState(variant: PriceVariant, rules: PriceRuleInput[], currency: string): PriceState;

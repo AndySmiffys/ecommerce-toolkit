@@ -129,8 +129,11 @@
   assign code_template = look.codeText | default: '{price} with code {code}'
   assign saving_money = saving | money
   assign code_money = code_now | money
+  assign code_saving = base | minus: code_now
+  assign code_saving_money = code_saving | money
+  assign code_percent = code_saving | times: 200 | plus: base | divided_by: base | divided_by: 2 | floor
   assign savings_line = savings_template | replace: '{amount}', saving_money | replace: '{percent}', percent
-  assign code_line = code_template | replace: '{price}', code_money | replace: '{code}', code_name
+  assign code_line = code_template | replace: '{price}', code_money | replace: '{code}', code_name | replace: '{amount}', code_saving_money | replace: '{percent}', code_percent
 -%}
 <discounted-price
   class="dp"

@@ -17,7 +17,7 @@ test("the defaults are valid, readable, and stay as they are", () => {
   assert.equal(defaultPriceDisplay.size, 0, "the theme's own text size");
   assert.equal(defaultPriceDisplay.textColour, "", "the theme's own text colour");
   assert.deepEqual(savingsPlaceholders.map(item => item.name), ["amount", "percent"]);
-  assert.deepEqual(codePlaceholders.map(item => item.name), ["price", "code"]);
+  assert.deepEqual(codePlaceholders.map(item => item.name), ["price", "code", "amount", "percent"]);
   assert.equal(validatePriceDisplay(undefined).ok, true, "nothing saved yet: the defaults");
   const empty = validatePriceDisplay({});
   assert.deepEqual(empty.ok && empty.config, defaultPriceDisplay);
@@ -28,6 +28,8 @@ test("the messages must be words with only their own placeholders, and the code 
   assert.equal(validatePriceDisplay(valid({ savingsText: "You save {amount}, that is {percent}%" })).ok, true);
   assert.equal(validatePriceDisplay(valid({ savingsText: "Sale" })).ok, true, "the saving message needs no placeholder");
   assert.equal(validatePriceDisplay(valid({ codeText: "Use {code} to pay {price}" })).ok, true);
+  assert.equal(validatePriceDisplay(valid({ codeText: "{percent}% off with {code}: {price}, you save {amount}" })).ok, true, "what the code takes off can be said");
+  assert.equal(validatePriceDisplay(valid({ codeText: "{percent}% off" })).ok, false, "but the price and the code are still needed");
   assert.match(errorsOf(valid({ savingsText: "Save {amont}" })).join(" "), /Saving message uses \{amont\}, which is not a placeholder\. You can use \{amount\}, \{percent\}\./);
   assert.match(errorsOf(valid({ codeText: "{price} with code {cod}" })).join(" "), /Code message uses \{cod\}/);
   assert.match(errorsOf(valid({ codeText: "{price} with a code" })).join(" "), /Code message must include \{code\}/);

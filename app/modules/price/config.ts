@@ -10,7 +10,7 @@ export type PriceDisplayConfig = {
   showSavings: boolean;
   /** {amount} is what is saved, {percent} the percentage of the old price. */
   savingsText: string;
-  /** Said under the price when a code would make it lower. {price} is the price with the code, {code} the code. */
+  /** Said under the price when a code would make it lower. {price} is the price with the code, {code} the code, {amount} and {percent} what it saves against the price before any discount. */
   codeText: string;
   /** Text size in px, or 0 to use the theme's own size. */
   size: number;
@@ -51,6 +51,8 @@ export const savingsPlaceholders = [
 export const codePlaceholders = [
   { name: "price", meaning: "The price with the code applied", example: "£15.00" },
   { name: "code", meaning: "The code the shopper types", example: "SAVE25" },
+  { name: "amount", meaning: "How much the code takes off the price before any discount", example: "£5.00" },
+  { name: "percent", meaning: "The percentage of the price before any discount that the code takes off, as a whole number (do not add the % sign)", example: "25" },
 ] as const;
 
 const hexColour = /^#[0-9a-fA-F]{6}$/;

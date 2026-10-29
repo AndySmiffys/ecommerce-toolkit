@@ -24,8 +24,9 @@
 
   /**
    * What to show for a variant. `now` is the price to pay (the best automatic discount, or the price itself), `was` the price it is compared
-   * with (the compare-at price or the price) when `now` is lower, and `code` the best code discount when it beats `now`. Codes are not
-   * added to automatic discounts here: the shopper has not entered one, and checkout decides what combines.
+   * with (the compare-at price or the price) when `now` is lower, and `code` the best code discount when it beats `now`, with what it saves
+   * against the price before any discount. Codes are not added to automatic discounts here: the shopper has not entered one, and checkout
+   * decides what combines.
    */
   function priceState(variant, rules, currency) {
     var base = variant.price;
@@ -42,11 +43,17 @@
     var now = auto >= 0 && auto < base ? auto : base;
     var was = now < list ? list : 0;
     var saving = was ? was - now : 0;
+    var codeSaving = code >= 0 ? base - code : 0;
     return {
       now: now, was: was, saving: saving,
-      percent: was ? Math.floor((saving * 200 + was) / (was * 2)) : 0,
-      code: code >= 0 && code < now ? { price: code, name: codeName } : null
+      percent: was ? wholePercent(saving, was) : 0,
+      code: code >= 0 && code < now ? { price: code, name: codeName, saving: codeSaving, percent: wholePercent(codeSaving, base) } : null
     };
+  }
+
+  /** What part of `whole` an amount is, as a whole percentage, rounding half up. */
+  function wholePercent(amount, whole) {
+    return whole > 0 ? Math.floor((amount * 200 + whole) / (whole * 2)) : 0;
   }
 
   /** An amount in minor units written the way the shop's money format says ("£{{amount}}"), as Shopify's own storefront code does. */
@@ -175,7 +182,7 @@
     }
     if (host.codeLine) {
       host.codeLine.hidden = !state.code;
-      host.codeLine.textContent = state.code ? fillText(host.dataset.codeText || '{price} with code {code}', { price: formatMoney(state.code.price, format), code: state.code.name }) : '';
+      host.codeLine.textContent = state.code ? fillText(host.dataset.codeText || '{price} with code {code}', { price: formatMoney(state.code.price, format), code: state.code.name, amount: formatMoney(state.code.saving, format), percent: String(state.code.percent) }) : '';
     }
   }
 

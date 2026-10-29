@@ -49,7 +49,7 @@ function PricePreview({ config, scenario }: { config: PriceDisplayConfig; scenar
         {sale && <><span className="dp__sr">Regular price </span><s className="dp__was">{money(state.was)}</s>
           {config.showSavings && <span className="dp__save">{priceLogic.fillText(config.savingsText, { amount: money(state.saving), percent: String(state.percent) })}</span>}</>}
       </p>,
-      state.code && <p className="dp__code">{priceLogic.fillText(config.codeText, { price: money(state.code.price), code: state.code.name })}</p>)}
+      state.code && <p className="dp__code">{priceLogic.fillText(config.codeText, { price: money(state.code.price), code: state.code.name, amount: money(state.code.saving), percent: String(state.code.percent) })}</p>)}
   </>;
 }
 
@@ -113,7 +113,7 @@ export function PriceDisplayPage({ initial, saved, fetcher }: { initial: PriceDi
   const state = priceLogic.priceState(example.variant, example.rules, "GBP");
   const money = (minor: number) => priceLogic.formatMoney(minor, previewFormat);
   const savingsExamples = { amount: money(state.saving || 400), percent: String(state.percent || 20) };
-  const codeExamples = { price: money(state.code?.price ?? 1500), code: state.code?.name ?? "SAVE25" };
+  const codeExamples = { price: money(state.code?.price ?? 1500), code: state.code?.name ?? "SAVE25", amount: money(state.code?.saving ?? 500), percent: String(state.code?.percent ?? 25) };
   const notes = config ? contrastNotes(config) : [];
 
   const previewPanel = <div style={panelStyle}>
@@ -166,7 +166,7 @@ export function PriceDisplayPage({ initial, saved, fetcher }: { initial: PriceDi
                 <TextField label="Saving message" value={form.savingsText} maxLength={100} onChange={value => set({ savingsText: value })} details="For example “Save {amount}” or “{percent}% off”." />
               </>}
               <PlaceholderList placeholders={codePlaceholders} examples={codeExamples} onCopy={copyPlaceholder} heading="Placeholders you can use in the code message" exampleHeading="For the example in the preview" />
-              <TextField label="Code message" value={form.codeText} maxLength={100} onChange={value => set({ codeText: value })} details="Shown under the price when a code would make it lower, for example “{price} with code {code}”. It must include both." />
+              <TextField label="Code message" value={form.codeText} maxLength={100} onChange={value => set({ codeText: value })} details="Shown under the price when a code would make it lower, for example “{price} with code {code}” or “{percent}% off with code {code}”. It must include {price} and {code}." />
             </>)}
 
             {step("appearance", `${Number(form.size) > 0 ? `${form.size}px` : "Theme's text size"} · weight ${form.weight}`, <>

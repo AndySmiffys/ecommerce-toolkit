@@ -16,7 +16,8 @@ The block works out the price in the shopper's browser from rules the app publis
 
 - **No discount:** the standard price, plus Shopify's own compare-at price as the old price when there is one.
 - **An automatic discount:** the price after the discount, with the old price (the compare-at price, or the price itself) struck through, and optionally how much is saved ("Save £4.00", or "20% off"). When several automatic discounts cover a product, the lowest price is shown.
-- **A code discount:** a separate line under the price, "£15.00 with code SAVE25", because the shopper has not entered the code yet and checkout decides whether it applies. It appears only when the code would make the price lower than the one shown. The best code is shown. Codes are not added to automatic discounts.
+- **A code discount:** a separate line under the price, "£15.00 with code SAVE25", because the shopper has not entered the code yet and checkout decides whether it applies. It appears only when the code would make the price lower than the one shown. The best code is shown. Codes are not added to automatic discounts. The message can also say what the code takes off, with `{amount}` and `{percent}` (a whole percentage, rounded half up), both against the price before any discount, so a 25% code says 25%: "{percent}% off with code {code}".
+- **A permanent reduction made in Shopify** (a compare-at price above the price): the compare-at price is the old price, and with the saving switched on the block says how much it saves, for example "£15.00, was £25.00, 40% off" with the message "{percent}% off". When an automatic discount applies as well, the saving is against the compare-at price.
 
 Prices are in the shop's currency and are written with the shop's money format.
 

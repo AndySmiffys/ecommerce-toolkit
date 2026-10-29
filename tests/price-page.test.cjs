@@ -113,7 +113,7 @@ test('the saving can be switched on and worded, with placeholders that copy, and
     await check(find(card, 's-checkbox[label="Show how much is saved beside the old price"]'), true);
     assert.equal(shown(container).save, 'Save £4.00');
     const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
-    assert.deepEqual(rows.map(row => [row[0], row[2]]), [['{amount}', '£4.00'], ['{percent}', '20'], ['{price}', '£15.00'], ['{code}', 'SAVE25']], 'the saving ones, then the code ones, filled in for the example');
+    assert.deepEqual(rows.map(row => [row[0], row[2]]), [['{amount}', '£4.00'], ['{percent}', '20'], ['{price}', '£15.00'], ['{code}', 'SAVE25'], ['{amount}', '£5.00'], ['{percent}', '25']], 'the saving ones, then the code ones (which can also say what the code takes off), filled in for the example');
     await type(field(card, 's-text-field', 'Saving message'), '{percent}% off');
     assert.equal(shown(container).save, '20% off');
     const copied = [];
@@ -138,6 +138,8 @@ test('the code message must say the price and the code', async () => {
     await example(container, 'code');
     await type(field(card, 's-text-field', 'Code message'), 'Use code {code} and pay {price}');
     assert.equal(shown(container).code, 'Use code SAVE25 and pay £15.00');
+    await type(field(card, 's-text-field', 'Code message'), '{percent}% off with {code}: {price} (save {amount})');
+    assert.equal(shown(container).code, '25% off with SAVE25: £15.00 (save £5.00)');
     await type(field(card, 's-text-field', 'Code message'), 'Use a code');
     assert.match(container.textContent, /Code message must include \{price\}|Code message must include \{code\}/);
     assert.equal(save(container).disabled, true);

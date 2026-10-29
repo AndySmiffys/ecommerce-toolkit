@@ -269,3 +269,39 @@ test("the block keeps braces out of {{ }} outputs, which Shopify's own Liquid pa
     assert.doesNotMatch(inner, /[{}]/, output.slice(0, 80));
   }
 });
+
+test("a code message can say what the code takes off, as an amount and a percentage of the price before any discount", async () => {
+  const look = { codeText: "{percent}% off ({amount}) with {code}: {price}" };
+  const p = await page({ promotions: [percent(2500, "SAVE25")], look });
+  assert.equal(p.shown().code, "25% off (£5.00) with SAVE25: £15.00");
+  p.pick(13);
+  assert.equal(p.shown().code, "25% off (£3.75) with SAVE25: £11.25", "against £15.00, not the £25.00 it was");
+  p.pick(12);
+  assert.equal(p.shown().code, "25% off (£8.33) with SAVE25: £25.00", "25% of £33.33 is £8.3325, 833p after rounding half a penny up");
+  p.close();
+  const each = await page({ promotions: [amount(100, "LESS")], look });
+  assert.equal(each.shown().code, "5% off (£1.00) with LESS: £19.00", "an amount, as a percentage of the price");
+  each.close();
+  const auto = await page({ promotions: [percent(1000), percent(2500, "SAVE25")], look });
+  assert.equal(auto.shown().now, "£18.00");
+  assert.equal(auto.shown().code, "25% off (£5.00) with SAVE25: £15.00", "against the price before the automatic discount, which codes are not added to");
+  auto.close();
+  const rounded = await page({ selected: variants[1], promotions: [percent(1000, "TEN")], look });
+  assert.equal(rounded.shown().code, "10% off (£3.33) with TEN: £30.00");
+  rounded.close();
+});
+
+test("the code message says the same on the server and in the script, to the penny, for any price and code", async () => {
+  const look = { codeText: "{percent}|{amount}|{price}|{code}" };
+  for (const price of [1, 99, 101, 999, 1234, 3333, 12345]) {
+    const item = { id: 95, price, compare_at_price: null };
+    for (const rule of [percent(1, "C"), percent(333, "C"), percent(1250, "C"), percent(5000, "C"), amount(1, "C"), amount(250, "C")]) {
+      const p = await page({ selected: item, item: { ...product, variants: [item] }, promotions: [rule], look });
+      const expected = state(item, [rule.price]);
+      const code = expected.code;
+      const text = code ? `${code.percent}|${money(code.saving)}|${money(code.price)}|C` : null;
+      assert.equal(p.shown().code, text, `${price} with ${JSON.stringify(rule.price)}`);
+      p.close();
+    }
+  }
+});
