@@ -148,6 +148,7 @@ function where(shop: string, filter: IndexFilter, now: Date): Prisma.DiscountInd
   if (filter.source === "") and.push({ other: false, ruleName: null });
   if (filter.source === "other") and.push({ OR: [{ other: true }, { ruleName: { not: null } }] });
   if (filter.app) and.push({ OR: [{ ruleName: filter.app }, { ruleName: null, createdBy: filter.app }] });
+  if (filter.status === "current") and.push({ OR: [{ endsAt: null }, { endsAt: { gt: now } }] });
   if (filter.status === "active") and.push({ OR: [{ startsAt: null }, { startsAt: { lte: now } }] }, { OR: [{ endsAt: null }, { endsAt: { gt: now } }] });
   if (filter.status === "scheduled") and.push({ startsAt: { gt: now } });
   if (filter.status === "expired") and.push({ endsAt: { lte: now } });

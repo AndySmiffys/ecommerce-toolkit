@@ -18,7 +18,7 @@ import { emptyFilter, lastDays } from "../modules/promotions/design/orderReport"
 import { loadOrderReport } from "../modules/promotions/services/orderReport.server";
 import { formatMoney } from "../modules/promotions/design/formatMoney";
 import { bulkIntents, parseBulkIds, runBulkAction, type BulkIntent } from "../modules/promotions/services/bulkPromotions.server";
-import { discountSearch, getDiscountsByIds, getDiscountsPage, listCursor, type DiscountsPage } from "../modules/promotions/services/discounts.server";
+import { discountSearch, getDiscountsByIds, getDiscountsPage, listCursor, statusFromParam, type DiscountsPage } from "../modules/promotions/services/discounts.server";
 import { mapDiscountsToPromotions } from "../modules/promotions/mappers/promotionMapper";
 import { attachPromotionSettings } from "../modules/promotions/services/promotionSettings.server";
 import type { PromotionRecord } from "../modules/promotions/models/promotion";
@@ -28,7 +28,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // The search, status and page are in the address, so a page can be reloaded or shared. Shopify does the searching.
   const params = new URL(request.url).searchParams;
   const q = (params.get("q") ?? "").slice(0, 100);
+  // Active and scheduled promotions are shown unless another status is chosen; "all" is every status.
   const status = params.get("status") ?? "";
+  const statusChoice = statusFromParam(status);
   const before = listCursor(params.get("before"));
   const after = before ? null : listCursor(params.get("after"));
   const source = sourceFromParam(params.get("source"));
@@ -45,14 +47,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const useIndex = index.ready && source !== "all";
   let page: DiscountsPage;
   if (useIndex) {
-    const found = await listFromIndex(session.shop, { source, app, status, text: q, after, before });
+    const found = await listFromIndex(session.shop, { source, app, status: statusChoice, text: q, after, before });
     const nodes = await getDiscountsByIds(admin, found.ids);
     // A discount Shopify no longer has is dropped from the index so it stops being asked for.
     const missing = found.ids.filter(id => !nodes.some(node => node.id === id));
     await forgetDiscounts(session.shop, missing);
     page = { nodes: found.ids.flatMap(id => nodes.filter(node => node.id === id)), pageInfo: found.pageInfo, total: found.total };
   } else {
-    page = await getDiscountsPage(admin, { after, before, query: discountSearch(q, status) });
+    page = await getDiscountsPage(admin, { after, before, query: discountSearch(q, statusChoice) });
   }
   const creators = await creatorsOf(session.shop, page.nodes.map(node => node.id));
   const google = await googleStatuses(session.shop, page.nodes.map(node => node.id));
@@ -259,7 +261,7 @@ export default function PromotionsPage() {
   const navigation = useNavigation();
   const table = useRef<HTMLElementTagNameMap["s-table"]>(null);
   const [query, setQuery] = useState(filters.q);
-  const statusFilter = filters.status || "ALL";
+  const statusFilter = filters.status || "current";
   const shopify = useAppBridge();
   const fetcher = useFetcher<typeof action>();
   const [selected, setSelected] = useState<string[]>([]);
@@ -344,11 +346,12 @@ export default function PromotionsPage() {
         </PolarisSelect>
       </div>}
       <div style={{ flex: "0 0 160px" }}>
-        <PolarisSelect label="Status" labelAccessibilityVisibility="exclusive" value={statusFilter} onChange={(event) => go({ status: event.currentTarget.value === "ALL" ? null : event.currentTarget.value, after: null, before: null })}>
-          <s-option value="ALL">All statuses</s-option>
+        <PolarisSelect label="Status" labelAccessibilityVisibility="exclusive" value={statusFilter} onChange={(event) => go({ status: event.currentTarget.value === "current" ? null : event.currentTarget.value, after: null, before: null })}>
+          <s-option value="current">Active and scheduled</s-option>
           <s-option value="active">Active</s-option>
           <s-option value="scheduled">Scheduled</s-option>
           <s-option value="expired">Expired</s-option>
+          <s-option value="all">All statuses</s-option>
         </PolarisSelect>
       </div>
     </s-stack>

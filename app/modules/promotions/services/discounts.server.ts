@@ -26,8 +26,17 @@ export function listCursor(value: string | null): string | null {
   return value && /^[A-Za-z0-9+/=_-]{1,600}$/.test(value) ? value : null;
 }
 
-export const discountStatuses = ["active", "scheduled", "expired"] as const;
+/** "current" is active or scheduled: everything that has not ended. */
+export const discountStatuses = ["current", "active", "scheduled", "expired"] as const;
 export type DiscountStatusFilter = (typeof discountStatuses)[number];
+
+/**
+ * The status filter for the address's `status` value. With none the list shows what is still running or coming (active and scheduled);
+ * "all" is every status, which is an empty filter. Anything else is passed on, and an unknown value is ignored by the searches.
+ */
+export function statusFromParam(param: string | null): string {
+  return !param ? "current" : param === "all" ? "" : param;
+}
 
 /**
  * Shopify's discount search for what the merchant typed and chose: free text, and a status. Characters that mean
@@ -35,7 +44,8 @@ export type DiscountStatusFilter = (typeof discountStatuses)[number];
  */
 export function discountSearch(text: string, status: string | null): string {
   const words = text.replace(/["'\\():]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
-  const parts = [words, status && (discountStatuses as readonly string[]).includes(status) ? `status:${status}` : ""].filter(Boolean);
+  const known = status && (discountStatuses as readonly string[]).includes(status);
+  const parts = [words, !known ? "" : status === "current" ? "(status:active OR status:scheduled)" : `status:${status}`].filter(Boolean);
   return parts.join(" ");
 }
 

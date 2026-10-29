@@ -15,7 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { defaultDesign, readDesign, readWebsite, websiteStorage, websiteFromSettings, validateWebsite, countdownParts, countdown, contrastRatio, presetDesign, promotionBlock, setPromotionBlock, type WebsiteDraft } from "../app/modules/promotions/design/design";
 import { buildDiscountMutation, createShopifyPromotion, type CreateDiscountDraft } from "../app/modules/promotions/services/createPromotion.server";
 import type { ShopifyAdminClient } from "../app/modules/promotions/services/discount.server";
-import { discountSearch, discountsPerPage, getDiscountsByIds, getDiscountsPage, listCursor } from "../app/modules/promotions/services/discounts.server";
+import { discountSearch, discountsPerPage, getDiscountsByIds, getDiscountsPage, listCursor, statusFromParam } from "../app/modules/promotions/services/discounts.server";
 import { buildReport, codePrefix, describeGroup, matchesGroup, validateGroup, type GroupDef, type UsageRow } from "../app/modules/promotions/design/reports";
 import { loadDiscountCounts, loadUsage } from "../app/modules/promotions/services/reports.server";
 import { bulkLimit, parseBulkIds, runBulkAction } from "../app/modules/promotions/services/bulkPromotions.server";
@@ -661,6 +661,13 @@ test("the list search is what was typed and a status, with Shopify's search symb
   assert.equal(discountSearch("", "expired"), "status:expired");
   assert.equal(discountSearch("status:active OR (title:\"x\")", null), "status active OR title x", "search symbols cannot add filters or break the query");
   assert.equal(discountSearch("anything", "ALL"), "anything", "an unknown status is ignored");
+  assert.equal(discountSearch("", "current"), "(status:active OR status:scheduled)", "active and scheduled: everything that has not ended");
+  assert.equal(discountSearch("Halloween", "current"), "Halloween (status:active OR status:scheduled)", "grouped, so the words apply to both");
+  assert.equal(discountSearch("Halloween", ""), "Halloween", "all statuses: no status filter");
+  assert.equal(statusFromParam(null), "current", "the list opens on active and scheduled");
+  assert.equal(statusFromParam(""), "current");
+  assert.equal(statusFromParam("all"), "", "all statuses is a choice, not the absence of one");
+  for (const choice of ["active", "scheduled", "expired", "current"]) assert.equal(statusFromParam(choice), choice, choice);
   assert.equal(discountSearch("x".repeat(500), null).length, 100);
 });
 test("only Shopify's own page cursors are accepted from the address bar", () => {

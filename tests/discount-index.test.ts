@@ -92,6 +92,8 @@ test("the index is built page by page, keeps its place, and the list pages from 
   assert.deepEqual((await listFromIndex(shop, { ...none, source: "other", app: "Klaviyo" }, database, now)).ids, []);
   assert.deepEqual((await listFromIndex(shop, { ...none, source: "other", app: "Dotdigital", status: "scheduled" }, database, now)).ids.map(id => id.split("/").pop()), ["5"]);
   assert.deepEqual((await listFromIndex(shop, { ...none, status: "expired" }, database, now)).ids.map(id => id.split("/").pop()), ["6"]);
+  assert.deepEqual((await listFromIndex(shop, { ...none, status: "current" }, database, now)).ids.map(id => id.split("/").pop()), ["7", "2", "1"], "active and scheduled: the expired one is left out");
+  assert.deepEqual((await listFromIndex(shop, { ...none, source: "all", status: "current" }, database, now)).ids.map(id => id.split("/").pop()), ["7", "5", "4", "3", "2", "1"], "a scheduled discount is in, an expired one is not");
   assert.deepEqual((await listFromIndex(shop, { ...none, status: "active" }, database, now)).ids.map(id => id.split("/").pop()), ["7", "2", "1"]);
   assert.deepEqual((await listFromIndex(shop, { ...none, source: "all", text: "welcome-5e" }, database, now)).ids.map(id => id.split("/").pop()), ["4"], "search looks at the code and the title, ignoring case");
   assert.deepEqual((await listFromIndex(shop, { ...none, text: "spring" }, database, now)).ids.map(id => id.split("/").pop()), ["2"]);
