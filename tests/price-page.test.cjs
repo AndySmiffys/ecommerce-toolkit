@@ -27,14 +27,14 @@ async function loadPage() {
 }
 
 let exportsOf;
-async function mountPage({ saved = true, respond, patch = null, notShown = undefined } = {}) {
+async function mountPage({ saved = true, respond, patch = null, notShown = undefined, prices = undefined } = {}) {
   exportsOf ??= await loadPage();
   const { PriceDisplayPage, defaultPriceDisplay } = exportsOf;
   const container = document.createElement('div'); document.body.appendChild(container);
   const posts = [];
   function Page() {
     const fetcher = useFetcher();
-    return React.createElement(PriceDisplayPage, { initial: patch ? { ...defaultPriceDisplay, ...patch } : defaultPriceDisplay, saved, notShown, fetcher });
+    return React.createElement(PriceDisplayPage, { initial: patch ? { ...defaultPriceDisplay, ...patch } : defaultPriceDisplay, saved, notShown, prices, fetcher });
   }
   const router = createMemoryRouter([{
     path: '/app/discounted-price', Component: Page,
@@ -332,4 +332,41 @@ test('the automatic discount line has its own colour, questioned when hard to re
     await click(byText(card, 's-button', 'Reset the appearance to the original look'));
     assert.equal(host().style.getPropertyValue('--dp-auto'), '#b12704');
   } finally { await page.unmount(); }
+});
+
+test('the prices the storefront is using are listed beside what Shopify holds now, so a difference is seen here', async () => {
+  const rows = [
+    { key: '1', routeId: '1', title: 'Black Friday', kind: 'EXTRA10', now: '10% off', published: '10% off', state: 'matches' },
+    { key: '2', routeId: '2', title: 'Auto discount', kind: 'Automatic', now: '10% off', published: '20% off', state: 'outdated' },
+    { key: '3', routeId: '3', title: 'Brand new', kind: 'Automatic', now: '£5.00 off each item', published: '', state: 'missing' },
+    { key: '9', routeId: null, title: 'Discount 9', kind: 'OLD', now: 'No longer applies', published: '5% off', state: 'stale' },
+  ];
+  const page = await mountPage({ prices: rows });
+  try {
+    const section = find(page.container, '[data-section=published-prices]');
+    assert.ok(section, 'a section of its own');
+    const cells = findAll(section, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
+    assert.deepEqual(cells, [
+      ['Black Friday', 'With code EXTRA10', '10% off', '10% off', 'Matches Shopify'],
+      ['Auto discount', 'Automatically', '10% off', '20% off', 'Out of date'],
+      ['Brand new', 'Automatically', '£5.00 off each item', 'Nothing', 'Not published yet'],
+      ['Discount 9', 'With code OLD', 'No longer applies', '5% off', 'No longer applies'],
+    ]);
+    assert.ok(find(section, `s-banner[heading="The storefront is not using Shopify's latest discounts"]`), 'a warning when any row differs');
+    assert.deepEqual(findAll(section, 's-link').map(link => link.getAttribute('href').split('/').pop()), ['1', '2', '3'], 'each links to its promotion; one that no longer exists has no link');
+    assert.deepEqual(findAll(section, 's-badge').map(badge => badge.getAttribute('tone')), ['success', 'warning', 'warning', 'warning']);
+  } finally { await page.unmount(); }
+});
+
+test('when everything matches there is no warning, and with nothing to list or nothing readable the section is left out', async () => {
+  const matching = await mountPage({ prices: [{ key: '1', routeId: '1', title: 'Black Friday', kind: 'EXTRA10', now: '10% off', published: '10% off', state: 'matches' }] });
+  try {
+    const section = find(matching.container, '[data-section=published-prices]');
+    assert.ok(section);
+    assert.equal(find(section, 's-banner'), null, 'nothing to warn about');
+  } finally { await matching.unmount(); }
+  for (const none of [[], null, undefined]) {
+    const quiet = await mountPage({ prices: none });
+    try { assert.equal(find(quiet.container, '[data-section=published-prices]'), null); } finally { await quiet.unmount(); }
+  }
 });

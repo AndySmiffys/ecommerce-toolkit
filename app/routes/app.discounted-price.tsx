@@ -2,15 +2,19 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { loadPriceDisplay, savePriceDisplay } from "../modules/price/config.server";
-import { automaticDiscountsNotShown } from "../modules/promotions/services/priceReport.server";
+import { automaticDiscountsNotShown, comparePrices, currentPriceEntries, publishedPriceEntries } from "../modules/promotions/services/priceReport.server";
 import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
 import { PriceDisplayPage, type PriceResult } from "../modules/price/PriceDisplayPage";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
-  // The list is only shown, so a failure to read it must not stop the settings opening.
-  const [settings, notShown] = await Promise.all([loadPriceDisplay(admin), automaticDiscountsNotShown(admin).catch(() => null)]);
-  return { ...settings, notShown };
+  const { admin, session } = await authenticate.admin(request);
+  // The lists are only shown, so a failure to read them must not stop the settings opening.
+  const [settings, notShown, prices] = await Promise.all([
+    loadPriceDisplay(admin),
+    automaticDiscountsNotShown(admin).catch(() => null),
+    Promise.all([currentPriceEntries(admin, session.shop), publishedPriceEntries(admin)]).then(([current, published]) => comparePrices(current, published)).catch(() => null),
+  ]);
+  return { ...settings, notShown, prices };
 }
 
 export async function action({ request }: ActionFunctionArgs): Promise<PriceResult> {
@@ -38,5 +42,5 @@ export async function action({ request }: ActionFunctionArgs): Promise<PriceResu
 export default function DiscountedPrice() {
   const data = useLoaderData<typeof loader>();
   const fetcher = useFetcher<PriceResult>();
-  return <PriceDisplayPage initial={data.config} saved={data.saved} notShown={data.notShown} fetcher={fetcher} />;
+  return <PriceDisplayPage initial={data.config} saved={data.saved} notShown={data.notShown} prices={data.prices} fetcher={fetcher} />;
 }

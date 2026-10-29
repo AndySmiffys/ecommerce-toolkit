@@ -1,4 +1,5 @@
 import { ensureStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
+import { ensurePricesCurrent } from "../modules/promotions/services/priceReport.server";
 import { ensureFreeDelivery } from "../modules/shipping/delivery/freeDeliverySync.server";
 import type {
   HeadersFunction,
@@ -34,6 +35,9 @@ export const loader = async ({
   const { admin, session } = await authenticate.admin(request);
   let storefrontSyncError: string | null = null;
   try { await ensureStorefrontSnapshot(admin, session.shop); } catch (error) { storefrontSyncError = `Initial storefront display could not be synced: ${error instanceof Error ? error.message : "Please reopen the app to retry."}`; }
+  // The prices the Discounted price block shows must match Shopify's discounts; this catches a change that never reached the app. It runs
+  // in the background, at most every ten minutes, so opening the app is not slowed.
+  void ensurePricesCurrent(admin, session.shop).catch(error => console.error("The storefront prices could not be checked:", error instanceof Error ? error.message : error));
   // Where free delivery is offered, for the shipping countdown block. Only reads shipping the first time; a failure here must not stop the app opening.
   try { await ensureFreeDelivery(admin); } catch (error) { console.error("Free delivery could not be published:", error instanceof Error ? error.message : error); }
 

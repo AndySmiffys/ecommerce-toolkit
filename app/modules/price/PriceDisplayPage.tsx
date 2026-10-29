@@ -75,10 +75,16 @@ const stepTitles: Record<StepId, string> = { wording: "Savings and codes", appea
  * The Discounted price block's settings, laid out like the other editors: the preview stays in view on the left and the settings are
  * numbered step cards on the right. Which discounts show, and what they take off, come from the promotions themselves.
  */
-export function PriceDisplayPage({ initial, saved, notShown = null, fetcher }: {
+export type PriceRowView = { key: string; routeId: string | null; title: string; kind: string; now: string; published: string; state: "matches" | "outdated" | "missing" | "stale" };
+
+const stateWords: Record<PriceRowView["state"], string> = { matches: "Matches Shopify", outdated: "Out of date", missing: "Not published yet", stale: "No longer applies" };
+
+export function PriceDisplayPage({ initial, saved, notShown = null, prices = null, fetcher }: {
   initial: PriceDisplayConfig; saved: boolean;
   /** Active automatic discounts that change prices at checkout but cannot be shown in the block, with why. Null when they could not be read. */
   notShown?: Array<{ id: string; routeId: string; title: string; reason: string }> | null;
+  /** The discounts the block speaks of: what Shopify holds now beside what the storefront is using. Null when it could not be read. */
+  prices?: PriceRowView[] | null;
   fetcher: FetcherWithComponents<PriceResult>;
 }) {
   const appUrl = useEmbeddedAppUrl();
@@ -168,6 +174,31 @@ export function PriceDisplayPage({ initial, saved, notShown = null, fetcher }: {
         <s-button type="button" variant="secondary" loading={republishing || undefined} disabled={republishing || undefined} onClick={republish}>Update the storefront prices now</s-button>
         <s-text color="subdued">The storefront updates by itself whenever a promotion or an automatic discount changes. Use this if a change in Shopify has not shown up on a product page.</s-text>
       </s-stack>
+      {prices && prices.length > 0 && <div style={panelStyle} data-section="published-prices">
+        <s-stack direction="block" gap="small-300">
+          <s-heading>Prices the storefront is using</s-heading>
+          <s-text color="subdued">Every discount the block speaks of, with what Shopify holds now beside what the storefront has been given. If a row says it is out of date, use Update the storefront prices now.</s-text>
+        </s-stack>
+        {prices.some(row => row.state !== "matches") && <s-banner tone="warning" heading="The storefront is not using Shopify's latest discounts">Some rows below differ. Use <em>Update the storefront prices now</em> to bring them together.</s-banner>}
+        <s-table>
+          <s-table-header-row>
+            <s-table-header listSlot="primary">Discount</s-table-header>
+            <s-table-header>Applies</s-table-header>
+            <s-table-header>Shopify now</s-table-header>
+            <s-table-header>Storefront</s-table-header>
+            <s-table-header>Status</s-table-header>
+          </s-table-header-row>
+          <s-table-body>
+            {prices.map(row => <s-table-row key={row.key} data-state={row.state}>
+              <s-table-cell>{row.routeId ? <s-link href={appUrl(`/app/promotions/${row.routeId}`)}>{row.title}</s-link> : row.title}</s-table-cell>
+              <s-table-cell>{row.kind === "Automatic" ? "Automatically" : `With code ${row.kind}`}</s-table-cell>
+              <s-table-cell>{row.now}</s-table-cell>
+              <s-table-cell>{row.published || "Nothing"}</s-table-cell>
+              <s-table-cell><s-badge tone={row.state === "matches" ? "success" : "warning"}>{stateWords[row.state]}</s-badge></s-table-cell>
+            </s-table-row>)}
+          </s-table-body>
+        </s-table>
+      </div>}
       {notShown && notShown.length > 0 && <s-banner tone="warning" heading="Automatic discounts that change prices but cannot be shown here">
         <s-stack direction="block" gap="small-300">
           <s-text>Shoppers get these in the cart, but the price on the product page does not include them, because it cannot be worked out from the product alone.</s-text>
