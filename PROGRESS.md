@@ -62,6 +62,18 @@ The feature is released on live but has not been tried against Merchant Center y
 5. Once one promotion is accepted, send the rest. Google reviews each promotion, which can take up to a day.
 Later: Buy X get Y promotions, a Google product filter for promotions over 1,000 SKUs, and more territories (one file per country, each with its own currency).
 
+### Theme and store issues to fix (found by Lighthouse, not caused by the app)
+Mobile Lighthouse on a live product page, 29 Oct 2026, incognito: performance 0.48, accessibility 0.86, best practices 0.96, SEO 1.0, layout shift 0. The app's own files are a 2.4 KB stylesheet and a 10.4 KB script. These need changes to the theme or to other apps, which cannot be made from here yet.
+- **Slow to load (largest paint 5.6 s, blocking time 1.0 s, interactive 24 s).** The largest element is the main product image in the theme's slideshow; it is already high priority and not lazy, so the delay is the page waiting behind scripts.
+  - Defer or delay until the shopper scrolls or interacts: Loox reviews, Reamaze chat, the BOGO / cart upsell app, the Google Ads and Tag Manager tags, the Meta pixel, and the cookie consent app.
+  - The Analyzify scripts (`an_*.js`, `f-find-elem.js`) and the theme's `view-transitions.js` block rendering.
+  - The theme's own product page script takes about 1.6 s of main-thread time; find what it does at start-up.
+- **Console errors.** `https://ipapi.co/json/` is blocked by CORS (something looks up the visitor's location from the browser); `https://email.smiffys.com/_dmpt.js` does not resolve; and `SyntaxError: missing ) after argument list` repeats from inline scripts about 270 lines apart on the page (around lines 19925, 24277, 24547). None of these is from the app. Find which app or theme snippet writes them.
+- **Accessibility (theme markup).** Heading order; links without a name; images without alt text; iframes without a title; touch targets too small; prohibited ARIA attributes; visible labels that do not match their accessible names.
+- **Other.** One unsized image (a tiny layout shift); the page cannot be restored from the back button cache (four reasons given).
+- **Our colours, which can be fixed in the app.** The saved appearance still uses the old colours, which fail contrast. In Shipping countdown, click **Reset the banner colours and size** (Header banner step) and **Reset appearance to the original look** (Appearance), then save. Then run Lighthouse again.
+- **To check once the colours are reset:** that the header banner fills the full width in the live theme's Horizon "Section" (the app stretches Shopify's wrapper, but this has not been confirmed in the theme).
+
 ### Needs checking in a browser
 None of the following has been seen in a real browser by the assistant, only tested in a simulated one: the priority page and dragging, the overview card and the status control, the stepped form, the preview and its modals, and the native event wiring on the Shopify components. Please try them in the dev store. Start with a new promotion, Enabled and Draft, and the priority page.
 
