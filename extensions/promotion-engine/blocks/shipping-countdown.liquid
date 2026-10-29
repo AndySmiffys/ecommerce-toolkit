@@ -122,10 +122,16 @@
 
       {%- comment -%} The services are written here; the script works out each date from London's clock and fills the list. {%- endcomment -%}
       {%- if show_services -%}
+        {%- if config.delivery.alwaysOpen -%}
+        <div class="sc__delivery sc__delivery--open" data-role="delivery">
+          <ul class="sc__delivery-list" data-role="delivery-list"></ul>
+        </div>
+        {%- else -%}
         <details class="sc__delivery" data-role="delivery"{% if config.delivery.buttonAlign %} data-button-align="{{ config.delivery.buttonAlign }}"{% endif %}{% if config.delivery.buttonSize %} style="--sc-delivery-size:{{ config.delivery.buttonSize }}px"{% endif %}>
           <summary class="sc__delivery-heading">{% render 'shipping-rich', text: config.delivery.heading %}</summary>
           <ul class="sc__delivery-list" data-role="delivery-list"></ul>
         </details>
+        {%- endif -%}
       {%- endif -%}
     </div>
 

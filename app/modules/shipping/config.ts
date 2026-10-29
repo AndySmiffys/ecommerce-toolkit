@@ -60,6 +60,8 @@ export type DeliverySettings = {
   buttonSize: number;
   /** Where the button sits in the block. */
   buttonAlign: "left" | "center" | "right";
+  /** List the options all the time, with no button to open them. */
+  alwaysOpen: boolean;
   /** Soonest delivery first (then cheapest), or the order the services are listed in `services`. Services not listed come last, in Shopify's order. */
   sort: "soonest" | "manual";
   guaranteedText: string;
@@ -124,6 +126,7 @@ export const defaultDeliverySettings: DeliverySettings = {
   heading: "View Delivery Options",
   buttonSize: 16,
   buttonAlign: "left",
+  alwaysOpen: false,
   sort: "soonest",
   guaranteedText: "Delivery by {date}",
   estimatedText: "Delivery by {date} (Non-Guaranteed)",
@@ -395,9 +398,10 @@ export function validateShippingConfig(input: unknown): ConfigCheck {
   }
   const delivery: DeliverySettings = {
     enabled: deliveryEnabled,
-    heading: text(dl.heading, "Delivery options button text", dd.heading, limits.text, deliveryEnabled),
+    heading: text(dl.heading, "Delivery options button text", dd.heading, limits.text, deliveryEnabled && !flag(dl.alwaysOpen, dd.alwaysOpen)),
     buttonSize: whole(dl.buttonSize, "Delivery options button text size", 10, 32, dd.buttonSize),
     buttonAlign: choice(dl.buttonAlign, ["left", "center", "right"], dd.buttonAlign, "Delivery options button position"),
+    alwaysOpen: flag(dl.alwaysOpen, dd.alwaysOpen),
     sort: choice(dl.sort, ["soonest", "manual"], dd.sort, "Delivery options order"),
     guaranteedText: deliveryText(dl.guaranteedText, "Guaranteed delivery message", dd.guaranteedText),
     estimatedText: deliveryText(dl.estimatedText, "Estimated delivery message", dd.estimatedText),

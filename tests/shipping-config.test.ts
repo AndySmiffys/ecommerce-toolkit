@@ -277,3 +277,14 @@ test("every colour the app starts with can be read: text 4.5 to 1 on its backgro
   const warning = defaultShippingConfig.warning;
   assert.ok(contrastRatio(warning.textColor, warning.backgroundColor) >= 4.5, "warning notice");
 });
+
+test("the delivery options can be always open, with no button, and then the button's words are not needed", () => {
+  assert.equal(defaultDeliverySettings.alwaysOpen, false, "a button, as before, unless it is turned on");
+  const delivery = (changes: Record<string, unknown>) => valid({ delivery: { ...defaultDeliverySettings, enabled: true, ...changes } });
+  const open = validateShippingConfig(delivery({ alwaysOpen: true, heading: "" }));
+  assert.equal(open.ok, true, "no button, so no button text to ask for");
+  assert.equal(open.ok && open.config.delivery.alwaysOpen, true);
+  assert.match(errorsOf(delivery({ alwaysOpen: false, heading: "" })).join(" "), /Delivery options button text cannot be empty/, "with a button the words are still needed");
+  const old = validateShippingConfig(valid({ delivery: { enabled: true, heading: "Options", guaranteedText: "{date}", estimatedText: "{date}", services: [] } }));
+  assert.equal(old.ok && old.config.delivery.alwaysOpen, false, "settings saved before this get the button");
+});

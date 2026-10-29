@@ -384,7 +384,7 @@ test('the delivery step has the switch, a link to the Shipping page right under 
     assert.ok(placeholders, 'the list of placeholders');
     assert.equal(placeholders.compareDocumentPosition(firstMessage) & window.Node.DOCUMENT_POSITION_FOLLOWING, window.Node.DOCUMENT_POSITION_FOLLOWING, 'the placeholders come before the message boxes');
     assert.deepEqual(findAll(card, '.rt-field').map(item => item.getAttribute('data-field')), ['Button text', 'Message for a guaranteed service', 'Message for a service that is not guaranteed']);
-    assert.equal(findAll(card, 's-checkbox').length, 1, 'no month checkbox: it is always shown');
+    assert.deepEqual(findAll(card, 's-checkbox').map(item => item.getAttribute('label')), ['Show delivery options on the product page', 'Always show the delivery options, with no button'], 'the switch and always open, and no month checkbox: it is always shown');
     assert.doesNotMatch(card.textContent, /Show the month/);
     // The services themselves are set up on the Shipping page, not here.
     assert.equal(findAll(container, 'details[data-service]').length, 0);
@@ -642,5 +642,31 @@ test('the header banner: its colours and size can be reset, and it stays on', as
     await click(byText(card, 's-button', 'Reset the banner colours and size'));
     assert.equal(find(card, 's-color-field[label="Background"]').value, '#00507a');
     assert.equal(find(card, 's-checkbox').checked, true);
+  } finally { await page.unmount(); }
+});
+
+test('the delivery options can be shown all the time: the button settings go away and the preview has no button', async () => {
+  const page = await mountPage({ services });
+  try {
+    const { container } = page;
+    const card = find(container, 'details[data-step=delivery]');
+    await check(find(card, 's-checkbox'), true);
+    await previewAt(container, '2026-10-20', '10', '00');
+    const always = () => find(card, 's-checkbox[label="Always show the delivery options, with no button"]');
+    assert.equal(always().checked, false);
+    assert.ok(find(container, 'aside details.sc__delivery summary'), 'the button, by default');
+    assert.ok(editorOf(card, 'Button text'));
+    await check(always(), true);
+    assert.equal(find(container, 'aside summary.sc__delivery-heading'), null, 'no button in the preview');
+    assert.ok(find(container, 'aside .sc__delivery--open'));
+    assert.equal(options(container).length, 2, 'the options are listed');
+    assert.equal(editorOf(card, 'Button text'), undefined, 'the button settings are not shown');
+    assert.equal(find(card, 's-number-field[label="Button text size (px)"]'), null);
+    assert.equal(find(card, 's-select[label="Button position"]'), null);
+    await click(save(container));
+    await wait(60);
+    assert.equal(JSON.parse(page.posts[0].config).delivery.alwaysOpen, true);
+    await check(always(), false);
+    assert.ok(editorOf(card, 'Button text'), 'and they come back');
   } finally { await page.unmount(); }
 });

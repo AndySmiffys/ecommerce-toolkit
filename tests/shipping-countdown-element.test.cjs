@@ -707,3 +707,21 @@ test("the theme blocks keep braces out of {{ }} outputs, which Shopify's own Liq
     }
   }
 });
+
+test("always open: the delivery options are listed with no button, and with the button they open from one", async () => {
+  const closed = await page({ cfg: withDelivery({ alwaysOpen: false }) });
+  assert.ok(closed.document.querySelector("details.sc__delivery summary"), "a button by default");
+  closed.close();
+  const open = await page({ cfg: withDelivery({ alwaysOpen: true, heading: "" }) });
+  const box = open.document.querySelector("[data-role=delivery]");
+  assert.equal(box.tagName, "DIV", "not a disclosure");
+  assert.equal(box.classList.contains("sc__delivery--open"), true);
+  assert.equal(open.document.querySelector("summary"), null, "no button, nothing to click");
+  assert.equal(box.hidden, false);
+  assert.deepEqual([...open.document.querySelectorAll(".sc__option-name")].map(item => item.textContent), ["DPD Next Day", "Amazon 2 Day (Order Before 2pm) Non Guaranteed"], "the same options, listed straight away");
+  open.state.now = Date.parse("2026-10-20T09:00:00Z");
+  open.close();
+  const none = await page({ cfg: withDelivery({ alwaysOpen: true, services: [{ name: "x", show: false }] }), country: { iso_code: "IE", name: "Ireland" } });
+  assert.equal(none.document.querySelector("[data-role=delivery]"), null, "and nothing at all where the country has no services to list, as with the button");
+  none.close();
+});
