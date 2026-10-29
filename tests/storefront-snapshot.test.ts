@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { Liquid } from "liquidjs";
 import { JSDOM } from "jsdom";
 import { promotionInlineCss, promotionCss } from "../app/modules/promotions/components/PromotionPreview";
-import { companionMetafields, publicSnapshotEntry, splitSnapshot, syncStorefrontSnapshot } from "../app/modules/promotions/services/storefrontSnapshot.server";
+import { companionMetafields, priceRulesVersion, publicSnapshotEntry, splitSnapshot, syncStorefrontSnapshot } from "../app/modules/promotions/services/storefrontSnapshot.server";
 import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promotionMapper";
 import { defaultDesign } from "../app/modules/promotions/design/design";
 import { encodeIds, decodeIds } from "../app/modules/promotions/design/compactIds";
@@ -357,7 +357,8 @@ test('end to end: the loader embed joins each promotion\'s badge data into the p
   Object.assign(everything.settings, { websiteEnabled: true, showProductBadge: true, priority: 1 });
   // This test runs the real browser script, which uses the real clock, so these promotions must not have an end date that can pass.
   const running = (entry: NonNullable<ReturnType<typeof publicSnapshotEntry>>) => ({ ...entry, starts: 0, ends: 0 });
-  const split = splitSnapshot([running(publicSnapshotEntry(listed, now)!), running(publicSnapshotEntry(everything, now)!)], 'rev');
+  const split = splitSnapshot([running(publicSnapshotEntry(listed, now)!), running(publicSnapshotEntry(everything, now)!)], 'rev');
+
   const shards = Object.fromEntries(Object.entries(split.badgeShards).map(([id, value]) => [`badge_${id}`, { value }]));
   const loader = readFileSync('extensions/promotion-engine/blocks/promotion-loader.liquid', 'utf8').split('{% schema %}')[0];
   const context = (pageType: string) => ({ app: { metafields: { promotion_engine: { badge_index: { value: split.badgeIndex }, ...shards } } }, block: { settings: { badges_enabled: true } }, request: { page_type: pageType }, routes: { root_url: '/' }, collection: { id: 1 } });
@@ -374,7 +375,8 @@ test('end to end: the loader embed joins each promotion\'s badge data into the p
     const embed = page.window.document.createElement('promotion-engine-embed');
     Object.assign(embed.dataset, { badgesEnabled: 'true', root: '/' });
     page.window.document.body.append(embed);
-    const badge = (id: string) => page.window.document.querySelector(`[data-pe-auto="badge"][data-product-id="${id}"]`) as HTMLElement;
+    const badge = (id: string) => page.window.document.querySelector(`[data-pe-auto="badge"][data-product-id="${id}"]`) as HTMLElement;
+
     // Wait for the badges to appear rather than for a fixed time: the machine may be busy with other tests.
     for (let waited = 0; waited < 5000 && !(badge('1000000000007') && !badge('1000000000007').hidden && badge('5') && !badge('5').hidden); waited += 25) await new Promise(done => setTimeout(done, 25));
     assert.equal(badge('1000000000007').hidden, false);
@@ -489,4 +491,81 @@ test('publishing gives a discount on a collection a badge listing the products i
   members.current = ids(collectionProductLimit + 1);
   await assert.rejects(syncStorefrontSnapshot(api, 'test.myshopify.com', async () => rows), /targets a collection with more than 9,000 products/);
   forgetCollectionProducts();
+});
+
+// ---------------------------------------------------------------- the price block's data
+
+/** The same promotion as `promotion()`, with what the price block cares about changed. */
+function priced(changes: { value?: unknown; items?: unknown; classes?: string[]; automatic?: boolean; minimum?: unknown } = {}) {
+  const { node } = promotion();
+  const discount = node.discount as unknown as Record<string, unknown>;
+  discount.discountClasses = changes.classes ?? ["ORDER"];
+  if (changes.automatic) { discount.__typename = "DiscountAutomaticBasic"; delete discount.codes; }
+  if (changes.minimum) discount.minimumRequirement = changes.minimum;
+  (discount.customerGets as Record<string, unknown>).value = changes.value ?? { __typename: "DiscountPercentage", percentage: 0.1 };
+  if (changes.items) (discount.customerGets as Record<string, unknown>).items = changes.items;
+  const result = mapDiscountToPromotion(node);
+  Object.assign(result.settings, { websiteEnabled: true });
+  return result;
+}
+const someProducts = { __typename: "DiscountProducts", products: { nodes: [{ id: "gid://shopify/Product/7", title: "Cape" }] } };
+
+test("a promotion carries its price rule when its effect on a price can be told from the product alone", () => {
+  assert.deepEqual(publicSnapshotEntry(priced(), now)!.price, { t: "p", v: 1000, c: "CODE1" }, "10% off the order, with its code");
+  assert.deepEqual(publicSnapshotEntry(priced({ automatic: true }), now)!.price, { t: "p", v: 1000, c: "" }, "automatic: no code");
+  const each = { __typename: "DiscountAmount", amount: { amount: "5.0", currencyCode: "GBP" }, appliesOnEachItem: true };
+  assert.deepEqual(publicSnapshotEntry(priced({ value: each, classes: ["PRODUCT"], items: someProducts, automatic: true }), now)!.price, { t: "a", v: 500, c: "", u: "GBP" });
+  assert.equal("price" in publicSnapshotEntry(priced({ value: each }), now)!, false, "an amount off the whole order is spread over the cart");
+  assert.equal("price" in publicSnapshotEntry(priced({ minimum: { __typename: "DiscountMinimumSubtotal", greaterThanOrEqualToSubtotal: { amount: "30.0", currencyCode: "GBP" } } }), now)!, false, "a minimum spend");
+  const scoped = priced({ classes: ["PRODUCT"], items: someProducts });
+  assert.deepEqual(publicSnapshotEntry(scoped, now, true)!.price, { t: "p", v: 1000, c: "CODE1" }, "its whole list of products is known");
+  assert.equal("price" in publicSnapshotEntry(scoped, now, false)!, false, "a list Shopify could not give in full: never claimed for a product it may not cover");
+  assert.ok("price" in publicSnapshotEntry(priced(), now, false)!, "everything needs no list");
+});
+
+test("the price rule is in the small snapshot every page reads, and not in the lists or the badge data", () => {
+  const entry = publicSnapshotEntry(priced({ classes: ["PRODUCT"], items: someProducts }), now)!;
+  const split = splitSnapshot([entry], "r");
+  assert.deepEqual(split.promotions[0].price, { t: "p", v: 1000, c: "CODE1" });
+  assert.equal("price" in split.scopes["1"], false);
+  assert.equal(split.badgeShards["1"] === undefined || !split.badgeShards["1"].includes("CODE1"), true);
+});
+
+test("the published snapshot says which price rules it understands, so it is rewritten without any promotion changing", async () => {
+  assert.equal(priceRulesVersion, 1);
+  const { node } = promotion();
+  node.discount.endsAt = "2099-01-01T00:00:00Z"; // sync reads the real clock, and the fixture's own end date has passed
+  const writes: Array<Array<{ key: string; value: string }>> = [];
+  const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
+    if (query.includes("PromotionInstallation")) return Response.json({ data: { currentAppInstallation: { id: "gid://shopify/AppInstallation/1", metafield: { value: "", compareDigest: "d" }, companions: { nodes: [] } } } });
+    if (query.includes("GetDiscount")) return Response.json({ data: { discountNode: node } });
+    writes.push(options!.variables!.metafields as typeof writes[number]);
+    return Response.json({ data: { metafieldsSet: { userErrors: [] } } });
+  } };
+  const row = { id: 1, shop: "test.myshopify.com", shopifyDiscountId: "gid://shopify/DiscountNode/1", priority: 0, included: true, websiteEnabled: true, showHeaderBanner: true, showProductPage: true, showCollectionPage: true, showProductBadge: false, showCountdown: false, headline: "H", body: "", badgeText: "", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#000000", badgeColour: "#000000", designJson: JSON.stringify(defaultDesign()), lastSyncedAt: null, lastSyncError: null, createdAt: new Date(0), updatedAt: new Date(0) };
+  await syncStorefrontSnapshot(api, "test.myshopify.com", async () => [row]);
+  const main = JSON.parse(writes[0].find(field => field.key === "storefront")!.value);
+  assert.equal(main.priceRules, 1);
+  assert.deepEqual(main.promotions[0].price, { t: "p", v: 1000, c: "CODE1" });
+});
+
+test("what is published is what the Discounted price block reads: the best automatic price, and a code as its own line", async () => {
+  liquid.registerFilter("money", (value: number) => `£${(value / 100).toFixed(2)}`);
+  const block = readFileSync("extensions/promotion-engine/blocks/discounted-price.liquid", "utf8").split("{% schema %}")[0];
+  const automatic = publicSnapshotEntry(priced({ classes: ["PRODUCT"], items: someProducts, automatic: true, value: { __typename: "DiscountPercentage", percentage: 0.25 } }), now)!;
+  const code = { ...publicSnapshotEntry(priced({ classes: ["ORDER"] }), now)!, id: "gid://shopify/DiscountNode/2" };
+  const split = splitSnapshot([automatic, code], "r");
+  const variants = [{ id: 11, price: 2000, compare_at_price: null }];
+  const html = (productId: number) => liquid.parseAndRender(block, {
+    app: { metafields: { promotion_engine: { storefront: { value: { version: 3, priceRules: 1, promotions: split.promotions } }, ...scopeMetafields(split.scopes) }, price_display: { config: { value: null } } } },
+    product: { id: productId, variants, collections: [], selected_or_first_available_variant: variants[0] }, cart: { currency: { iso_code: "GBP" } }, shop: { money_format: "£{{amount}}" }, block: { id: "b", shopify_attributes: "" },
+  });
+  const covered = new JSDOM(await html(7)).window.document;
+  assert.equal(covered.querySelector(".dp__now")!.textContent, "£15.00", "25% off a product it covers");
+  assert.equal(covered.querySelector(".dp__was")!.textContent, "£20.00");
+  assert.equal(covered.querySelector(".dp__code")!.textContent, "", "the code takes 10%, which is not better than the 25% already shown");
+  const other = new JSDOM(await html(8)).window.document;
+  assert.equal(other.querySelector(".dp__now")!.textContent, "£20.00", "a product it does not cover");
+  assert.equal(other.querySelector(".dp__was"), null);
+  assert.equal(other.querySelector(".dp__code")!.textContent, "£18.00 with code CODE1", "but the code, which covers everything, is offered");
 });

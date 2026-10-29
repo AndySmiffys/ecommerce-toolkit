@@ -28,6 +28,14 @@ export type PromotionCapabilities = {
   supportsHealthChecks: boolean;
 };
 
+/**
+ * How much a product or order discount takes off, as Shopify gives it (not the text for people that `value` holds). A percentage is the
+ * fraction Shopify uses (0.2 is 20%). An amount is in major units, and `perItem` says whether it comes off each item or off the whole order.
+ */
+export type PromotionReduction =
+  | { kind: "percentage"; percentage: number }
+  | { kind: "amount"; amount: number; currency: string; perItem: boolean };
+
 export type PromotionGeneral = {
   title: string;
   summary: string;
@@ -37,6 +45,8 @@ export type PromotionGeneral = {
   status: PromotionStatus;
 
   value: string;
+  /** Null for buy X get Y, shipping and anything else that is not a plain percentage or amount off. */
+  reduction?: PromotionReduction | null;
   code: string | null;
 
   createdBy: string;

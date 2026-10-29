@@ -1,0 +1,29 @@
+/* The look comes from the app's Discounted price settings: values as CSS variables on the element. Text size and font are the theme's unless a size is set. */
+discounted-price {
+  display: block;
+  margin: var(--dp-margin, 0) 0;
+  font-size: var(--dp-size, inherit);
+  line-height: 1.4;
+}
+discounted-price .dp__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25em 0.6em;
+  margin: 0;
+}
+discounted-price .dp__now { color: var(--dp-text, inherit); font-weight: var(--dp-weight, 600); }
+discounted-price .dp__now--sale { color: var(--dp-sale, #b12704); }
+discounted-price .dp__was { color: var(--dp-was, #6b6b6b); font-weight: 400; text-decoration: line-through; }
+discounted-price .dp__save {
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
+  background: var(--dp-save-bg, #b12704);
+  color: var(--dp-save-text, #ffffff);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+discounted-price .dp__code { margin: 0.35em 0 0; color: var(--dp-code, #1e7e34); font-size: 0.9em; font-weight: 600; }
+discounted-price .dp__code[hidden] { display: none; }
+/* Said to screen readers, not shown: which price is which. */
+discounted-price .dp__sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

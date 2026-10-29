@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { PromotionOffer, promotionCss, promotionInlineCss } from "../components/PromotionPreview";
 import { placements, websiteFromSettings } from "../design/design";
 import { encodeIds } from "../design/compactIds";
+import { priceRuleFor } from "../design/priceRule";
 import { completeDiscountScope } from "./discountScope.server";
 import { collectionProductIds } from "./collectionProducts.server";
 import { mapDiscountToPromotion } from "../mappers/promotionMapper";
@@ -14,6 +15,8 @@ const namespace = "promotion_engine";
 const key = "storefront";
 /** Bump when the published shape changes. The theme blocks read only this version and fall back to the live path otherwise. */
 export const snapshotVersion = 3;
+/** Bump when what the price block reads from each promotion changes, so the published data is rewritten without a change to any promotion. */
+export const priceRulesVersion = 1;
 const shortId = (id: string) => id.split("/").pop()!;
 // The small snapshot is read on every page, so it stays small (Shopify limits a JSON metafield to 128 KB). The long
 // product lists and the badge data are separate metafields that only the pages needing them read.
@@ -44,11 +47,15 @@ export function publicSnapshotEntry(promotion: PromotionRecord, now = Date.now()
     renderKeys[placement.id] = storefrontRenderKey(promotion, placement.id);
     html[placement.id] = renderToStaticMarkup(<PromotionOffer value={value} placement={placement.id} endsAt={promotion.endsAt} now={now} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} />);
   }
+  // What the product page's price block needs, for a promotion whose effect on a product's price can be told from the product alone.
+  // Only when the whole list of products is known, so a scoped discount is never claimed for a product it may not cover.
+  const price = all || complete ? priceRuleFor(promotion) : null;
   return { id: promotion.id, priority: promotion.settings.priority,
     starts: promotion.startsAt ? Math.floor(Date.parse(promotion.startsAt) / 1000) : 0,
     ends: promotion.endsAt ? Math.floor(Date.parse(promotion.endsAt) / 1000) : 0,
     all, products: scope.products.map(p => shortId(p.id)), collections: scope.collections.map(c => shortId(c.id)),
     variants: scope.variants.map(v => ({ id: shortId(v.id), product: v.productId ? shortId(v.productId) : "" })), html, renderKeys,
+    ...(price ? { price } : {}),
     // Only for badges and never published as such: see splitSnapshot.
     ...(collectionProducts ? { badgeProducts: collectionProducts } : {}) };
 }
@@ -142,7 +149,7 @@ export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: st
     }
     const revision = storefrontRevision(shop, rows);
     const split = splitSnapshot(entries, revision);
-    const value = JSON.stringify({ version: snapshotVersion, revision, css: promotionCss, inlineCss: promotionInlineCss, promotions: split.promotions });
+    const value = JSON.stringify({ version: snapshotVersion, priceRules: priceRulesVersion, revision, css: promotionCss, inlineCss: promotionInlineCss, promotions: split.promotions });
     if (Buffer.byteLength(value, "utf8") > mainLimit) throw new Error("The public storefront designs exceed Shopify’s JSON size limit. Reduce the number of enabled promotions or shorten their content.");
     const companions = companionMetafields(split, titles);
     const existing = new Map<string, string>((installation.companions?.nodes ?? []).map((node: { key: string; value: string }) => [node.key, node.value]));
@@ -186,7 +193,7 @@ export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: st
 export async function ensureStorefrontSnapshot(admin: ShopifyAdminClient, shop: string) {
   const result = await (await admin.graphql(`query PromotionSnapshotVersion { currentAppInstallation { metafield(namespace: "${namespace}", key: "${key}") { value } } }`)).json();
   if (result.errors?.length) throw new Error(result.errors.map((e: { message: string }) => e.message).join(" "));
-  let snapshot: { version?: number; inlineCss?: string; css?: string } | null = null;
+  let snapshot: { version?: number; priceRules?: number; inlineCss?: string; css?: string } | null = null;
   try { snapshot = JSON.parse(result.data?.currentAppInstallation?.metafield?.value ?? "null"); } catch { /* Republish malformed data. */ }
-  if (snapshot?.version !== snapshotVersion || snapshot.inlineCss !== promotionInlineCss || snapshot.css !== promotionCss) await syncStorefrontSnapshot(admin, shop);
+  if (snapshot?.version !== snapshotVersion || snapshot.priceRules !== priceRulesVersion || snapshot.inlineCss !== promotionInlineCss || snapshot.css !== promotionCss) await syncStorefrontSnapshot(admin, shop);
 }

@@ -12,6 +12,7 @@ import type {
   PromotionConditions,
   PromotionCustomers,
   PromotionGeneral,
+  PromotionReduction,
   PromotionSchedule,
   PromotionStatus,
   PromotionCombinations,
@@ -40,6 +41,18 @@ function mapPromotionStatus(
   }
 }
 
+/** The plain percentage or amount a discount takes off, or null for anything else (buy X get Y, shipping, a discount we cannot read). */
+function adaptReduction(node: ShopifyDiscountNode): PromotionReduction | null {
+  const value = node.discount.customerGets?.value;
+  if (!value) return null;
+  if (value.__typename === "DiscountPercentage" && typeof value.percentage === "number") return { kind: "percentage", percentage: value.percentage };
+  if (value.__typename === "DiscountAmount" && value.amount) {
+    const amount = Number(value.amount.amount);
+    if (Number.isFinite(amount)) return { kind: "amount", amount, currency: value.amount.currencyCode, perItem: value.appliesOnEachItem === true };
+  }
+  return null;
+}
+
 function adaptGeneral(
   node: ShopifyDiscountNode,
   provider: ShopifyPromotionProvider,
@@ -51,6 +64,7 @@ function adaptGeneral(
     type: provider.type,
     status: mapPromotionStatus(node.discount.status),
     value: getDiscountValue(node),
+    reduction: adaptReduction(node),
     code: getDiscountCode(node),
     createdBy: getDiscountCreator(node),
   };

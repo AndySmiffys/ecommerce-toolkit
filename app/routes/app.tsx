@@ -81,6 +81,10 @@ export default function App() {
           Shipping countdown
         </Link>
 
+        <Link to={appUrl("/app/discounted-price")}>
+          Discounted price
+        </Link>
+
         <Link to={appUrl("/app/reports")}>
           Reports
         </Link>

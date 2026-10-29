@@ -73,14 +73,14 @@ function toInput(f: Form, services: DeliveryServiceSetting[], sort: "soonest" | 
   };
 }
 
-function TextField({ label, value, onChange, details, maxLength, multiline = false, error }: { label: string; value: string; onChange: (value: string) => void; details?: string; maxLength?: number; multiline?: boolean; error?: string }) {
+export function TextField({ label, value, onChange, details, maxLength, multiline = false, error }: { label: string; value: string; onChange: (value: string) => void; details?: string; maxLength?: number; multiline?: boolean; error?: string }) {
   return multiline
     ? <s-text-area label={label} value={value} rows={3} maxLength={maxLength} details={details} error={error} onInput={event => onChange(event.currentTarget.value)} />
     : <s-text-field label={label} value={value} maxLength={maxLength} details={details} error={error} onInput={event => onChange(event.currentTarget.value)} />;
 }
 
 // Shopify's native colour field; only complete six-digit colours are passed on while someone is typing.
-function ColourField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+export function ColourField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const ref = useRef<HTMLElementTagNameMap["s-color-field"]>(null);
   const latest = useRef(onChange); latest.current = onChange;
   useEffect(() => {
@@ -200,7 +200,7 @@ function DeliveryFromShopify({ delivery, appUrl }: { delivery: FreeDeliveryTable
 }
 
 /** The placeholders that can go in a message, with what each becomes for the example being previewed. Click one to copy it. */
-function PlaceholderList({ examples, onCopy, placeholders = freePlaceholders, heading = "Placeholders you can use in these messages", exampleHeading = "For the country in the preview" }: {
+export function PlaceholderList({ examples, onCopy, placeholders = freePlaceholders, heading = "Placeholders you can use in these messages", exampleHeading = "For the country in the preview" }: {
   examples: Record<string, string>; onCopy: (placeholder: string) => void; placeholders?: ReadonlyArray<{ name: string; meaning: string; example: string }>; heading?: string; exampleHeading?: string;
 }) {
   return <s-stack direction="block" gap="small-300">
