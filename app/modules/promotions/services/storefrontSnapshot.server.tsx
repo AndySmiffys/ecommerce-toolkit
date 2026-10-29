@@ -2,7 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { PromotionOffer, promotionCss, promotionInlineCss } from "../components/PromotionPreview";
 import { placements, websiteFromSettings } from "../design/design";
 import { encodeIds } from "../design/compactIds";
-import { priceRuleFor } from "../design/priceRule";
+import { priceEntryFor, type PriceEntry } from "../design/priceRule";
+import { listAutomaticDiscountIds } from "./automaticDiscounts.server";
+import { promotionDiscountId } from "../design/discountIdentity";
 import { completeDiscountScope } from "./discountScope.server";
 import { collectionProductIds } from "./collectionProducts.server";
 import { mapDiscountToPromotion } from "../mappers/promotionMapper";
@@ -16,7 +18,7 @@ const key = "storefront";
 /** Bump when the published shape changes. The theme blocks read only this version and fall back to the live path otherwise. */
 export const snapshotVersion = 3;
 /** Bump when what the price block reads from each promotion changes, so the published data is rewritten without a change to any promotion. */
-export const priceRulesVersion = 1;
+export const priceRulesVersion = 2;
 const shortId = (id: string) => id.split("/").pop()!;
 // The small snapshot is read on every page, so it stays small (Shopify limits a JSON metafield to 128 KB). The long
 // product lists and the badge data are separate metafields that only the pages needing them read.
@@ -47,15 +49,11 @@ export function publicSnapshotEntry(promotion: PromotionRecord, now = Date.now()
     renderKeys[placement.id] = storefrontRenderKey(promotion, placement.id);
     html[placement.id] = renderToStaticMarkup(<PromotionOffer value={value} placement={placement.id} endsAt={promotion.endsAt} now={now} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} />);
   }
-  // What the product page's price block needs, for a promotion whose effect on a product's price can be told from the product alone.
-  // Only when the whole list of products is known, so a scoped discount is never claimed for a product it may not cover.
-  const price = all || complete ? priceRuleFor(promotion) : null;
   return { id: promotion.id, priority: promotion.settings.priority,
     starts: promotion.startsAt ? Math.floor(Date.parse(promotion.startsAt) / 1000) : 0,
     ends: promotion.endsAt ? Math.floor(Date.parse(promotion.endsAt) / 1000) : 0,
     all, products: scope.products.map(p => shortId(p.id)), collections: scope.collections.map(c => shortId(c.id)),
     variants: scope.variants.map(v => ({ id: shortId(v.id), product: v.productId ? shortId(v.productId) : "" })), html, renderKeys,
-    ...(price ? { price } : {}),
     // Only for badges and never published as such: see splitSnapshot.
     ...(collectionProducts ? { badgeProducts: collectionProducts } : {}) };
 }
@@ -74,7 +72,7 @@ const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003
  * lists Liquid checks on product and collection pages (one per promotion), and the compact badge data the card
  * script reads (one per promotion, joined into the page by the loader embed).
  */
-export function splitSnapshot(entries: SnapshotEntry[], revision: string) {
+export function splitSnapshot(entries: SnapshotEntry[], revision: string, priceEntries: PriceEntry[] = []) {
   const promotions = [];
   const scopes: Record<string, Scope> = {};
   const badgeShards: Record<string, string> = {};
@@ -94,7 +92,18 @@ export function splitSnapshot(entries: SnapshotEntry[], revision: string) {
       badgeKeys.push(scopeKey);
     }
   }
-  return { promotions, scopes, badgeShards, badgeIndex: { v: 1, rev: revision, css: badgeCss, keys: badgeKeys } };
+  // What the Discounted price block reads: its own list, apart from the banners, because it includes automatic discounts that are not
+  // enabled for the website. Their product lists are the same per-promotion metafields.
+  const prices = priceEntries.map(entry => {
+    const key = shortId(entry.id);
+    const { id: _id, products, collections, variants, ...rest } = entry;
+    void _id;
+    if (!entry.all && (products.length || collections.length || variants.length)) {
+      scopes[key] = { ...(products.length ? { products } : {}), ...(collections.length ? { collections } : {}), ...(variants.length ? { variants } : {}) };
+    }
+    return { key, ...rest };
+  });
+  return { promotions, prices, scopes, badgeShards, badgeIndex: { v: 1, rev: revision, css: badgeCss, keys: badgeKeys } };
 }
 
 // Shopify limits a JSON metafield to 128 KB and a text metafield to 64 KB, so each promotion's lists get their own.
@@ -130,7 +139,9 @@ export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: st
     if (!installation) throw new Error("Shopify app installation could not be read.");
     const rows = await readSettings(shop);
     const entries = [];
+    const priceEntries: PriceEntry[] = [];
     const titles = new Map<string, string>();
+    const seen = new Set<string>();
     for (const row of rows.filter(row => row.websiteEnabled)) {
       const node = await getDiscount(admin, row.shopifyDiscountId, 250);
       if (!node || (node.discount.codesCount?.count ?? node.discount.codes?.nodes.length ?? 0) > 1) continue;
@@ -146,10 +157,23 @@ export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: st
       }
       const entry = publicSnapshotEntry(promotion, Date.now(), complete, collectionProducts);
       if (entry) { entries.push(entry); titles.set(shortId(entry.id), promotion.title); }
+      seen.add(promotionDiscountId(row.shopifyDiscountId));
+      const priced = priceEntryFor(promotion, complete);
+      if (priced) { priceEntries.push(priced); titles.set(shortId(priced.id), promotion.title); }
+    }
+    // Shopify applies every active automatic discount in the cart, enabled for the website or not, so the price shown has to include them.
+    for (const id of await listAutomaticDiscountIds(admin)) {
+      if (seen.has(id)) continue;
+      const node = await getDiscount(admin, id, 250);
+      if (!node) continue;
+      const { complete } = await completeDiscountScope(admin, node);
+      const promotion = mapDiscountToPromotion(node);
+      const priced = priceEntryFor(promotion, complete);
+      if (priced) { priceEntries.push(priced); titles.set(shortId(priced.id), promotion.title); }
     }
     const revision = storefrontRevision(shop, rows);
-    const split = splitSnapshot(entries, revision);
-    const value = JSON.stringify({ version: snapshotVersion, priceRules: priceRulesVersion, revision, css: promotionCss, inlineCss: promotionInlineCss, promotions: split.promotions });
+    const split = splitSnapshot(entries, revision, priceEntries);
+    const value = JSON.stringify({ version: snapshotVersion, priceRules: priceRulesVersion, revision, css: promotionCss, inlineCss: promotionInlineCss, promotions: split.promotions, prices: split.prices });
     if (Buffer.byteLength(value, "utf8") > mainLimit) throw new Error("The public storefront designs exceed Shopify’s JSON size limit. Reduce the number of enabled promotions or shorten their content.");
     const companions = companionMetafields(split, titles);
     const existing = new Map<string, string>((installation.companions?.nodes ?? []).map((node: { key: string; value: string }) => [node.key, node.value]));

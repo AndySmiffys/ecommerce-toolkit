@@ -27,14 +27,14 @@ async function loadPage() {
 }
 
 let exportsOf;
-async function mountPage({ saved = true, respond, patch = null } = {}) {
+async function mountPage({ saved = true, respond, patch = null, notShown = undefined } = {}) {
   exportsOf ??= await loadPage();
   const { PriceDisplayPage, defaultPriceDisplay } = exportsOf;
   const container = document.createElement('div'); document.body.appendChild(container);
   const posts = [];
   function Page() {
     const fetcher = useFetcher();
-    return React.createElement(PriceDisplayPage, { initial: patch ? { ...defaultPriceDisplay, ...patch } : defaultPriceDisplay, saved, fetcher });
+    return React.createElement(PriceDisplayPage, { initial: patch ? { ...defaultPriceDisplay, ...patch } : defaultPriceDisplay, saved, notShown, fetcher });
   }
   const router = createMemoryRouter([{
     path: '/app/discounted-price', Component: Page,
@@ -100,8 +100,27 @@ test('the preview is the block itself: its markup, its stylesheet, and the shop\
     await example(container, 'code');
     assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, code: '£15.00 with code SAVE25' }, 'the price does not change until the code is used');
     await example(container, 'both');
-    assert.deepEqual(shown(container), { now: '£18.00', was: '£20.00', save: null, code: '£15.00 with code SAVE25' });
+    assert.deepEqual(shown(container), { now: '£18.00', was: '£20.00', save: null, code: '£15.00 with code SAVE25' }, 'an automatic discount and a code that can be combined');
+    await example(container, 'exclusive');
+    assert.deepEqual(shown(container), { now: '£18.00', was: '£20.00', save: null, code: null }, 'an automatic discount that cannot be combined with codes: the code is not a price they can have');
   } finally { await page.unmount(); }
+});
+
+test('the automatic discounts that change prices but cannot be shown are listed, with why and a link to each', async () => {
+  const list = [{ id: 'gid://shopify/DiscountNode/5', routeId: '5', title: 'Spend and save', reason: 'It needs a minimum spend or quantity, so the price depends on the cart.' }, { id: 'gid://shopify/DiscountNode/6', routeId: '6', title: 'Order amount', reason: 'It takes an amount off the whole order, which is spread over what is in the cart.' }];
+  const page = await mountPage({ notShown: list });
+  try {
+    const banner = find(page.container, 's-banner[heading="Automatic discounts that change prices but cannot be shown here"]');
+    assert.ok(banner, 'a warning');
+    assert.match(banner.textContent, /Spend and save: It needs a minimum spend or quantity/);
+    assert.match(banner.textContent, /Order amount: It takes an amount off the whole order/);
+    assert.deepEqual(findAll(banner, 's-link').map(link => link.getAttribute('href').split('/').pop()), ['5', '6']);
+    assert.match(banner.textContent, /Shoppers get these in the cart/);
+  } finally { await page.unmount(); }
+  for (const none of [[], null, undefined]) {
+    const quiet = await mountPage({ notShown: none });
+    try { assert.equal(find(quiet.container, 's-banner[heading="Automatic discounts that change prices but cannot be shown here"]'), null, 'nothing to warn about'); } finally { await quiet.unmount(); }
+  }
 });
 
 test('the saving can be switched on and worded, with placeholders that copy, and a typo is pointed out', async () => {
@@ -239,5 +258,34 @@ test('settings saved earlier are shown when the page opens', async () => {
     assert.equal(find(container, 'aside discounted-price').style.getPropertyValue('--dp-sale'), '#123456');
     assert.equal(save(container).disabled, true, 'showing what is saved is not a change');
     assert.match(find(container, 'details[data-step=appearance] summary').textContent, /18px/);
+  } finally { await page.unmount(); }
+});
+
+test('the storefront prices can be updated from the page, without touching the settings', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    const button = byText(container, 's-button', 'Update the storefront prices now');
+    assert.ok(button, 'a button, with words about when to use it');
+    assert.match(container.textContent, /Use this if a change in Shopify has not shown up on a product page/);
+    await click(button);
+    await wait(60);
+    assert.equal(page.posts.length, 1);
+    assert.deepEqual(page.posts[0], { intent: 'republish' }, 'only the request, no settings');
+    assert.ok(toasts.includes('Storefront prices updated'));
+    assert.equal(save(container).disabled, true, 'nothing to save: the settings are untouched');
+  } finally { await page.unmount(); }
+});
+
+test('an update that fails says why and leaves the settings alone', async () => {
+  const page = await mountPage({ respond: data => ({ ok: false, intent: data.intent, errors: ['Shopify is busy. Try again in a moment.'] }) });
+  try {
+    const { container } = page;
+    const wording = find(container, 'details[data-step=wording]');
+    await check(find(wording, 's-checkbox'), true);
+    await click(byText(container, 's-button', 'Update the storefront prices now'));
+    await wait(60);
+    assert.match(container.textContent, /Shopify is busy\. Try again in a moment\./);
+    assert.equal(find(wording, 's-checkbox').checked, true, 'what was typed is kept');
   } finally { await page.unmount(); }
 });

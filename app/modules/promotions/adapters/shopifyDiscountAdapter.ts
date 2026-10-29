@@ -160,11 +160,13 @@ function adaptSchedule(
   };
 }
 
-function adaptCombinations(): PromotionCombinations {
+/** What the discount may be combined with, as Shopify holds it (a discount with nothing set combines with nothing). */
+function adaptCombinations(node: ShopifyDiscountNode): PromotionCombinations {
+  const combines = node.discount.combinesWith;
   return {
-    orderDiscounts: false,
-    productDiscounts: false,
-    shippingDiscounts: false,
+    orderDiscounts: combines?.orderDiscounts === true,
+    productDiscounts: combines?.productDiscounts === true,
+    shippingDiscounts: combines?.shippingDiscounts === true,
   };
 }
 
@@ -183,7 +185,7 @@ export function adaptShopifyDiscount(
       customers: adaptCustomers(node),
       conditions: adaptConditions(node),
       schedule: adaptSchedule(node),
-      combinations: adaptCombinations(),
+      combinations: adaptCombinations(node),
     },
     includedInSync: shouldSyncDiscount(node),
   };

@@ -22,32 +22,47 @@
     return false;
   }
 
+  /** Whether a discount allows being combined with discounts of a kind ("P" product, "O" order). */
+  function allows(rule, kind) { return kind === 'P' ? Boolean(rule.cp) : Boolean(rule.co); }
+  /** Two discounts combine only when each allows the other's kind. */
+  function canCombine(a, b) { return allows(a, b.k) && allows(b, a.k); }
+
   /**
    * What to show for a variant. `now` is the price to pay (the best automatic discount, or the price itself), `was` the price it is compared
-   * with (the compare-at price or the price) when `now` is lower, and `code` the best code discount when it beats `now`, with what it saves
-   * against the price before any discount. Codes are not added to automatic discounts here: the shopper has not entered one, and checkout
-   * decides what combines.
+   * with (the compare-at price or the price) when `now` is lower, and `code` the code discount with what it saves against the price before
+   * any discount. The code spoken of is the first one, in the order given (the banners' order), that covers the variant: a lower one is
+   * never shown in its place, and one without a price ("n") is spoken of as nothing. It is left out when it cannot be combined with the
+   * automatic discount that applies, and when it would not make the price lower. Codes are not added to automatic discounts here: the
+   * shopper has not entered one, and checkout decides what combines.
    */
   function priceState(variant, rules, currency) {
     var base = variant.price;
     var compare = variant.compare_at_price || 0;
     var list = compare > base ? compare : base;
-    var auto = -1, code = -1, codeName = '';
+    var auto = -1, autoRule = null, code = -1, codeRule = null;
     (rules || []).forEach(function (rule) {
       if (!covers(rule, variant.id)) return;
+      if (rule.c) {
+        if (codeRule) return;
+        codeRule = rule;
+        var codePrice = discounted(base, rule, currency);
+        if (codePrice !== null) code = codePrice;
+        return;
+      }
       var price = discounted(base, rule, currency);
       if (price === null) return;
-      if (!rule.c) { if (auto < 0 || price < auto) auto = price; }
-      else if (code < 0 || price < code) { code = price; codeName = rule.c; }
+      if (auto < 0 || price < auto) { auto = price; autoRule = rule; }
     });
-    var now = auto >= 0 && auto < base ? auto : base;
+    var applied = auto >= 0 && auto < base;
+    var now = applied ? auto : base;
     var was = now < list ? list : 0;
     var saving = was ? was - now : 0;
     var codeSaving = code >= 0 ? base - code : 0;
+    var codeShown = code >= 0 && code < now && !(applied && !canCombine(autoRule, codeRule));
     return {
       now: now, was: was, saving: saving,
       percent: was ? wholePercent(saving, was) : 0,
-      code: code >= 0 && code < now ? { price: code, name: codeName, saving: codeSaving, percent: wholePercent(codeSaving, base) } : null
+      code: codeShown ? { price: code, name: codeRule.c, saving: codeSaving, percent: wholePercent(codeSaving, base) } : null
     };
   }
 

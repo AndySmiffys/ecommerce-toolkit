@@ -6,6 +6,11 @@ export function promotionDiscountId(id: string): string {
   return `gid://shopify/DiscountNode/${match[1]}`;
 }
 
+/** Whether Shopify's id is for an automatic discount. Their changes reach the storefront's prices whether or not the shop has website settings for them. */
+export function isAutomaticDiscountId(id: string): boolean {
+  return /^gid:\/\/shopify\/DiscountAutomaticNode\/\d+$/.test(id);
+}
+
 export function promotionDiscountAliases(id: string, method?: "code" | "automatic"): string[] {
   const canonical = promotionDiscountId(id);
   const number = canonical.split("/").pop();

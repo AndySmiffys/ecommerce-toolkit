@@ -13,6 +13,8 @@ import { collectionCacheState, collectionProductIds, collectionProductLimit, for
 import type { ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
 import type { getLatestPromotionSettings } from "../app/modules/promotions/services/promotionSettings.server";
 const now = Date.parse("2026-10-09T12:00:00Z");
+/** The automatic discounts the pretend Shopify reports, for the tests that sync. Empty unless a test fills it. */
+const automatic: { nodes: Array<{ id: string; automaticDiscount: { status: string } }> } = { nodes: [] };
 function promotion(id = 1) {
   const node: ShopifyDiscountNode = { id: `gid://shopify/DiscountNode/${id}`, events: { nodes: [] }, discount: { __typename: "DiscountCodeBasic", title: `Offer ${id}`, status: "ACTIVE", startsAt: "2026-10-01T00:00:00Z", endsAt: "2026-10-20T00:00:00Z", discountClasses: ["ORDER"], codes: { nodes: [{ code: `CODE${id}` }] }, context: { __typename: "DiscountBuyerSelectionAll", all: "ALL" }, customerGets: { value: { __typename: "DiscountPercentage", percentage: .1 }, items: { __typename: "AllDiscountItems", allItems: true } } } };
   const result = mapDiscountToPromotion(node);
@@ -81,6 +83,7 @@ test('snapshot publication uses compare-and-set, retries concurrent saves and su
   const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
     if (query.includes('PromotionInstallation')) return Response.json({ data: { currentAppInstallation: { id: 'gid://shopify/AppInstallation/1', metafield: { value: '', compareDigest: digest } } } });
     if (query.includes('GetDiscount')) return Response.json({ data: { discountNode: node } });
+    if (query.includes('PromotionAutomaticDiscounts')) return Response.json({ data: { automaticDiscountNodes: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: automatic.nodes } } });
     const input = (options!.variables!.metafields as Array<{ compareDigest: string; value: string }>)[0];
     assert.equal(input.compareDigest, digest);
     assert.equal(JSON.parse(input.value).promotions.length, 1);
@@ -298,6 +301,7 @@ test('publishing writes the snapshot, the product lists and the badge data toget
   const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
     if (query.includes('PromotionInstallation')) return Response.json({ data: { currentAppInstallation: { id: 'gid://shopify/AppInstallation/1', metafield: { value: current.storefront ?? '', compareDigest: 'd' }, companions: { nodes: Object.entries(current).filter(([name]) => name !== 'storefront').map(([name, value]) => ({ key: name, value })) } } } });
     if (query.includes('GetDiscount')) return Response.json({ data: { discountNode: node } });
+    if (query.includes('PromotionAutomaticDiscounts')) return Response.json({ data: { automaticDiscountNodes: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: automatic.nodes } } });
     const metafields = options!.variables!.metafields as typeof writes[number];
     writes.push(metafields);
     for (const field of metafields) current[field.key] = field.value;
@@ -333,6 +337,7 @@ test('lists of promotions that are gone are removed, and many promotions are wri
   const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
     if (query.includes('PromotionInstallation')) return Response.json({ data: { currentAppInstallation: { id: 'gid://shopify/AppInstallation/1', metafield: { value: '', compareDigest: 'd' }, companions: { nodes: [{ key: 'scope_99', value: 'old' }, { key: 'badge_99', value: 'old' }, { key: 'unrelated', value: 'keep' }] } } } });
     if (query.includes('GetDiscount')) return Response.json({ data: { discountNode: nodes.get(String(options!.variables!.id)) } });
+    if (query.includes('PromotionAutomaticDiscounts')) return Response.json({ data: { automaticDiscountNodes: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: automatic.nodes } } });
     if (query.includes('PromotionStale')) { calls.push({ kind: 'delete', keys: (options!.variables!.metafields as Array<{ key: string }>).map(field => field.key) }); return Response.json({ data: { metafieldsDelete: { userErrors: [] } } }); }
     calls.push({ kind: 'set', keys: (options!.variables!.metafields as Array<{ key: string }>).map(field => field.key) });
     return Response.json({ data: { metafieldsSet: { userErrors: [] } } });
@@ -473,6 +478,7 @@ test('publishing gives a discount on a collection a badge listing the products i
   const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
     if (query.includes('PromotionInstallation')) return Response.json({ data: { currentAppInstallation: { id: 'gid://shopify/AppInstallation/1', metafield: { value: '', compareDigest: 'd' }, companions: { nodes: [] } } } });
     if (query.includes('GetDiscount')) return Response.json({ data: { discountNode: node } });
+    if (query.includes('PromotionAutomaticDiscounts')) return Response.json({ data: { automaticDiscountNodes: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: automatic.nodes } } });
     if (query.includes('CollectionProductIds')) {
       collectionReads++;
       return Response.json({ data: { collection: { products: { pageInfo: noNextPage, nodes: members.current.map(product => ({ id: `gid://shopify/Product/${product}` })) } } } });
@@ -493,79 +499,128 @@ test('publishing gives a discount on a collection a badge listing the products i
   forgetCollectionProducts();
 });
 
+
 // ---------------------------------------------------------------- the price block's data
 
-/** The same promotion as `promotion()`, with what the price block cares about changed. */
-function priced(changes: { value?: unknown; items?: unknown; classes?: string[]; automatic?: boolean; minimum?: unknown } = {}) {
+function codeNode(changes: { value?: unknown; minimum?: unknown; classes?: string[]; items?: unknown } = {}) {
   const { node } = promotion();
   const discount = node.discount as unknown as Record<string, unknown>;
+  discount.endsAt = "2099-01-01T00:00:00Z"; // sync reads the real clock, and the fixture's own end date has passed
   discount.discountClasses = changes.classes ?? ["ORDER"];
-  if (changes.automatic) { discount.__typename = "DiscountAutomaticBasic"; delete discount.codes; }
+  discount.combinesWith = { productDiscounts: true, orderDiscounts: true, shippingDiscounts: false };
   if (changes.minimum) discount.minimumRequirement = changes.minimum;
-  (discount.customerGets as Record<string, unknown>).value = changes.value ?? { __typename: "DiscountPercentage", percentage: 0.1 };
+  if (changes.value) (discount.customerGets as Record<string, unknown>).value = changes.value;
   if (changes.items) (discount.customerGets as Record<string, unknown>).items = changes.items;
-  const result = mapDiscountToPromotion(node);
-  Object.assign(result.settings, { websiteEnabled: true });
-  return result;
+  return node;
 }
-const someProducts = { __typename: "DiscountProducts", products: { nodes: [{ id: "gid://shopify/Product/7", title: "Cape" }] } };
+function automaticNode(id: number, changes: { value?: unknown; combines?: unknown; minimum?: unknown; context?: unknown; endsAt?: string | null; items?: unknown } = {}) {
+  return {
+    id: `gid://shopify/DiscountNode/${id}`, events: { nodes: [] },
+    discount: {
+      __typename: "DiscountAutomaticBasic", title: `Automatic ${id}`, status: "ACTIVE", startsAt: "2026-10-01T00:00:00Z", endsAt: changes.endsAt === undefined ? null : changes.endsAt,
+      discountClasses: ["PRODUCT"], context: changes.context ?? { __typename: "DiscountBuyerSelectionAll", all: "ALL" },
+      combinesWith: changes.combines ?? { productDiscounts: false, orderDiscounts: false, shippingDiscounts: false },
+      ...(changes.minimum ? { minimumRequirement: changes.minimum } : {}),
+      customerGets: { value: changes.value ?? { __typename: "DiscountAmount", amount: { amount: "5.0", currencyCode: "GBP" }, appliesOnEachItem: true }, items: changes.items ?? { __typename: "AllDiscountItems", allItems: true } },
+    },
+  } as unknown as ShopifyDiscountNode;
+}
+const settingsRow = (id: number, extra: Record<string, unknown> = {}) => ({ id, shop: "test.myshopify.com", shopifyDiscountId: `gid://shopify/DiscountNode/${id}`, priority: 10 - id, included: true, websiteEnabled: true, showHeaderBanner: true, showProductPage: true, showCollectionPage: true, showProductBadge: false, showCountdown: false, headline: "H", body: "", badgeText: "", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#000000", badgeColour: "#000000", designJson: JSON.stringify(defaultDesign()), lastSyncedAt: null, lastSyncError: null, createdAt: new Date(0), updatedAt: new Date(0), ...extra });
 
-test("a promotion carries its price rule when its effect on a price can be told from the product alone", () => {
-  assert.deepEqual(publicSnapshotEntry(priced(), now)!.price, { t: "p", v: 1000, c: "CODE1" }, "10% off the order, with its code");
-  assert.deepEqual(publicSnapshotEntry(priced({ automatic: true }), now)!.price, { t: "p", v: 1000, c: "" }, "automatic: no code");
-  const each = { __typename: "DiscountAmount", amount: { amount: "5.0", currencyCode: "GBP" }, appliesOnEachItem: true };
-  assert.deepEqual(publicSnapshotEntry(priced({ value: each, classes: ["PRODUCT"], items: someProducts, automatic: true }), now)!.price, { t: "a", v: 500, c: "", u: "GBP" });
-  assert.equal("price" in publicSnapshotEntry(priced({ value: each }), now)!, false, "an amount off the whole order is spread over the cart");
-  assert.equal("price" in publicSnapshotEntry(priced({ minimum: { __typename: "DiscountMinimumSubtotal", greaterThanOrEqualToSubtotal: { amount: "30.0", currencyCode: "GBP" } } }), now)!, false, "a minimum spend");
-  const scoped = priced({ classes: ["PRODUCT"], items: someProducts });
-  assert.deepEqual(publicSnapshotEntry(scoped, now, true)!.price, { t: "p", v: 1000, c: "CODE1" }, "its whole list of products is known");
-  assert.equal("price" in publicSnapshotEntry(scoped, now, false)!, false, "a list Shopify could not give in full: never claimed for a product it may not cover");
-  assert.ok("price" in publicSnapshotEntry(priced(), now, false)!, "everything needs no list");
-});
-
-test("the price rule is in the small snapshot every page reads, and not in the lists or the badge data", () => {
-  const entry = publicSnapshotEntry(priced({ classes: ["PRODUCT"], items: someProducts }), now)!;
-  const split = splitSnapshot([entry], "r");
-  assert.deepEqual(split.promotions[0].price, { t: "p", v: 1000, c: "CODE1" });
-  assert.equal("price" in split.scopes["1"], false);
-  assert.equal(split.badgeShards["1"] === undefined || !split.badgeShards["1"].includes("CODE1"), true);
-});
-
-test("the published snapshot says which price rules it understands, so it is rewritten without any promotion changing", async () => {
-  assert.equal(priceRulesVersion, 1);
-  const { node } = promotion();
-  node.discount.endsAt = "2099-01-01T00:00:00Z"; // sync reads the real clock, and the fixture's own end date has passed
-  const writes: Array<Array<{ key: string; value: string }>> = [];
+/** A pretend Shopify with these discounts; returns what a sync publishes, by metafield key. */
+async function published(nodes: ShopifyDiscountNode[], rows: Array<ReturnType<typeof settingsRow>>, automaticIds: number[]) {
+  const written: Record<string, string> = {};
   const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
     if (query.includes("PromotionInstallation")) return Response.json({ data: { currentAppInstallation: { id: "gid://shopify/AppInstallation/1", metafield: { value: "", compareDigest: "d" }, companions: { nodes: [] } } } });
-    if (query.includes("GetDiscount")) return Response.json({ data: { discountNode: node } });
-    writes.push(options!.variables!.metafields as typeof writes[number]);
+    if (query.includes("PromotionAutomaticDiscounts")) return Response.json({ data: { automaticDiscountNodes: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: automaticIds.map(id => ({ id: `gid://shopify/DiscountAutomaticNode/${id}`, automaticDiscount: { status: "ACTIVE" } })) } } });
+    if (query.includes("GetDiscount")) return Response.json({ data: { discountNode: nodes.find(item => item.id.split("/").pop() === String(options?.variables?.id).split("/").pop()) ?? null } });
+    for (const field of options!.variables!.metafields as Array<{ key: string; value: string }>) written[field.key] = field.value;
     return Response.json({ data: { metafieldsSet: { userErrors: [] } } });
   } };
-  const row = { id: 1, shop: "test.myshopify.com", shopifyDiscountId: "gid://shopify/DiscountNode/1", priority: 0, included: true, websiteEnabled: true, showHeaderBanner: true, showProductPage: true, showCollectionPage: true, showProductBadge: false, showCountdown: false, headline: "H", body: "", badgeText: "", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#000000", badgeColour: "#000000", designJson: JSON.stringify(defaultDesign()), lastSyncedAt: null, lastSyncError: null, createdAt: new Date(0), updatedAt: new Date(0) };
-  await syncStorefrontSnapshot(api, "test.myshopify.com", async () => [row]);
-  const main = JSON.parse(writes[0].find(field => field.key === "storefront")!.value);
-  assert.equal(main.priceRules, 1);
-  assert.deepEqual(main.promotions[0].price, { t: "p", v: 1000, c: "CODE1" });
+  await syncStorefrontSnapshot(api, "test.myshopify.com", async () => rows);
+  return { written, main: JSON.parse(written.storefront) as { priceRules: number; prices: Array<Record<string, unknown>> } };
+}
+
+test("the published snapshot says which price rules it understands, so it is rewritten without any promotion changing", async () => {
+  assert.equal(priceRulesVersion, 2);
+  const { main } = await published([codeNode()], [settingsRow(1)], []);
+  assert.equal(main.priceRules, 2);
 });
 
-test("what is published is what the Discounted price block reads: the best automatic price, and a code as its own line", async () => {
+test("an enabled code promotion is published for the price block with its rule, kind and what it combines with, and no marketing settings", async () => {
+  const { main } = await published([codeNode()], [settingsRow(1)], []);
+  assert.deepEqual(main.prices, [{ key: "1", starts: 1790812800, ends: 4070908800, all: true, c: "CODE1", price: { t: "p", v: 1000 }, k: "O", cp: true, co: true }]);
+});
+
+test("every active automatic discount is published for the price block, enabled for the website or not, because the cart applies it", async () => {
+  const automatic9 = automaticNode(9);
+  const { main, written } = await published([codeNode(), automatic9], [settingsRow(1)], [9]);
+  assert.deepEqual(main.prices.map(item => [item.key, item.c, item.price]), [["1", "CODE1", { t: "p", v: 1000 }], ["9", "", { t: "a", v: 500, u: "GBP" }]], "the enabled code first, in the banners' order, then the automatic discount");
+  assert.deepEqual(main.prices[1].k, "P");
+  assert.deepEqual([main.prices[1].cp, main.prices[1].co], [false, false], "it combines with nothing");
+  assert.equal(JSON.parse(written.storefront).promotions.some((item: { id: string }) => item.id.endsWith("/9")), false, "it is not a banner: nothing about it is published for the marketing blocks");
+  assert.equal(written.badge_9, undefined);
+});
+
+test("an automatic discount is published once, even when it is also enabled for the website", async () => {
+  const { main } = await published([automaticNode(9)], [settingsRow(9)], [9]);
+  assert.equal(main.prices.filter(item => item.key === "9").length, 1);
+});
+
+test("an automatic discount's product lists are published like any other promotion's", async () => {
+  const items = { __typename: "DiscountProducts", products: { nodes: [{ id: "gid://shopify/Product/7", title: "Cape" }] } };
+  const { written, main } = await published([automaticNode(9, { items })], [], [9]);
+  assert.equal(main.prices[0].all, false);
+  assert.deepEqual(JSON.parse(written.scope_9), { products: ["7"] });
+});
+
+test("what the price cannot be told from is left out: minimums, customers, an amount off the order, ended, and codes that are not enabled", async () => {
+  const minimum = { __typename: "DiscountMinimumSubtotal", greaterThanOrEqualToSubtotal: { amount: "30.0", currencyCode: "GBP" } };
+  const eachOrder = { __typename: "DiscountAmount", amount: { amount: "5.0", currencyCode: "GBP" }, appliesOnEachItem: false };
+  const nodes = [
+    automaticNode(11, { minimum }), automaticNode(12, { context: { __typename: "DiscountCustomers", customers: [{ id: "gid://shopify/Customer/1", displayName: "A" }] } }),
+    automaticNode(13, { value: eachOrder }), automaticNode(14, { endsAt: "2020-01-01T00:00:00Z" }), automaticNode(15), codeNode(),
+  ];
+  const { main } = await published(nodes, [settingsRow(1, { websiteEnabled: false })], [11, 12, 13, 14, 15]);
+  assert.deepEqual(main.prices.map(item => item.key), ["15"], "only the plain automatic discount; the code is not enabled for the website, so it is not advertised");
+});
+
+test("an enabled code promotion with no price still takes its place in the order, so no other code is spoken of in its place", async () => {
+  const minimum = { __typename: "DiscountMinimumSubtotal", greaterThanOrEqualToSubtotal: { amount: "30.0", currencyCode: "GBP" } };
+  const first = codeNode({ minimum });
+  const second = codeNode();
+  (second as unknown as { id: string }).id = "gid://shopify/DiscountNode/2";
+  (second.discount as unknown as { codes: unknown }).codes = { nodes: [{ code: "CODE2" }] };
+  const { main } = await published([first, second], [settingsRow(1), settingsRow(2)], []);
+  assert.deepEqual(main.prices.map(item => [item.key, item.c, "price" in item]), [["1", "CODE1", false], ["2", "CODE2", true]]);
+});
+
+test("reading the automatic discounts is part of the publish, and one that cannot be read stops it rather than publishing wrong prices", async () => {
+  const api = { graphql: async (query: string) => {
+    if (query.includes("PromotionInstallation")) return Response.json({ data: { currentAppInstallation: { id: "gid://shopify/AppInstallation/1", metafield: { value: "", compareDigest: "d" }, companions: { nodes: [] } } } });
+    if (query.includes("PromotionAutomaticDiscounts")) return Response.json({ errors: [{ message: "Throttled" }] });
+    return Response.json({ data: { metafieldsSet: { userErrors: [] } } });
+  } };
+  await assert.rejects(syncStorefrontSnapshot(api, "test.myshopify.com", async () => []), /Throttled/);
+});
+
+test("what is published is what the Discounted price block reads: the automatic price, and the banner's code only when they combine", async () => {
   liquid.registerFilter("money", (value: number) => `£${(value / 100).toFixed(2)}`);
   const block = readFileSync("extensions/promotion-engine/blocks/discounted-price.liquid", "utf8").split("{% schema %}")[0];
-  const automatic = publicSnapshotEntry(priced({ classes: ["PRODUCT"], items: someProducts, automatic: true, value: { __typename: "DiscountPercentage", percentage: 0.25 } }), now)!;
-  const code = { ...publicSnapshotEntry(priced({ classes: ["ORDER"] }), now)!, id: "gid://shopify/DiscountNode/2" };
-  const split = splitSnapshot([automatic, code], "r");
-  const variants = [{ id: 11, price: 2000, compare_at_price: null }];
-  const html = (productId: number) => liquid.parseAndRender(block, {
-    app: { metafields: { promotion_engine: { storefront: { value: { version: 3, priceRules: 1, promotions: split.promotions } }, ...scopeMetafields(split.scopes) }, price_display: { config: { value: null } } } },
-    product: { id: productId, variants, collections: [], selected_or_first_available_variant: variants[0] }, cart: { currency: { iso_code: "GBP" } }, shop: { money_format: "£{{amount}}" }, block: { id: "b", shopify_attributes: "" },
-  });
-  const covered = new JSDOM(await html(7)).window.document;
-  assert.equal(covered.querySelector(".dp__now")!.textContent, "£15.00", "25% off a product it covers");
-  assert.equal(covered.querySelector(".dp__was")!.textContent, "£20.00");
-  assert.equal(covered.querySelector(".dp__code")!.textContent, "", "the code takes 10%, which is not better than the 25% already shown");
-  const other = new JSDOM(await html(8)).window.document;
-  assert.equal(other.querySelector(".dp__now")!.textContent, "£20.00", "a product it does not cover");
-  assert.equal(other.querySelector(".dp__was"), null);
-  assert.equal(other.querySelector(".dp__code")!.textContent, "£18.00 with code CODE1", "but the code, which covers everything, is offered");
+  const run = async (combines: unknown, productId = 7) => {
+    const { written, main } = await published([codeNode({ classes: ["PRODUCT"] }), automaticNode(9, { value: { __typename: "DiscountPercentage", percentage: 0.25 }, combines })], [settingsRow(1)], [9]);
+    const scopes = Object.fromEntries(Object.entries(written).filter(([name]) => name.startsWith("scope_")).map(([name, value]) => [name, { value: JSON.parse(value) }]));
+    const variants = [{ id: 11, price: 2000, compare_at_price: null }];
+    const html = await liquid.parseAndRender(block, {
+      app: { metafields: { promotion_engine: { storefront: { value: { version: 3, priceRules: main.priceRules, promotions: [], prices: main.prices } }, ...scopes }, price_display: { config: { value: null } } } },
+      product: { id: productId, variants, collections: [], selected_or_first_available_variant: variants[0] }, cart: { currency: { iso_code: "GBP" } }, shop: { money_format: "£{{amount}}" }, block: { id: "b", shopify_attributes: "" },
+    });
+    return new JSDOM(html).window.document;
+  };
+  const cannot = await run({ productDiscounts: false, orderDiscounts: false, shippingDiscounts: false });
+  assert.equal(cannot.querySelector(".dp__now")!.textContent, "£15.00", "25% off by the automatic discount, which is not enabled for the website");
+  assert.equal(cannot.querySelector(".dp__code")!.textContent, "", "the code cannot be used with it, so it is not shown");
+  const can = await run({ productDiscounts: true, orderDiscounts: true, shippingDiscounts: false });
+  assert.equal(can.querySelector(".dp__now")!.textContent, "£15.00");
+  assert.equal(can.querySelector(".dp__code")!.textContent, "", "the code takes 10%, not better than the price already shown");
 });

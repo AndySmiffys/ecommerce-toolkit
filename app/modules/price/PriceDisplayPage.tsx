@@ -31,7 +31,8 @@ const scenarios: Record<string, { label: string; variant: PriceVariant; rules: P
   automatic: { label: "Automatic discount, 20% off", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 2000, c: "" }] },
   compare: { label: "Automatic discount on a product with an old price", variant: { id: 1, price: 1500, compare_at_price: 2500 }, rules: [{ t: "p", v: 2000, c: "" }] },
   code: { label: "A code that takes 25% off", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 2500, c: "SAVE25" }] },
-  both: { label: "Automatic 10% off and a code that takes 25% off", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 1000, c: "" }, { t: "p", v: 2500, c: "SAVE25" }] },
+  both: { label: "Automatic 10% off and a code that takes 25% off, which can be combined", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 1000, c: "", k: "P", cp: 1, co: 1 }, { t: "p", v: 2500, c: "SAVE25", k: "P", cp: 1, co: 1 }] },
+  exclusive: { label: "Automatic 10% off that cannot be combined with codes, and a code that takes 25% off", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 1000, c: "", k: "P" }, { t: "p", v: 2500, c: "SAVE25", k: "P", cp: 1, co: 1 }] },
 };
 
 /** The price lines exactly as the product page builds them (same markup, same stylesheet, same variables). */
@@ -72,14 +73,19 @@ const stepTitles: Record<StepId, string> = { wording: "Savings and codes", appea
  * The Discounted price block's settings, laid out like the other editors: the preview stays in view on the left and the settings are
  * numbered step cards on the right. Which discounts show, and what they take off, come from the promotions themselves.
  */
-export function PriceDisplayPage({ initial, saved, fetcher }: { initial: PriceDisplayConfig; saved: boolean; fetcher: FetcherWithComponents<PriceResult> }) {
+export function PriceDisplayPage({ initial, saved, notShown = null, fetcher }: {
+  initial: PriceDisplayConfig; saved: boolean;
+  /** Active automatic discounts that change prices at checkout but cannot be shown in the block, with why. Null when they could not be read. */
+  notShown?: Array<{ id: string; routeId: string; title: string; reason: string }> | null;
+  fetcher: FetcherWithComponents<PriceResult>;
+}) {
   const appUrl = useEmbeddedAppUrl();
   const shopify = useAppBridge();
   const [baseline, setBaseline] = useState(() => toForm(initial));
   const [form, setForm] = useState(baseline);
   const [error, setError] = useState<string | null>(null);
   const [firstSave, setFirstSave] = useState(!saved);
-  const sent = useRef(false);
+  const sent = useRef<"save" | "republish" | null>(null);
   const [openStep, setOpenStep] = useState<StepId | null>("wording");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [scenario, setScenario] = useState("automatic");
@@ -88,13 +94,16 @@ export function PriceDisplayPage({ initial, saved, fetcher }: { initial: PriceDi
   const check = useMemo(() => validatePriceDisplay(toInput(form)), [form]);
   const errors = check.ok ? [] : check.errors;
   const dirty = firstSave || JSON.stringify(form) !== JSON.stringify(baseline);
-  const saving = fetcher.state !== "idle" && sent.current;
+  const saving = fetcher.state !== "idle" && sent.current === "save";
+  const republishing = fetcher.state !== "idle" && sent.current === "republish";
 
   useEffect(() => {
     if (fetcher.state !== "idle" || !fetcher.data || !sent.current) return;
-    sent.current = false;
+    const intent = sent.current;
+    sent.current = null;
     if (!fetcher.data.ok) { setError(fetcher.data.errors.join(" ")); return; }
     setError(null);
+    if (intent === "republish") { shopify.toast.show("Storefront prices updated"); return; }
     if (fetcher.data.config) {
       const next = toForm(fetcher.data.config);
       setBaseline(next); setForm(next); setFirstSave(false);
@@ -106,7 +115,8 @@ export function PriceDisplayPage({ initial, saved, fetcher }: { initial: PriceDi
     try { await window.navigator.clipboard.writeText(placeholder); shopify.toast.show(`Copied ${placeholder}`); }
     catch { shopify.toast.show("Could not copy. Type it in braces instead.", { isError: true }); }
   }
-  const save = () => { if (check.ok) { sent.current = true; fetcher.submit({ intent: "save", config: JSON.stringify(check.config) }, { method: "post" }); } };
+  const save = () => { if (check.ok) { sent.current = "save"; fetcher.submit({ intent: "save", config: JSON.stringify(check.config) }, { method: "post" }); } };
+  const republish = () => { sent.current = "republish"; fetcher.submit({ intent: "republish" }, { method: "post" }); };
 
   const config = check.ok ? check.config : null;
   const example = scenarios[scenario] ?? scenarios.none;
@@ -149,8 +159,18 @@ export function PriceDisplayPage({ initial, saved, fetcher }: { initial: PriceDi
       <SaveNotices error={error} issue={errors.length ? errors[0] : null} onDismissError={() => setError(null)} />
       {!saved && <s-banner tone="info" heading="Nothing is saved yet">These are starting values. The Discounted price block shows the standard price in the theme&rsquo;s own style until you save.</s-banner>}
       <s-banner tone="info" heading="How the price is worked out">
-        The block shows a product&rsquo;s price after any enabled promotion that covers it: a percentage off products or the whole order, or an amount off each item. Promotions with a minimum spend or quantity, an amount off the whole order, buy X get Y, free shipping, or limited to certain customers are not shown here. A code discount is shown as a separate line, because the shopper has not entered the code yet. The cart and checkout always decide the final price.
+        Every active automatic discount that covers a product changes its price here, whether or not it is enabled for the website, because Shopify applies it in the cart. A code is shown as a separate line, because the shopper has not entered it yet, and it is the code of the promotion your banners use (the highest priority enabled promotion that covers the product), never a different one. The code line is left out when it cannot be combined with the automatic discount that applies. A percentage off products or the whole order, or an amount off each item, can be shown. The cart and checkout always decide the final price.
       </s-banner>
+      <s-stack direction="inline" gap="base" alignItems="center">
+        <s-button type="button" variant="secondary" loading={republishing || undefined} disabled={republishing || undefined} onClick={republish}>Update the storefront prices now</s-button>
+        <s-text color="subdued">The storefront updates by itself whenever a promotion or an automatic discount changes. Use this if a change in Shopify has not shown up on a product page.</s-text>
+      </s-stack>
+      {notShown && notShown.length > 0 && <s-banner tone="warning" heading="Automatic discounts that change prices but cannot be shown here">
+        <s-stack direction="block" gap="small-300">
+          <s-text>Shoppers get these in the cart, but the price on the product page does not include them, because it cannot be worked out from the product alone.</s-text>
+          {notShown.map(item => <s-text key={item.id}><s-link href={appUrl(`/app/promotions/${item.routeId}`)}>{item.title}</s-link>: {item.reason}</s-text>)}
+        </s-stack>
+      </s-banner>}
 
       <div className="create-discount-layout" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 24, alignItems: "start" }}>
         <aside className="desktop-preview-panel" style={{ position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto", scrollbarGutter: "stable", padding: 3, alignSelf: "start" }}>
