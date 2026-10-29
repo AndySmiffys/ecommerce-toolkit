@@ -7,7 +7,7 @@ import script from "../../../extensions/promotion-engine/assets/discounted-price
  */
 export type PriceRuleInput = ({ t: "p"; v: number; c: string } | { t: "a"; v: number; c: string; u: string } | { t: "n"; c: string }) & { k?: "P" | "O"; cp?: number | boolean; co?: number | boolean; vs?: string[] };
 export type PriceVariant = { id: number; price: number; compare_at_price?: number | null };
-export type PriceState = { now: number; was: number; saving: number; percent: number; code: { price: number; name: string; saving: number; percent: number } | null };
+export type PriceState = { now: number; was: number; saving: number; percent: number; auto: { price: number; saving: number; percent: number } | null; code: { price: number; name: string; saving: number; percent: number } | null };
 
 type Logic = {
   priceState(variant: PriceVariant, rules: PriceRuleInput[], currency: string): PriceState;

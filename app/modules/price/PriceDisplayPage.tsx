@@ -11,13 +11,13 @@ import { PolarisCheckbox, PolarisNumberField, PolarisSelect } from "../promotion
 import { contrastRatio } from "../promotions/design/design";
 import blockCss from "../../../extensions/promotion-engine/assets/discounted-price.css?raw";
 import { ColourField, PlaceholderList, TextField } from "../shipping/ShippingCountdownPage";
-import { codePlaceholders, defaultPriceDisplay, savingsPlaceholders, validatePriceDisplay, type PriceDisplayConfig } from "./config";
+import { autoPlaceholders, codePlaceholders, defaultPriceDisplay, savingsPlaceholders, validatePriceDisplay, type PriceDisplayConfig } from "./config";
 import { priceVars } from "./appearance";
 import { priceLogic, type PriceRuleInput, type PriceVariant } from "./logic";
 
 export type PriceResult = { ok: boolean; intent: string; errors: string[]; config?: PriceDisplayConfig };
 
-type Form = { showSavings: boolean; savingsText: string; codeText: string; size: string; weight: string; margin: string; textColour: string; saleColour: string; wasColour: string; saveBackground: string; saveText: string; codeColour: string };
+type Form = { showSavings: boolean; savingsText: string; autoText: string; codeText: string; size: string; weight: string; margin: string; textColour: string; saleColour: string; wasColour: string; autoColour: string; saveBackground: string; saveText: string; codeColour: string };
 
 const toForm = (c: PriceDisplayConfig): Form => ({ ...c, size: String(c.size), margin: String(c.margin) });
 const toInput = (f: Form) => ({ version: 1, ...f, size: f.size.trim() === "" ? 0 : f.size, margin: f.margin.trim() === "" ? 0 : f.margin });
@@ -29,7 +29,8 @@ const previewFormat = "£{{amount}}";
 const scenarios: Record<string, { label: string; variant: PriceVariant; rules: PriceRuleInput[] }> = {
   none: { label: "No discount", variant: { id: 1, price: 2000 }, rules: [] },
   automatic: { label: "Automatic discount, 20% off", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 2000, c: "" }] },
-  compare: { label: "Automatic discount on a product with an old price", variant: { id: 1, price: 1500, compare_at_price: 2500 }, rules: [{ t: "p", v: 2000, c: "" }] },
+  compare: { label: "A product with an old price (a reduction made in Shopify)", variant: { id: 1, price: 1500, compare_at_price: 2500 }, rules: [] },
+  compareAuto: { label: "A product with an old price, and an automatic discount on top", variant: { id: 1, price: 1500, compare_at_price: 2500 }, rules: [{ t: "p", v: 2000, c: "" }] },
   code: { label: "A code that takes 25% off", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 2500, c: "SAVE25" }] },
   both: { label: "Automatic 10% off and a code that takes 25% off, which can be combined", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 1000, c: "", k: "P", cp: 1, co: 1 }, { t: "p", v: 2500, c: "SAVE25", k: "P", cp: 1, co: 1 }] },
   exclusive: { label: "Automatic 10% off that cannot be combined with codes, and a code that takes 25% off", variant: { id: 1, price: 2000 }, rules: [{ t: "p", v: 1000, c: "", k: "P" }, { t: "p", v: 2500, c: "SAVE25", k: "P", cp: 1, co: 1 }] },
@@ -50,6 +51,7 @@ function PricePreview({ config, scenario }: { config: PriceDisplayConfig; scenar
         {sale && <><span className="dp__sr">Regular price </span><s className="dp__was">{money(state.was)}</s>
           {config.showSavings && <span className="dp__save">{priceLogic.fillText(config.savingsText, { amount: money(state.saving), percent: String(state.percent) })}</span>}</>}
       </p>,
+      state.auto && <p className="dp__auto">{priceLogic.fillText(config.autoText, { price: money(state.auto.price), amount: money(state.auto.saving), percent: String(state.auto.percent) })}</p>,
       state.code && <p className="dp__code">{priceLogic.fillText(config.codeText, { price: money(state.code.price), code: state.code.name, amount: money(state.code.saving), percent: String(state.code.percent) })}</p>)}
   </>;
 }
@@ -57,7 +59,7 @@ function PricePreview({ config, scenario }: { config: PriceDisplayConfig; scenar
 /** Text that is hard to read on its background (white, as the preview's page is; the theme's own background may differ). */
 function contrastNotes(config: PriceDisplayConfig) {
   const pairs: Array<[string, string, string]> = [
-    ["Sale price", config.saleColour, "#ffffff"], ["Old price", config.wasColour, "#ffffff"], ["Code message", config.codeColour, "#ffffff"],
+    ["Sale price", config.saleColour, "#ffffff"], ["Old price", config.wasColour, "#ffffff"], ["Automatic discount", config.autoColour, "#ffffff"], ["Code message", config.codeColour, "#ffffff"],
     ...(config.textColour ? [["Price", config.textColour, "#ffffff"] as [string, string, string]] : []),
     ...(config.showSavings ? [["Saving", config.saveText, config.saveBackground] as [string, string, string]] : []),
   ];
@@ -123,6 +125,7 @@ export function PriceDisplayPage({ initial, saved, notShown = null, fetcher }: {
   const state = priceLogic.priceState(example.variant, example.rules, "GBP");
   const money = (minor: number) => priceLogic.formatMoney(minor, previewFormat);
   const savingsExamples = { amount: money(state.saving || 400), percent: String(state.percent || 20) };
+  const autoExamples = { price: money(state.auto?.price ?? 1500), amount: money(state.auto?.saving ?? 500), percent: String(state.auto?.percent ?? 25) };
   const codeExamples = { price: money(state.code?.price ?? 1500), code: state.code?.name ?? "SAVE25", amount: money(state.code?.saving ?? 500), percent: String(state.code?.percent ?? 25) };
   const notes = config ? contrastNotes(config) : [];
 
@@ -185,6 +188,8 @@ export function PriceDisplayPage({ initial, saved, notShown = null, fetcher }: {
                 <PlaceholderList placeholders={savingsPlaceholders} examples={savingsExamples} onCopy={copyPlaceholder} heading="Placeholders you can use in the saving message" exampleHeading="For the example in the preview" />
                 <TextField label="Saving message" value={form.savingsText} maxLength={100} onChange={value => set({ savingsText: value })} details="For example “Save {amount}” or “{percent}% off”." />
               </>}
+              <PlaceholderList placeholders={autoPlaceholders} examples={autoExamples} onCopy={copyPlaceholder} heading="Placeholders you can use in the automatic discount message" exampleHeading="For the example in the preview" />
+              <TextField label="Automatic discount message" value={form.autoText} maxLength={100} onChange={value => set({ autoText: value })} details="Shown on its own line under the price when an automatic discount applies, for example “{price} with the automatic discount” or “Extra {percent}% off at checkout: {price}”. It must include {price}. The main price stays Shopify's own price." />
               <PlaceholderList placeholders={codePlaceholders} examples={codeExamples} onCopy={copyPlaceholder} heading="Placeholders you can use in the code message" exampleHeading="For the example in the preview" />
               <TextField label="Code message" value={form.codeText} maxLength={100} onChange={value => set({ codeText: value })} details="Shown under the price when a code would make it lower, for example “{price} with code {code}” or “{percent}% off with code {code}”. It must include {price} and {code}." />
             </>)}
@@ -205,6 +210,7 @@ export function PriceDisplayPage({ initial, saved, notShown = null, fetcher }: {
                   <ColourField label="Old price" value={form.wasColour} onChange={value => set({ wasColour: value })} />
                   <ColourField label="Saving background" value={form.saveBackground} onChange={value => set({ saveBackground: value })} />
                   <ColourField label="Saving text" value={form.saveText} onChange={value => set({ saveText: value })} />
+                  <ColourField label="Automatic discount line" value={form.autoColour} onChange={value => set({ autoColour: value })} />
                   <ColourField label="Code message" value={form.codeColour} onChange={value => set({ codeColour: value })} />
                   <ColourField label="Price with no discount" value={form.textColour || "#000000"} onChange={value => set({ textColour: value })} />
                 </s-grid>
@@ -213,7 +219,7 @@ export function PriceDisplayPage({ initial, saved, notShown = null, fetcher }: {
                 {notes.length > 0 && <s-banner tone="warning" heading="Some text may be hard to read">
                   {notes.map(item => `${item.label} on its background is ${item.ratio.toFixed(1)} to 1`).join("; ")}. Aim for at least 4.5 to 1. Prices are checked on a white page; your theme&rsquo;s background may differ.
                 </s-banner>}
-                <div><s-button type="button" variant="tertiary" onClick={() => setForm(current => ({ ...toForm(defaultPriceDisplay), showSavings: current.showSavings, savingsText: current.savingsText, codeText: current.codeText }))}>Reset the appearance to the original look</s-button></div>
+                <div><s-button type="button" variant="tertiary" onClick={() => setForm(current => ({ ...toForm(defaultPriceDisplay), showSavings: current.showSavings, savingsText: current.savingsText, autoText: current.autoText, codeText: current.codeText }))}>Reset the appearance to the original look</s-button></div>
               </section>
             </>)}
           </s-stack>

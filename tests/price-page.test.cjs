@@ -53,7 +53,7 @@ const field = (container, tag, label) => findAll(container, tag).find(element =>
 const save = container => byText(container, 'button', 'Save');
 const shown = container => {
   const host = find(container, 'aside discounted-price');
-  return { now: find(host, '.dp__now')?.textContent ?? null, was: find(host, '.dp__was')?.textContent ?? null, save: find(host, '.dp__save')?.textContent ?? null, code: find(host, '.dp__code')?.textContent ?? null };
+  return { now: find(host, '.dp__now')?.textContent ?? null, was: find(host, '.dp__was')?.textContent ?? null, save: find(host, '.dp__save')?.textContent ?? null, auto: find(host, '.dp__auto')?.textContent ?? null, code: find(host, '.dp__code')?.textContent ?? null };
 };
 const example = (container, id) => change(field(container, 's-select', 'Example'), id);
 
@@ -90,19 +90,21 @@ test('the preview is the block itself: its markup, its stylesheet, and the shop\
     const host = find(container, 'aside discounted-price.dp');
     assert.ok(host, "the block's own element with its own class");
     assert.equal(host.getAttribute('classname'), null, 'no stray attribute');
-    assert.deepEqual(shown(container), { now: '£16.00', was: '£20.00', save: null, code: null }, 'an automatic 20% off £20.00');
-    assert.ok(find(host, '.dp__now--sale'));
+    assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, auto: '£16.00 with the automatic discount', code: null }, 'an automatic 20% off £20.00, on its own line; the main price is left alone');
+    assert.equal(find(container, 'aside .dp__now--sale'), null, 'and is not marked as a sale');
     await example(container, 'none');
-    assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, code: null });
-    assert.equal(find(container, 'aside .dp__now--sale'), null);
+    assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, auto: null, code: null });
     await example(container, 'compare');
-    assert.deepEqual(shown(container), { now: '£12.00', was: '£25.00', save: null, code: null }, '20% off £15.00, against the £25.00 it was');
+    assert.deepEqual(shown(container), { now: '£15.00', was: '£25.00', save: null, auto: null, code: null }, 'a reduction made in Shopify');
+    assert.ok(find(host, '.dp__now--sale'));
+    await example(container, 'compareAuto');
+    assert.deepEqual(shown(container), { now: '£15.00', was: '£25.00', save: null, auto: '£12.00 with the automatic discount', code: null }, '20% off £15.00 on top, on its own line');
     await example(container, 'code');
-    assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, code: '£15.00 with code SAVE25' }, 'the price does not change until the code is used');
+    assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, auto: null, code: '£15.00 with code SAVE25' }, 'the price does not change until the code is used');
     await example(container, 'both');
-    assert.deepEqual(shown(container), { now: '£18.00', was: '£20.00', save: null, code: '£15.00 with code SAVE25' }, 'an automatic discount and a code that can be combined');
+    assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, auto: '£18.00 with the automatic discount', code: '£15.00 with code SAVE25' }, 'an automatic discount and a code that can be combined, each on its own line');
     await example(container, 'exclusive');
-    assert.deepEqual(shown(container), { now: '£18.00', was: '£20.00', save: null, code: null }, 'an automatic discount that cannot be combined with codes: the code is not a price they can have');
+    assert.deepEqual(shown(container), { now: '£20.00', was: null, save: null, auto: '£18.00 with the automatic discount', code: null }, 'an automatic discount that cannot be combined with codes: the code is not a price they can have');
   } finally { await page.unmount(); }
 });
 
@@ -130,11 +132,14 @@ test('the saving can be switched on and worded, with placeholders that copy, and
     const card = find(container, 'details[data-step=wording]');
     assert.equal(find(card, 's-text-field[label="Saving message"]'), null, 'nothing to word while it is off');
     await check(find(card, 's-checkbox[label="Show how much is saved beside the old price"]'), true);
-    assert.equal(shown(container).save, 'Save £4.00');
+    await example(container, 'compare');
+    assert.equal(shown(container).save, 'Save £10.00');
+    await example(container, 'code');
     const rows = findAll(card, 's-table-row').map(row => findAll(row, 's-table-cell').map(cell => cell.textContent.trim()));
-    assert.deepEqual(rows.map(row => [row[0], row[2]]), [['{amount}', '£4.00'], ['{percent}', '20'], ['{price}', '£15.00'], ['{code}', 'SAVE25'], ['{amount}', '£5.00'], ['{percent}', '25']], 'the saving ones, then the code ones (which can also say what the code takes off), filled in for the example');
+    assert.deepEqual(rows.map(row => [row[0], row[2]]), [['{amount}', '£4.00'], ['{percent}', '20'], ['{price}', '£15.00'], ['{amount}', '£5.00'], ['{percent}', '25'], ['{price}', '£15.00'], ['{code}', 'SAVE25'], ['{amount}', '£5.00'], ['{percent}', '25']], 'the saving ones, the automatic discount ones, then the code ones, each filled in for the example');
+    await example(container, 'compare');
     await type(field(card, 's-text-field', 'Saving message'), '{percent}% off');
-    assert.equal(shown(container).save, '20% off');
+    assert.equal(shown(container).save, '40% off', '£10.00 off the £25.00 it was');
     const copied = [];
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async value => { copied.push(value); } } });
     await click(findAll(card, 's-table-row s-button')[0]);
@@ -145,7 +150,7 @@ test('the saving can be switched on and worded, with placeholders that copy, and
     assert.equal(save(container).disabled, true, 'it cannot be saved');
     assert.match(container.textContent, /Fix the problem shown above the settings to see a preview/);
     await type(field(card, 's-text-field', 'Saving message'), 'Save {amount}');
-    assert.equal(shown(container).save, 'Save £4.00');
+    assert.equal(shown(container).save, 'Save £10.00');
   } finally { await page.unmount(); }
 });
 
@@ -253,7 +258,8 @@ test('settings saved earlier are shown when the page opens', async () => {
   const page = await mountPage({ patch: { showSavings: true, savingsText: '{percent}% off', size: 18, saleColour: '#123456', textColour: '#222222' } });
   try {
     const { container } = page;
-    assert.equal(shown(container).save, '20% off');
+    await example(container, 'compare');
+    assert.equal(shown(container).save, '40% off');
     assert.equal(find(container, 'aside discounted-price').style.getPropertyValue('--dp-size'), '18px');
     assert.equal(find(container, 'aside discounted-price').style.getPropertyValue('--dp-sale'), '#123456');
     assert.equal(save(container).disabled, true, 'showing what is saved is not a change');
@@ -287,5 +293,43 @@ test('an update that fails says why and leaves the settings alone', async () => 
     await wait(60);
     assert.match(container.textContent, /Shopify is busy\. Try again in a moment\./);
     assert.equal(find(wording, 's-checkbox').checked, true, 'what was typed is kept');
+  } finally { await page.unmount(); }
+});
+
+test('the automatic discount line can be worded, has its own placeholders, and a message without the price is refused', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    const card = find(container, 'details[data-step=wording]');
+    assert.equal(field(card, 's-text-field', 'Automatic discount message').value, '{price} with the automatic discount');
+    assert.equal(shown(container).auto, '£16.00 with the automatic discount');
+    await type(field(card, 's-text-field', 'Automatic discount message'), 'Extra {percent}% off at checkout: {price} (save {amount})');
+    assert.equal(shown(container).auto, 'Extra 20% off at checkout: £16.00 (save £4.00)');
+    assert.equal(shown(container).now, '£20.00', 'the main price is the same');
+    await type(field(card, 's-text-field', 'Automatic discount message'), 'Automatic {pricee}');
+    assert.match(container.textContent, /Automatic discount message uses \{pricee\}, which is not a placeholder/);
+    assert.equal(save(container).disabled, true);
+    await type(field(card, 's-text-field', 'Automatic discount message'), 'An automatic discount');
+    assert.match(container.textContent, /Automatic discount message must include \{price\}/);
+    await type(field(card, 's-text-field', 'Automatic discount message'), '{price} automatically');
+    assert.equal(shown(container).auto, '£16.00 automatically');
+    await click(save(container));
+    await wait(60);
+    assert.equal(JSON.parse(page.posts[0].config).autoText, '{price} automatically');
+  } finally { await page.unmount(); }
+});
+
+test('the automatic discount line has its own colour, questioned when hard to read, and reset with the rest of the appearance', async () => {
+  const page = await mountPage();
+  try {
+    const { container } = page;
+    const card = find(container, 'details[data-step=appearance]');
+    const host = () => find(container, 'aside discounted-price');
+    assert.equal(host().style.getPropertyValue('--dp-auto'), '#b12704');
+    await type(find(card, 's-color-field[label="Automatic discount line"]'), '#ffcccc', 'change');
+    assert.equal(host().style.getPropertyValue('--dp-auto'), '#ffcccc');
+    assert.match(find(card, 's-banner').textContent, /Automatic discount on its background is [\d.]+ to 1/);
+    await click(byText(card, 's-button', 'Reset the appearance to the original look'));
+    assert.equal(host().style.getPropertyValue('--dp-auto'), '#b12704');
   } finally { await page.unmount(); }
 });

@@ -618,9 +618,10 @@ test("what is published is what the Discounted price block reads: the automatic 
     return new JSDOM(html).window.document;
   };
   const cannot = await run({ productDiscounts: false, orderDiscounts: false, shippingDiscounts: false });
-  assert.equal(cannot.querySelector(".dp__now")!.textContent, "£15.00", "25% off by the automatic discount, which is not enabled for the website");
+  assert.equal(cannot.querySelector(".dp__now")!.textContent, "£20.00", "the main price is left as Shopify has it");
+  assert.equal(cannot.querySelector(".dp__auto")!.textContent, "£15.00 with the automatic discount", "25% off by the automatic discount, which is not enabled for the website, on its own line");
   assert.equal(cannot.querySelector(".dp__code")!.textContent, "", "the code cannot be used with it, so it is not shown");
   const can = await run({ productDiscounts: true, orderDiscounts: true, shippingDiscounts: false });
-  assert.equal(can.querySelector(".dp__now")!.textContent, "£15.00");
-  assert.equal(can.querySelector(".dp__code")!.textContent, "", "the code takes 10%, not better than the price already shown");
+  assert.equal(can.querySelector(".dp__auto")!.textContent, "£15.00 with the automatic discount");
+  assert.equal(can.querySelector(".dp__code")!.textContent, "", "the code takes 10%, not better than the automatic discount already shown");
 });

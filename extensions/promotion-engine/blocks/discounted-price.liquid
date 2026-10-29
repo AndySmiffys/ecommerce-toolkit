@@ -137,12 +137,12 @@
   if compare > base
     assign list_price = compare
   endif
+  comment
+    The main price is Shopify's own: the price, and the compare-at price when it is higher. Automatic discounts and codes are separate lines.
+  endcomment
   assign now_price = base
-  if auto_now >= 0 and auto_now < base
-    assign now_price = auto_now
-  endif
   assign was_price = 0
-  if now_price < list_price
+  if base < list_price
     assign was_price = list_price
   endif
   assign saving = was_price | minus: now_price
@@ -175,15 +175,25 @@
       assign can_combine = true
     endif
   endif
+  assign lowest_price = base
+  if auto_applied
+    assign lowest_price = auto_now
+  endif
   assign show_code = false
-  if code_now >= 0 and code_now < now_price and can_combine
+  if code_now >= 0 and code_now < lowest_price and can_combine
     assign show_code = true
   endif
   assign show_savings = look.showSavings
   assign savings_template = look.savingsText | default: 'Save {amount}'
+  assign auto_template = look.autoText | default: '{price} with the automatic discount'
   assign code_template = look.codeText | default: '{price} with code {code}'
   assign saving_money = saving | money
   assign code_money = code_now | money
+  assign auto_saving = base | minus: auto_now
+  assign auto_saving_money = auto_saving | money
+  assign auto_money = auto_now | money
+  assign auto_percent = auto_saving | times: 200 | plus: base | divided_by: base | divided_by: 2 | floor
+  assign auto_line = auto_template | replace: '{price}', auto_money | replace: '{amount}', auto_saving_money | replace: '{percent}', auto_percent
   assign code_saving = base | minus: code_now
   assign code_saving_money = code_saving | money
   assign code_percent = code_saving | times: 200 | plus: base | divided_by: base | divided_by: 2 | floor
@@ -197,9 +207,10 @@
   data-variant-id="{{ variant_id }}"
   data-show-savings="{% if show_savings %}true{% else %}false{% endif %}"
   data-savings-text="{{ savings_template | escape }}"
+  data-auto-text="{{ auto_template | escape }}"
   data-code-text="{{ code_template | escape }}"
   {%- if look %}
-  style="--dp-margin:{{ look.margin | default: 0 }}px;{% if look.size > 0 %}--dp-size:{{ look.size }}px;{% endif %}--dp-weight:{{ look.weight | default: '600' }};--dp-text:{{ look.textColour | default: 'inherit' }};--dp-sale:{{ look.saleColour | default: '#b12704' }};--dp-was:{{ look.wasColour | default: '#6b6b6b' }};--dp-save-bg:{{ look.saveBackground | default: '#b12704' }};--dp-save-text:{{ look.saveText | default: '#ffffff' }};--dp-code:{{ look.codeColour | default: '#1e7e34' }}"
+  style="--dp-margin:{{ look.margin | default: 0 }}px;{% if look.size > 0 %}--dp-size:{{ look.size }}px;{% endif %}--dp-weight:{{ look.weight | default: '600' }};--dp-text:{{ look.textColour | default: 'inherit' }};--dp-sale:{{ look.saleColour | default: '#b12704' }};--dp-was:{{ look.wasColour | default: '#6b6b6b' }};--dp-save-bg:{{ look.saveBackground | default: '#b12704' }};--dp-save-text:{{ look.saveText | default: '#ffffff' }};--dp-auto:{{ look.autoColour | default: '#b12704' }};--dp-code:{{ look.codeColour | default: '#1e7e34' }}"
   {%- endif %}
   {{ block.shopify_attributes }}
 >
@@ -211,6 +222,7 @@
       {%- if show_savings -%}<span class="dp__save">{{ savings_line | escape }}</span>{%- endif -%}
     {%- endif -%}
   </p>
+  <p class="dp__auto" data-role="auto"{% unless auto_applied %} hidden{% endunless %}>{% if auto_applied %}{{ auto_line | escape }}{% endif %}</p>
   <p class="dp__code" data-role="code"{% unless show_code %} hidden{% endunless %}>{% if show_code %}{{ code_line | escape }}{% endif %}</p>
   <script type="application/json" data-rules>[{{ rules_json }}]</script>
   <script type="application/json" data-variants>

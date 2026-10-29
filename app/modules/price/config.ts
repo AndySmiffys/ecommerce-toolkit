@@ -10,6 +10,8 @@ export type PriceDisplayConfig = {
   showSavings: boolean;
   /** {amount} is what is saved, {percent} the percentage of the old price. */
   savingsText: string;
+  /** Said on its own line under the price when an automatic discount applies. {price} is the price with it, {amount} and {percent} what it takes off the price before any discount. */
+  autoText: string;
   /** Said under the price when a code would make it lower. {price} is the price with the code, {code} the code, {amount} and {percent} what it saves against the price before any discount. */
   codeText: string;
   /** Text size in px, or 0 to use the theme's own size. */
@@ -22,6 +24,8 @@ export type PriceDisplayConfig = {
   saleColour: string;
   /** The old price, struck through. */
   wasColour: string;
+  /** The automatic discount's line. */
+  autoColour: string;
   saveBackground: string;
   saveText: string;
   codeColour: string;
@@ -31,6 +35,7 @@ export const defaultPriceDisplay: PriceDisplayConfig = {
   version: 1,
   showSavings: false,
   savingsText: "Save {amount}",
+  autoText: "{price} with the automatic discount",
   codeText: "{price} with code {code}",
   size: 0,
   weight: "600",
@@ -38,6 +43,7 @@ export const defaultPriceDisplay: PriceDisplayConfig = {
   textColour: "",
   saleColour: "#b12704",
   wasColour: "#6b6b6b",
+  autoColour: "#b12704",
   saveBackground: "#b12704",
   saveText: "#ffffff",
   codeColour: "#1e7e34",
@@ -47,6 +53,11 @@ export const defaultPriceDisplay: PriceDisplayConfig = {
 export const savingsPlaceholders = [
   { name: "amount", meaning: "How much is saved, written as the shop writes prices", example: "£4.00" },
   { name: "percent", meaning: "The percentage of the old price that is saved, as a whole number (do not add the % sign)", example: "20" },
+] as const;
+export const autoPlaceholders = [
+  { name: "price", meaning: "The price with the automatic discount", example: "£15.00" },
+  { name: "amount", meaning: "How much the automatic discount takes off the price before any discount", example: "£5.00" },
+  { name: "percent", meaning: "The percentage of the price before any discount that it takes off, as a whole number (do not add the % sign)", example: "25" },
 ] as const;
 export const codePlaceholders = [
   { name: "price", meaning: "The price with the code applied", example: "£15.00" },
@@ -95,6 +106,7 @@ export function validatePriceDisplay(input: unknown): PriceDisplayCheck {
     version: 1,
     showSavings: flag(source.showSavings, d.showSavings),
     savingsText: message(source.savingsText, "Saving message", d.savingsText, savingsPlaceholders, []),
+    autoText: message(source.autoText, "Automatic discount message", d.autoText, autoPlaceholders, ["price"]),
     codeText: message(source.codeText, "Code message", d.codeText, codePlaceholders, ["price", "code"]),
     size: whole(source.size, "Text size", 0, 48, d.size),
     weight: (["400", "500", "600", "700"].includes(weight as string) ? weight : d.weight) as PriceDisplayConfig["weight"],
@@ -102,6 +114,7 @@ export function validatePriceDisplay(input: unknown): PriceDisplayCheck {
     textColour: colour(source.textColour, "Price colour", d.textColour, true),
     saleColour: colour(source.saleColour, "Sale price colour", d.saleColour),
     wasColour: colour(source.wasColour, "Old price colour", d.wasColour),
+    autoColour: colour(source.autoColour, "Automatic discount colour", d.autoColour),
     saveBackground: colour(source.saveBackground, "Saving background colour", d.saveBackground),
     saveText: colour(source.saveText, "Saving text colour", d.saveText),
     codeColour: colour(source.codeColour, "Code message colour", d.codeColour),

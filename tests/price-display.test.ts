@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Liquid } from "liquidjs";
-import { codePlaceholders, defaultPriceDisplay, savingsPlaceholders, validatePriceDisplay } from "../app/modules/price/config";
+import { autoPlaceholders, codePlaceholders, defaultPriceDisplay, savingsPlaceholders, validatePriceDisplay } from "../app/modules/price/config";
 import { loadPriceDisplay, priceNamespace, savePriceDisplay } from "../app/modules/price/config.server";
 import { priceVars } from "../app/modules/price/appearance";
 
@@ -18,6 +18,8 @@ test("the defaults are valid, readable, and stay as they are", () => {
   assert.equal(defaultPriceDisplay.textColour, "", "the theme's own text colour");
   assert.deepEqual(savingsPlaceholders.map(item => item.name), ["amount", "percent"]);
   assert.deepEqual(codePlaceholders.map(item => item.name), ["price", "code", "amount", "percent"]);
+  assert.deepEqual(autoPlaceholders.map(item => item.name), ["price", "amount", "percent"]);
+  assert.equal(defaultPriceDisplay.autoText, "{price} with the automatic discount");
   assert.equal(validatePriceDisplay(undefined).ok, true, "nothing saved yet: the defaults");
   const empty = validatePriceDisplay({});
   assert.deepEqual(empty.ok && empty.config, defaultPriceDisplay);
@@ -125,4 +127,17 @@ test("the preview and the theme block write the same look, variable for variable
   }
   assert.equal(styleOf(await renderLook(null)), null, "nothing saved: the stylesheet's own defaults");
   assert.equal("--dp-size" in priceVars(defaultPriceDisplay), false, "the theme's own size is left alone");
+});
+
+test("the automatic discount's message must say the price, and uses only its own placeholders", () => {
+  assert.equal(validatePriceDisplay(valid({ autoText: "Extra {percent}% off: {price} (save {amount})" })).ok, true);
+  assert.equal(validatePriceDisplay(valid({ autoText: "{price} automatically" })).ok, true);
+  assert.match(errorsOf(valid({ autoText: "An automatic discount" })).join(" "), /Automatic discount message must include \{price\}/);
+  assert.match(errorsOf(valid({ autoText: "{price} with {code}" })).join(" "), /Automatic discount message uses \{code\}, which is not a placeholder\. You can use \{price\}, \{amount\}, \{percent\}\./);
+  assert.match(errorsOf(valid({ autoText: "" })).join(" "), /Automatic discount message cannot be empty/);
+  assert.match(errorsOf(valid({ autoText: "x{price}".repeat(60) })).join(" "), /Automatic discount message must be 100 characters or fewer/);
+  assert.match(errorsOf(valid({ autoColour: "red" })).join(" "), /Automatic discount colour must be a colour/);
+  const old = validatePriceDisplay({ ...defaultPriceDisplay, autoText: undefined, autoColour: undefined });
+  assert.equal(old.ok && old.config.autoText, defaultPriceDisplay.autoText, "settings saved before this get the defaults");
+  assert.equal(old.ok && old.config.autoColour, defaultPriceDisplay.autoColour);
 });

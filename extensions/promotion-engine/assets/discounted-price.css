@@ -23,6 +23,8 @@ discounted-price .dp__save {
   font-size: 0.8em;
   font-weight: 600;
 }
+discounted-price .dp__auto { margin: 0.35em 0 0; color: var(--dp-auto, #b12704); font-size: 0.9em; font-weight: 600; }
+discounted-price .dp__auto[hidden] { display: none; }
 discounted-price .dp__code { margin: 0.35em 0 0; color: var(--dp-code, #1e7e34); font-size: 0.9em; font-weight: 600; }
 discounted-price .dp__code[hidden] { display: none; }
 /* Said to screen readers, not shown: which price is which. */

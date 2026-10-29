@@ -14,6 +14,7 @@ export function priceVars(config: PriceDisplayConfig): Record<string, string> {
     "--dp-was": config.wasColour,
     "--dp-save-bg": config.saveBackground,
     "--dp-save-text": config.saveText,
+    "--dp-auto": config.autoColour,
     "--dp-code": config.codeColour,
   };
 }

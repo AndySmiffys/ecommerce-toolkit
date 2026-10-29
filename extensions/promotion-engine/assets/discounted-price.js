@@ -28,12 +28,13 @@
   function canCombine(a, b) { return allows(a, b.k) && allows(b, a.k); }
 
   /**
-   * What to show for a variant. `now` is the price to pay (the best automatic discount, or the price itself), `was` the price it is compared
-   * with (the compare-at price or the price) when `now` is lower, and `code` the code discount with what it saves against the price before
-   * any discount. The code spoken of is the first one, in the order given (the banners' order), that covers the variant: a lower one is
-   * never shown in its place, and one without a price ("n") is spoken of as nothing. It is left out when it cannot be combined with the
-   * automatic discount that applies, and when it would not make the price lower. Codes are not added to automatic discounts here: the
-   * shopper has not entered one, and checkout decides what combines.
+   * What to show for a variant, in three separate parts. The main price: `now` is the price (Shopify's own), `was` the compare-at price when
+   * it is higher. `auto` is the best automatic discount that applies, on its own line and never folded into the main price, with what it
+   * saves against the price before any discount. `code` is the code discount, likewise. The code spoken of is the first one, in the order given
+   * (the banners' order), that covers the variant: a lower one is never shown in its place, and one without a price ("n") is spoken of as
+   * nothing. It is left out when it cannot be combined with the automatic discount that applies, and when it would not make the price
+   * lower than the lowest already shown. Codes are not added to automatic discounts here: the shopper has not entered one, and checkout
+   * decides what combines.
    */
   function priceState(variant, rules, currency) {
     var base = variant.price;
@@ -54,14 +55,15 @@
       if (auto < 0 || price < auto) { auto = price; autoRule = rule; }
     });
     var applied = auto >= 0 && auto < base;
-    var now = applied ? auto : base;
-    var was = now < list ? list : 0;
-    var saving = was ? was - now : 0;
+    var was = base < list ? list : 0;
+    var saving = was ? was - base : 0;
+    var lowest = applied ? auto : base;
     var codeSaving = code >= 0 ? base - code : 0;
-    var codeShown = code >= 0 && code < now && !(applied && !canCombine(autoRule, codeRule));
+    var codeShown = code >= 0 && code < lowest && !(applied && !canCombine(autoRule, codeRule));
     return {
-      now: now, was: was, saving: saving,
+      now: base, was: was, saving: saving,
       percent: was ? wholePercent(saving, was) : 0,
+      auto: applied ? { price: auto, saving: base - auto, percent: wholePercent(base - auto, base) } : null,
       code: codeShown ? { price: code, name: codeRule.c, saving: codeSaving, percent: wholePercent(codeSaving, base) } : null
     };
   }
@@ -130,6 +132,7 @@
         this.variants = JSON.parse(this.querySelector('script[data-variants]').textContent);
       } catch (error) { return; }
       this.line = this.querySelector('[data-role="line"]');
+      this.autoLine = this.querySelector('[data-role="auto"]');
       this.codeLine = this.querySelector('[data-role="code"]');
       if (!this.line) return;
       this.format = this.dataset.moneyFormat || '£{{amount}}';
@@ -194,6 +197,10 @@
       if (host.dataset.showSavings === 'true') {
         line.appendChild(el('span', 'dp__save', fillText(host.dataset.savingsText || 'Save {amount}', { amount: formatMoney(state.saving, format), percent: String(state.percent) })));
       }
+    }
+    if (host.autoLine) {
+      host.autoLine.hidden = !state.auto;
+      host.autoLine.textContent = state.auto ? fillText(host.dataset.autoText || '{price} with the automatic discount', { price: formatMoney(state.auto.price, format), amount: formatMoney(state.auto.saving, format), percent: String(state.auto.percent) }) : '';
     }
     if (host.codeLine) {
       host.codeLine.hidden = !state.code;
