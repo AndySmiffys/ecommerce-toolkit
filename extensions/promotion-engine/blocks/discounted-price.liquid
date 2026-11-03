@@ -198,7 +198,9 @@
   assign code_saving_money = code_saving | money
   assign code_percent = code_saving | times: 200 | plus: base | divided_by: base | divided_by: 2 | floor
   assign savings_line = savings_template | replace: '{amount}', saving_money | replace: '{percent}', percent
-  assign code_line = code_template | replace: '{price}', code_money | replace: '{code}', code_name | replace: '{amount}', code_saving_money | replace: '{percent}', code_percent
+  assign code_name_safe = code_name | escape
+  assign code_button = '<button type="button" class="dp__copy" data-code="' | append: code_name_safe | append: '" title="Click to copy the code" aria-label="Copy code ' | append: code_name_safe | append: '">' | append: code_name_safe | append: '</button>'
+  assign code_line = code_template | escape | replace: '{price}', code_money | replace: '{code}', code_button | replace: '{amount}', code_saving_money | replace: '{percent}', code_percent
 -%}
 <discounted-price
   class="dp"
@@ -223,7 +225,7 @@
     {%- endif -%}
   </p>
   <p class="dp__auto" data-role="auto"{% unless auto_applied %} hidden{% endunless %}>{% if auto_applied %}{{ auto_line | escape }}{% endif %}</p>
-  <p class="dp__code" data-role="code"{% unless show_code %} hidden{% endunless %}>{% if show_code %}{{ code_line | escape }}{% endif %}</p>
+  <p class="dp__code" data-role="code"{% unless show_code %} hidden{% endunless %}>{% if show_code %}{{ code_line }}{% endif %}</p>
   <script type="application/json" data-rules>[{{ rules_json }}]</script>
   <script type="application/json" data-variants>
     [{%- for v in product.variants limit: 250 -%}{"id":{{ v.id }},"price":{{ v.price }},"compare_at_price":{{ v.compare_at_price | default: 0 }}}{% unless forloop.last %},{% endunless %}{%- endfor -%}]

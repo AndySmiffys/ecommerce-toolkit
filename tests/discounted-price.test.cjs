@@ -161,6 +161,29 @@ test("a code discount is shown as the price with the code, on its own line, and 
   both.close();
 });
 
+test("the {code} in the code message is a button that copies the code, from the first paint and after a variant change", async () => {
+  const p = await page({ prices: [percent(2500, "SAVE25")] });
+  const copied = [];
+  Object.defineProperty(p.dom.window.navigator, "clipboard", { value: { writeText: text => { copied.push(text); return Promise.resolve(); } } });
+  const first = p.host.querySelector(".dp__code .dp__copy");
+  assert.equal(first.textContent, "SAVE25");
+  assert.equal(first.type, "button");
+  first.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(copied, ["SAVE25"]);
+  assert.equal(first.textContent, "Copied", "says so for a moment");
+  p.pick(variants[1].id);
+  const again = p.host.querySelector(".dp__code .dp__copy");
+  assert.equal(again.dataset.code, "SAVE25", "rebuilt by the script too");
+  p.close();
+  const hostile = await page({ prices: [percent(2500, '"><b>X</b>')] });
+  assert.equal(hostile.host.querySelector(".dp__code b"), null, "a code cannot become markup");
+  hostile.close();
+  const plain = await page({ prices: [percent(2500, "SAVE25")], look: { codeText: "{price} off with your code" } });
+  assert.equal(plain.host.querySelector(".dp__copy"), null, "no {code}, no button");
+  plain.close();
+});
+
 test("the code spoken of is the first one that covers the product, in the banners' order, never a different one that is cheaper", async () => {
   const codes = [percent(1000, "EXTRA10"), percent(2000, "GFDGDTTG"), amount(100, "LESS")];
   assert.equal(await shownCode({ prices: codes }), "£18.00 with code EXTRA10", "the highest priority promotion's code, though another takes more off");

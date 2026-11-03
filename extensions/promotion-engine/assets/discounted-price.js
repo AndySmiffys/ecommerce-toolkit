@@ -124,6 +124,30 @@
     return node;
   }
 
+  /** Copies the code on a button to the clipboard and says so on the button for a moment. */
+  function copyCode(button) {
+    var code = button.dataset.code || button.textContent;
+    var done = function () {
+      if (button.dataset.copied) return;
+      var label = button.textContent;
+      button.dataset.copied = 'true';
+      button.textContent = 'Copied';
+      setTimeout(function () { button.textContent = label; delete button.dataset.copied; }, 1500);
+    };
+    var fallback = function () {
+      var field = document.createElement('textarea');
+      field.value = code;
+      field.setAttribute('readonly', '');
+      field.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(field);
+      field.select();
+      try { if (document.execCommand('copy')) done(); } catch (error) { /* nothing more to try */ }
+      document.body.removeChild(field);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(done, fallback);
+    else fallback();
+  }
+
   class DiscountedPrice extends HTMLElement {
     connectedCallback() {
       var self = this;
@@ -152,6 +176,10 @@
       this.listen(document, 'change', function (event) {
         var t = event.target;
         if (t && t.matches && t.matches('input[name="id"], select[name="id"]')) refresh();
+      });
+      this.listen(this, 'click', function (event) {
+        var button = event.target && event.target.closest && event.target.closest('.dp__copy');
+        if (button && self.contains(button)) copyCode(button);
       });
       this.listen(window, 'popstate', refresh);
       this.listen(window, 'pageshow', function (event) { if (event.persisted) refresh(); });
@@ -204,7 +232,22 @@
     }
     if (host.codeLine) {
       host.codeLine.hidden = !state.code;
-      host.codeLine.textContent = state.code ? fillText(host.dataset.codeText || '{price} with code {code}', { price: formatMoney(state.code.price, format), code: state.code.name, amount: formatMoney(state.code.saving, format), percent: String(state.code.percent) }) : '';
+      host.codeLine.textContent = '';
+      if (state.code) {
+        var values = { price: formatMoney(state.code.price, format), amount: formatMoney(state.code.saving, format), percent: String(state.code.percent) };
+        var parts = String(host.dataset.codeText || '{price} with code {code}').split('{code}');
+        parts.forEach(function (part, index) {
+          if (index) {
+            var button = el('button', 'dp__copy', state.code.name);
+            button.type = 'button';
+            button.dataset.code = state.code.name;
+            button.title = 'Click to copy the code';
+            button.setAttribute('aria-label', 'Copy code ' + state.code.name);
+            host.codeLine.appendChild(button);
+          }
+          if (part) host.codeLine.appendChild(document.createTextNode(fillText(part, values)));
+        });
+      }
     }
   }
 
