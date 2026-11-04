@@ -2,8 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { PromotionOffer, promotionCss, promotionInlineCss } from "../components/PromotionPreview";
 import { placements, websiteFromSettings } from "../design/design";
 import { encodeIds } from "../design/compactIds";
-import { cardPriceFor, needsCollectionProducts, priceEntryFor, type PriceEntry } from "../design/priceRule";
-import { loadPriceDisplay } from "../../price/config.server";
+import { priceEntryFor, type PriceEntry } from "../design/priceRule";
 import { listAutomaticDiscountIds } from "./automaticDiscounts.server";
 import { promotionDiscountId } from "../design/discountIdentity";
 import { completeDiscountScope } from "./discountScope.server";
@@ -73,7 +72,7 @@ const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003
  * lists Liquid checks on product and collection pages (one per promotion), and the compact badge data the card
  * script reads (one per promotion, joined into the page by the loader embed).
  */
-export function splitSnapshot(entries: SnapshotEntry[], revision: string, priceEntries: PriceEntry[] = [], cardProducts: Map<string, string[]> | null = null) {
+export function splitSnapshot(entries: SnapshotEntry[], revision: string, priceEntries: PriceEntry[] = []) {
   const promotions = [];
   const scopes: Record<string, Scope> = {};
   const badgeShards: Record<string, string> = {};
@@ -104,22 +103,14 @@ export function splitSnapshot(entries: SnapshotEntry[], revision: string, priceE
     }
     return { key, ...rest };
   });
-  // Product cards: the automatic discounts that take the same rule off every variant, with the products they cover (null: cards are off).
-  const cardShards: Record<string, string> = {};
-  if (cardProducts) for (const entry of priceEntries) {
-    const card = cardPriceFor(entry, cardProducts.get(entry.id) ?? null, encodeIds);
-    if (card) cardShards[card.k] = safeJson(card);
-  }
-  return { promotions, prices, scopes, badgeShards, cardShards, badgeIndex: { v: 1, rev: revision, css: badgeCss, keys: badgeKeys } };
+  return { promotions, prices, scopes, badgeShards, badgeIndex: { v: 1, rev: revision, css: badgeCss, keys: badgeKeys } };
 }
 
 // Shopify limits a JSON metafield to 128 KB and a text metafield to 64 KB, so each promotion's lists get their own.
 const scopeLimit = 120000;
 const badgeLimit = 60000;
 const metafieldBatch = 25;
-const companionPattern = /^(scope|badge|cardprice)_/;
-/** A discount whose product list does not fit is left off the cards, not allowed to stop everything else being published. */
-const cardLimit = 60000;
+const companionPattern = /^(scope|badge)_/;
 
 /** The per-promotion metafields (everything except the main snapshot), by key. Throws when one promotion's data is too big to publish. */
 export function companionMetafields(split: ReturnType<typeof splitSnapshot>, titles: Map<string, string> = new Map()) {
@@ -135,31 +126,7 @@ export function companionMetafields(split: ReturnType<typeof splitSnapshot>, tit
     result.set(`badge_${id}`, { type: "multi_line_text_field", value });
   }
   result.set("badge_index", { type: "json", value: JSON.stringify(split.badgeIndex) });
-  const cardKeys: string[] = [];
-  for (const [id, value] of Object.entries(split.cardShards)) {
-    if (Buffer.byteLength(value, "utf8") > cardLimit) continue;
-    result.set(`cardprice_${id}`, { type: "multi_line_text_field", value });
-    cardKeys.push(id);
-  }
-  // Nothing is published for cards while they are off; a leftover index is removed with the stale metafields.
-  if (cardKeys.length) result.set("cardprice_index", { type: "json", value: JSON.stringify({ v: 1, keys: cardKeys }) });
   return result;
-}
-
-/**
- * The products found in the collections of each automatic discount, for the product cards, or null when cards are switched off (so nothing
- * is read or published for them). A collection too large to list leaves its discount off the cards; the product page and the cart still have it.
- */
-async function readCardProducts(admin: ShopifyAdminClient, priceEntries: PriceEntry[]): Promise<Map<string, string[]> | null> {
-  let enabled = false;
-  try { enabled = (await loadPriceDisplay(admin)).config.cardsEnabled; } catch { /* Cards stay off when the setting cannot be read. */ }
-  if (!enabled) return null;
-  const found = new Map<string, string[]>();
-  for (const entry of priceEntries.filter(needsCollectionProducts)) {
-    const result = await collectionProductIds(admin, entry.collections.map(id => `gid://shopify/Collection/${id}`));
-    if (!result.tooLarge.length) found.set(entry.id, result.ids);
-  }
-  return found;
 }
 
 export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: string, readSettings = getLatestPromotionSettings) {
@@ -205,8 +172,7 @@ export async function syncStorefrontSnapshot(admin: ShopifyAdminClient, shop: st
       if (priced) { priceEntries.push(priced); titles.set(shortId(priced.id), promotion.title); }
     }
     const revision = storefrontRevision(shop, rows);
-    const cardProducts = await readCardProducts(admin, priceEntries);
-    const split = splitSnapshot(entries, revision, priceEntries, cardProducts);
+    const split = splitSnapshot(entries, revision, priceEntries);
     const value = JSON.stringify({ version: snapshotVersion, priceRules: priceRulesVersion, revision, css: promotionCss, inlineCss: promotionInlineCss, promotions: split.promotions, prices: split.prices });
     if (Buffer.byteLength(value, "utf8") > mainLimit) throw new Error("The public storefront designs exceed Shopify’s JSON size limit. Reduce the number of enabled promotions or shorten their content.");
     const companions = companionMetafields(split, titles);

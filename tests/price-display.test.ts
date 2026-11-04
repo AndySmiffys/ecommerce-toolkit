@@ -141,14 +141,3 @@ test("the automatic discount's message must say the price, and uses only its own
   assert.equal(old.ok && old.config.autoText, defaultPriceDisplay.autoText, "settings saved before this get the defaults");
   assert.equal(old.ok && old.config.autoColour, defaultPriceDisplay.autoColour);
 });
-
-test("product cards are off until turned on, and their saving message is checked like the others", () => {
-  assert.equal(defaultPriceDisplay.cardsEnabled, false);
-  assert.equal(defaultPriceDisplay.cardSavingsText, "Save {amount} ({percent}%)");
-  const earlier = validatePriceDisplay({ version: 1, showSavings: true });
-  assert.equal(earlier.ok && earlier.config.cardsEnabled, false, "settings saved before cards existed stay valid");
-  const on = validatePriceDisplay(valid({ cardsEnabled: true, cardSavingsText: "{percent}% off" }));
-  assert.deepEqual(on.ok && [on.config.cardsEnabled, on.config.cardSavingsText], [true, "{percent}% off"]);
-  assert.match(errorsOf(valid({ cardSavingsText: "Save {amont}" })).join(" "), /Product card saving message uses \{amont\}/);
-  assert.match(errorsOf(valid({ cardSavingsText: " " })).join(" "), /Product card saving message cannot be empty/);
-});

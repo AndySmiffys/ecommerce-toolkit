@@ -25,12 +25,8 @@ export async function action({ request }: ActionFunctionArgs): Promise<PriceResu
     if (intent === "save") {
       let input: unknown;
       try { input = JSON.parse(String(form.get("config") ?? "")); } catch { return { ok: false, intent, errors: ["The settings could not be read. Reload the page and try again."] }; }
-      const before = (await loadPriceDisplay(admin)).config.cardsEnabled;
       const result = await savePriceDisplay(admin, input);
-      if (!result.ok) return { ok: false, intent, errors: result.errors };
-      // Switching product cards on or off changes what is published (the products each automatic discount covers), so publish again now.
-      if (result.config.cardsEnabled !== before) await syncStorefrontSnapshot(admin, session.shop);
-      return { ok: true, intent, errors: [], config: result.config };
+      return result.ok ? { ok: true, intent, errors: [], config: result.config } : { ok: false, intent, errors: result.errors };
     }
     // Rewrites what the storefront reads from Shopify's discounts as they are now, for when a change in Shopify has not reached it.
     if (intent === "republish") {

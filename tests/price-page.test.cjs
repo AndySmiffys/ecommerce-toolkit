@@ -62,11 +62,10 @@ test('the page is laid out like the other editors: a preview that stays in view,
   try {
     const { container } = page;
     const steps = findAll(container, 'details[data-step]');
-    assert.deepEqual(steps.map(item => item.getAttribute('data-step')), ['wording', 'cards', 'appearance']);
+    assert.deepEqual(steps.map(item => item.getAttribute('data-step')), ['wording', 'appearance']);
     assert.deepEqual(steps.filter(item => item.open).map(item => item.getAttribute('data-step')), ['wording']);
     assert.match(steps[0].querySelector('summary').textContent, /1\s*Savings and codes/);
-    assert.match(steps[1].querySelector('summary').textContent, /2\s*Product cards/);
-    assert.match(steps[2].querySelector('summary').textContent, /3\s*Appearance/);
+    assert.match(steps[1].querySelector('summary').textContent, /2\s*Appearance/);
     assert.ok(find(container, '.create-discount-layout aside.desktop-preview-panel'));
     assert.match(find(container, 'aside.desktop-preview-panel').textContent, /Storefront preview/);
     assert.ok(find(container, 's-button[data-preview-toggle]'), 'a Preview button for narrow screens');
@@ -238,28 +237,6 @@ test('saving sends the settings, says so, and discarding puts back what was save
     assert.deepEqual([sent.showSavings, sent.savingsText, sent.size, sent.margin, sent.textColour], [true, '{percent}% off', 0, 0, '']);
     assert.ok(toasts.includes('Discounted price saved'));
     assert.equal(save(container).disabled, true, 'saved');
-  } finally { await page.unmount(); }
-});
-
-test('product cards are off until switched on, then have their own message, a preview, and are saved with the rest', async () => {
-  const page = await mountPage();
-  try {
-    const { container } = page;
-    const cards = find(container, 'details[data-step=cards]');
-    assert.match(cards.querySelector('summary').textContent, /Off/);
-    assert.equal(find(cards, '[data-section=card-preview]'), null, 'nothing to preview while it is off');
-    await check(find(cards, 's-checkbox'), true);
-    assert.match(cards.querySelector('summary').textContent, /Shown on cards/);
-    assert.match(find(cards, '[data-section=card-preview]').textContent, /£20\.00£25\.00Save £5\.00 \(20%\)/, 'the same sums as the card script');
-    await type(field(cards, 's-text-field', 'Card saving message'), '{percent}% off');
-    assert.match(find(cards, '[data-section=card-preview]').textContent, /£20\.00£25\.0020% off/);
-    await type(field(cards, 's-text-field', 'Card saving message'), 'Save {amont}');
-    assert.match(container.textContent, /Product card saving message uses \{amont\}/, 'a placeholder that does not exist is questioned');
-    await type(field(cards, 's-text-field', 'Card saving message'), '{percent}% off');
-    await click(save(container));
-    await wait(60);
-    const sent = JSON.parse(page.posts[0].config);
-    assert.deepEqual([sent.cardsEnabled, sent.cardSavingsText], [true, '{percent}% off']);
   } finally { await page.unmount(); }
 });
 
