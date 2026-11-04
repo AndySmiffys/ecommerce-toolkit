@@ -162,13 +162,14 @@
       this.listeners = [];
       this.last = this.dataset.variantId;
       this.seen = this.dataset.variantId;
+      this.watch(this.variantId);
       var refresh = function () { self.update(); };
       VARIANT_EVENTS.forEach(function (name) {
         self.listen(document, name, function (event) {
           var d = event.detail || {};
           var id = Number((d.resource && d.resource.id) || (d.variant && d.variant.id) || d.id) || null;
           // The theme says which variant it is now, and often updates the form and the address a moment later: until they change, believe it.
-          if (id) self.hint = { id: id, form: formVariantId(), url: urlVariantId() };
+          if (id) self.watch(id);
           refresh();
           self.recheck();
         });
@@ -176,7 +177,7 @@
       // Any choice made in the page's own pickers (colour, size) may change the variant; the form and the address follow a moment later.
       this.listen(document, 'change', function (event) {
         var t = event.target;
-        if (t && t.matches && t.matches('input[name="id"], select[name="id"]')) { self.hint = null; refresh(); return; }
+        if (t && t.matches && t.matches('input[name="id"], select[name="id"]')) { self.watch(formVariantId()); self.chose = true; refresh(); return; }
         if (t && t.closest && t.closest('form, fieldset, variant-picker, variant-selects, variant-radios')) self.recheck();
       });
       this.listen(this, 'click', function (event) {
@@ -184,12 +185,15 @@
         if (button && self.contains(button)) copyCode(button);
       });
       this.listen(window, 'popstate', refresh);
+      // Themes change the address with history.replaceState and set the form's field from script, neither of which announces anything. Looking is two reads, so look twice a second while the page is showing.
+      this.poll = setInterval(function () { if (document.visibilityState !== 'hidden') self.update(); }, 500);
       this.listen(window, 'pageshow', function (event) { if (event.persisted) refresh(); });
     }
 
     disconnectedCallback() {
       (this.timers || []).forEach(clearTimeout);
       this.timers = [];
+      clearInterval(this.poll);
       (this.listeners || []).forEach(function (l) { l[0].removeEventListener(l[1], l[2]); });
       this.listeners = [];
     }
@@ -199,25 +203,36 @@
       this.listeners.push([target, name, handler]);
     }
 
+    /** Takes `id` as the variant now, and remembers what the form and the address say, so that only a later change in either counts as the theme choosing again. */
+    watch(id) {
+      this.current = id;
+      this.seenForm = formVariantId();
+      this.seenUrl = urlVariantId();
+    }
+
     /**
-     * The variant being looked at: what the theme last announced until the form or the address says something different, else the product
-     * form's, else the address's, else the one the server wrote.
+     * The variant being looked at: the last one announced or written by the theme, or whatever the product form's field or the address changed to
+     * since (themes update one or both a moment after they announce a change, or announce nothing).
      */
     selectedVariant() {
-      var form = formVariantId();
       var url = urlVariantId();
-      var hint = this.hint;
-      var id;
-      if (hint && form === hint.form && url === hint.url) id = hint.id;
-      else id = form || url || this.variantId;
-      for (var i = 0; i < this.variants.length; i++) if (this.variants[i].id === id) return this.variants[i];
+      var form = formVariantId();
+      if (url !== this.seenUrl) { this.seenUrl = url; if (url) this.current = url; }
+      if (form !== this.seenForm) { this.seenForm = form; if (form) this.current = form; }
+      for (var i = 0; i < this.variants.length; i++) if (this.variants[i].id === this.current) return this.variants[i];
       return null;
     }
 
     update() {
-      // A theme that fetches the page section again writes the server's price for the new variant into this element and changes its variant: that is what is shown now.
-      if (this.dataset.variantId !== this.seen) { this.seen = this.dataset.variantId; this.last = this.seen; }
       var variant = this.selectedVariant();
+      // A theme that fetches the page section again writes the server's price for the new variant into this element and changes its variant: that is what
+      // is shown now, unless the shopper has just chosen something else.
+      if (this.dataset.variantId !== this.seen) {
+        this.seen = this.dataset.variantId;
+        this.last = this.seen;
+        if (!this.chose && Number(this.seen)) { this.current = Number(this.seen); variant = this.selectedVariant(); }
+      }
+      this.chose = false;
       if (!variant || String(variant.id) === this.last) return;
       this.last = String(variant.id);
       render(this, priceState(variant, this.rules, this.currency));

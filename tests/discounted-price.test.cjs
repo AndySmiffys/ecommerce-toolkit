@@ -312,6 +312,20 @@ test("if the theme fetches the section again and writes the new variant's price 
   p.close();
 });
 
+test("a theme that changes the address or the form's field without announcing anything is still followed, for a variant with its own price and compare-at price", async () => {
+  const p = await page({});
+  const window = p.dom.window;
+  assert.deepEqual([p.shown().now, p.shown().was], ["£20.00", null]);
+  window.history.replaceState({}, "", "/products/x?variant=13");
+  await delay(700);
+  assert.deepEqual([p.shown().now, p.shown().was], ["£15.00", "£25.00"], "the variant with a compare-at price: the address changed, nothing was announced");
+  window.document.querySelector("input[name=id]").value = "11";
+  window.history.replaceState({}, "", "/products/x?variant=11");
+  await delay(700);
+  assert.deepEqual([p.shown().now, p.shown().was], ["£20.00", null], "and back");
+  p.close();
+});
+
 test("a code promotion with no price is sent to the script as a place-holder, and speaks of nothing", async () => {
   const p = await page({ prices: [unpriced("NOPRICE", { k: "O", co: true }), percent(2000, "NEXT", together)] });
   const rules = JSON.parse(p.host.querySelector("script[data-rules]").textContent);

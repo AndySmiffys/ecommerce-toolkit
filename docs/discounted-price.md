@@ -57,6 +57,7 @@ A rule covers a product when the promotion is for everything, or lists the produ
 The block follows the variant the shopper chooses, including a discount that covers only some variants. The server writes the price for the variant in the address (or the first available one); the script then keeps it right:
 
 - When the theme announces a change (`variant:update`, `variant:change`, `variantChange`) the variant in the announcement is used straight away, and kept until the product form or the address says something different. Themes often update those a moment after they announce a change, and reading them first would show the old variant.
+- Themes also change the address (`history.replaceState`) and set the form's field from script without announcing anything, so the block looks at both twice a second while the page is showing (two reads each time) and follows whichever changed.
 - A choice made in the theme's own pickers (colour, size) is looked at again over the next second, for the same reason.
 - If the theme fetches the section again and writes the new variant's price into the block, that is taken as what is shown, so going back to the first variant still updates it. The block's lines are found again each time, so markup the theme has replaced is not left behind.
 
