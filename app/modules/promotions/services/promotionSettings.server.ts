@@ -1,4 +1,6 @@
 import db from "../../../db.server";
+import type { PrismaClient } from "@prisma/client";
+import { promotionDiscountAliases, promotionDiscountId } from "../design/discountIdentity";
 
 import type { PromotionRecord } from "../models/promotion";
 
@@ -7,7 +9,6 @@ import type {
 } from "../models/website";
 
 type StoredPromotionSettings = {
-  included: boolean;
   websiteEnabled: boolean;
 
   showProductPage: boolean;
@@ -27,6 +28,8 @@ type StoredPromotionSettings = {
   textColour: string | null;
   badgeColour: string | null;
 
+  designJson?: string | null;
+
   priority: number;
 
   lastSyncedAt: Date | null;
@@ -37,7 +40,6 @@ function mapStoredSettings(
   settings: StoredPromotionSettings,
 ): PromotionWebsiteSettings {
   return {
-    included: settings.included,
     websiteEnabled: settings.websiteEnabled,
 
     showProductPage: settings.showProductPage,
@@ -57,6 +59,7 @@ function mapStoredSettings(
     textColour: settings.textColour,
     badgeColour: settings.badgeColour,
 
+    designJson: settings.designJson ?? null,
     priority: settings.priority,
 
     lastSyncedAt:
@@ -69,34 +72,33 @@ function mapStoredSettings(
 export async function attachPromotionSettings(
   shop: string,
   promotions: PromotionRecord[],
+  database: PrismaClient = db,
 ): Promise<PromotionRecord[]> {
   if (promotions.length === 0) {
     return [];
   }
 
   const storedSettings =
-    await db.promotionSettings.findMany({
+    await database.promotionSettings.findMany({
       where: {
         shop,
 
         shopifyDiscountId: {
-          in: promotions.map(
-            (promotion) => promotion.id,
-          ),
+          in: promotions.flatMap(promotion => promotionDiscountAliases(promotion.id, promotion.method === "Code" ? "code" : "automatic")),
         },
       },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     });
 
-  const settingsByDiscountId = new Map(
-    storedSettings.map((settings) => [
-      settings.shopifyDiscountId,
-      settings,
-    ]),
-  );
+  const settingsByDiscountId = new Map<string, (typeof storedSettings)[number]>();
+  for (const settings of storedSettings) {
+    const id = promotionDiscountId(settings.shopifyDiscountId);
+    if (!settingsByDiscountId.has(id)) settingsByDiscountId.set(id, settings);
+  }
 
   return promotions.map((promotion) => {
     const stored =
-      settingsByDiscountId.get(promotion.id);
+      settingsByDiscountId.get(promotionDiscountId(promotion.id));
 
     if (!stored) {
       return promotion;
@@ -111,7 +113,6 @@ export async function attachPromotionSettings(
 }
 
 export type UpdatePromotionWebsiteSettingsInput = {
-  included: boolean;
   websiteEnabled: boolean;
 
   showProductPage: boolean;
@@ -131,6 +132,8 @@ export type UpdatePromotionWebsiteSettingsInput = {
   textColour: string | null;
   badgeColour: string | null;
 
+  designJson?: string | null;
+
   priority: number;
 };
 
@@ -138,8 +141,10 @@ export async function updatePromotionWebsiteSettings(
   shop: string,
   shopifyDiscountId: string,
   input: UpdatePromotionWebsiteSettingsInput,
+  database: PrismaClient = db,
 ): Promise<void> {
-  await db.promotionSettings.upsert({
+  shopifyDiscountId = promotionDiscountId(shopifyDiscountId);
+  await database.promotionSettings.upsert({
     where: {
       shop_shopifyDiscountId: {
         shop,
@@ -151,7 +156,7 @@ export async function updatePromotionWebsiteSettings(
       shop,
       shopifyDiscountId,
 
-      included: input.included,
+      included: true,
       websiteEnabled: input.websiteEnabled,
 
       showProductPage: input.showProductPage,
@@ -175,11 +180,12 @@ export async function updatePromotionWebsiteSettings(
       textColour: input.textColour,
       badgeColour: input.badgeColour,
 
+      ...(input.designJson !== undefined ? { designJson: input.designJson } : {}),
       priority: input.priority,
     },
 
     update: {
-      included: input.included,
+      included: true,
       websiteEnabled: input.websiteEnabled,
 
       showProductPage: input.showProductPage,
@@ -203,7 +209,44 @@ export async function updatePromotionWebsiteSettings(
       textColour: input.textColour,
       badgeColour: input.badgeColour,
 
+      ...(input.designJson !== undefined ? { designJson: input.designJson } : {}),
       priority: input.priority,
     },
   });
+}
+
+// Resolve historical typed-ID rows before filtering or ranking. An older enabled
+// row must not override the most recently saved priority or Draft status.
+export async function getStorefrontPromotionSettings(
+  shop: string,
+  flag: "showHeaderBanner" | "showCollectionPage" | "showProductPage" | "showProductBadge",
+  database: PrismaClient = db,
+) {
+  return (await getLatestPromotionSettings(shop, database))
+    .filter(row => row.websiteEnabled && row[flag]);
+}
+
+export async function getLatestPromotionSettings(shop: string, database: PrismaClient = db) {
+  const rows = await database.promotionSettings.findMany({
+    where: { shop }, orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+  });
+  const seen = new Set<string>();
+  return rows.filter(row => {
+    const id = promotionDiscountId(row.shopifyDiscountId);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).map(row => ({ ...row, shopifyDiscountId: promotionDiscountId(row.shopifyDiscountId) }))
+    .sort((a, b) => b.priority - a.priority || b.id - a.id);
+}
+
+const highestPriority = 9999;
+/**
+ * The priority a save stores. The editor never sets it: a promotion keeps its place in the order, and one
+ * that is entering the order starts at the top, above every saved priority.
+ */
+export async function priorityForSave(shop: string, shopifyDiscountId: string, rankEntry: boolean, database: PrismaClient = db): Promise<number> {
+  const rows = await getLatestPromotionSettings(shop, database);
+  if (rankEntry) return Math.min(highestPriority, Math.max(0, ...rows.map(row => row.priority)) + 1);
+  return rows.find(row => row.shopifyDiscountId === promotionDiscountId(shopifyDiscountId))?.priority ?? 0;
 }

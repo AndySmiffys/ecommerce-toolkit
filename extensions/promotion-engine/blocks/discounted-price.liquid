@@ -1,0 +1,249 @@
+{%- liquid
+  assign snapshot = app.metafields.promotion_engine.storefront.value
+  assign metafields = app.metafields.promotion_engine
+  assign look = app.metafields.price_display.config.value
+  assign now_s = 'now' | date: '%s' | plus: 0
+  assign variant = product.selected_or_first_available_variant
+  assign currency = cart.currency.iso_code
+  assign product_id = product.id | append: ''
+  assign variant_id = variant.id | append: ''
+  assign base = variant.price
+  assign rules_json = ''
+  assign auto_now = -1
+  assign code_now = -1
+  assign code_name = ''
+  assign code_decided = false
+  assign code_k = 'P'
+  assign code_cp = false
+  assign code_co = false
+  assign auto_k = 'P'
+  assign auto_cp = false
+  assign auto_co = false
+  if snapshot.version == 3 and snapshot.priceRules == 2
+    for promo in snapshot.prices
+      if promo.starts > now_s
+        continue
+      endif
+      if promo.ends != 0 and promo.ends <= now_s
+        continue
+      endif
+      assign qualifies = false
+      assign product_level = false
+      assign variant_hit = false
+      assign variant_list = ''
+      if promo.all
+        assign qualifies = true
+        assign product_level = true
+      else
+        assign scope_key = 'scope_' | append: promo.key
+        assign scope = metafields[scope_key].value
+        if scope.products contains product_id
+          assign qualifies = true
+          assign product_level = true
+        endif
+        unless product_level
+          for item in product.collections
+            assign item_id = item.id | append: ''
+            if scope.collections contains item_id
+              assign qualifies = true
+              assign product_level = true
+              break
+            endif
+          endfor
+        endunless
+        unless product_level
+          for scoped in scope.variants
+            if scoped.product == product_id
+              assign qualifies = true
+              assign variant_list = variant_list | append: scoped.id | append: '","'
+              if scoped.id == variant_id
+                assign variant_hit = true
+              endif
+            endif
+          endfor
+        endunless
+      endif
+      unless qualifies
+        continue
+      endunless
+      comment
+        The rule as the script reads it. A code promotion without a price rule is sent as "n": it still decides which code is spoken of.
+      endcomment
+      assign code_json = promo.c | json
+      if promo.price
+        assign one_rule = '{"t":"' | append: promo.price.t | append: '","v":' | append: promo.price.v | append: ',"c":' | append: code_json
+      else
+        assign one_rule = '{"t":"n","c":' | append: code_json
+      endif
+      if promo.price.u
+        assign unit_json = promo.price.u | json
+        assign one_rule = one_rule | append: ',"u":' | append: unit_json
+      endif
+      assign one_rule = one_rule | append: ',"k":"' | append: promo.k | append: '"'
+      if promo.cp
+        assign one_rule = one_rule | append: ',"cp":1'
+      endif
+      if promo.co
+        assign one_rule = one_rule | append: ',"co":1'
+      endif
+      if variant_list != ''
+        assign vs_text = variant_list | remove_last: '","'
+        assign one_rule = one_rule | append: ',"vs":["' | append: vs_text | append: '"]'
+      endif
+      assign one_rule = one_rule | append: '}'
+      assign rules_json = rules_json | append: one_rule | append: ','
+      comment
+        What this rule does to the first variant, with the same whole-number sums as the script, so the page does not change when the script starts.
+      endcomment
+      if product_level or variant_hit
+        assign candidate = -1
+        if promo.price.t == 'p'
+          assign off = base | times: promo.price.v | plus: 5000 | divided_by: 10000 | floor
+          assign candidate = base | minus: off
+        elsif promo.price.t == 'a' and promo.price.u == currency
+          assign candidate = base | minus: promo.price.v
+          if candidate < 0
+            assign candidate = 0
+          endif
+        endif
+        if promo.c != blank
+          comment
+            A code: the first promotion that covers the product, in the order the banners use, is the one spoken of. Lower ones are not.
+          endcomment
+          unless code_decided
+            assign code_decided = true
+            assign code_name = promo.c
+            assign code_k = promo.k
+            assign code_cp = promo.cp
+            assign code_co = promo.co
+            if candidate >= 0
+              assign code_now = candidate
+            endif
+          endunless
+        elsif candidate >= 0
+          if auto_now < 0 or candidate < auto_now
+            assign auto_now = candidate
+            assign auto_k = promo.k
+            assign auto_cp = promo.cp
+            assign auto_co = promo.co
+          endif
+        endif
+      endif
+    endfor
+  endif
+  assign rules_json = rules_json | remove_last: ','
+  assign compare = variant.compare_at_price | default: 0
+  assign list_price = base
+  if compare > base
+    assign list_price = compare
+  endif
+  comment
+    The main price is Shopify's own: the price, and the compare-at price when it is higher. Automatic discounts and codes are separate lines.
+  endcomment
+  assign now_price = base
+  assign was_price = 0
+  if base < list_price
+    assign was_price = list_price
+  endif
+  assign saving = was_price | minus: now_price
+  assign percent = 0
+  if was_price > 0
+    assign percent = saving | times: 200 | plus: was_price | divided_by: was_price | divided_by: 2 | floor
+  endif
+  assign auto_applied = false
+  if auto_now >= 0 and auto_now < base
+    assign auto_applied = true
+  endif
+  comment
+    A code that cannot be combined with the automatic discount that applies is not a price the shopper can have alongside it, so it is not shown.
+    Two discounts combine only when each allows the other's kind.
+  endcomment
+  assign can_combine = true
+  if auto_applied and code_decided
+    assign can_combine = false
+    if code_k == 'P'
+      assign auto_allows = auto_cp
+    else
+      assign auto_allows = auto_co
+    endif
+    if auto_k == 'P'
+      assign code_allows = code_cp
+    else
+      assign code_allows = code_co
+    endif
+    if auto_allows and code_allows
+      assign can_combine = true
+    endif
+  endif
+  assign lowest_price = base
+  if auto_applied
+    assign lowest_price = auto_now
+  endif
+  assign show_code = false
+  if code_now >= 0 and code_now < lowest_price and can_combine
+    assign show_code = true
+  endif
+  assign show_savings = look.showSavings
+  assign savings_template = look.savingsText | default: 'Save {amount}'
+  assign auto_template = look.autoText | default: '{price} with the automatic discount'
+  assign code_template = look.codeText | default: '{price} with code {code}'
+  assign saving_money = saving | money
+  assign code_money = code_now | money
+  assign auto_saving = base | minus: auto_now
+  assign auto_saving_money = auto_saving | money
+  assign auto_money = auto_now | money
+  assign auto_percent = auto_saving | times: 200 | plus: base | divided_by: base | divided_by: 2 | floor
+  assign auto_line = auto_template | replace: '{price}', auto_money | replace: '{amount}', auto_saving_money | replace: '{percent}', auto_percent
+  assign code_saving = base | minus: code_now
+  assign code_saving_money = code_saving | money
+  assign code_percent = code_saving | times: 200 | plus: base | divided_by: base | divided_by: 2 | floor
+  assign savings_line = savings_template | replace: '{amount}', saving_money | replace: '{percent}', percent
+  assign code_name_safe = code_name | escape
+  assign code_button = '<button type="button" class="dp__copy" data-code="' | append: code_name_safe | append: '" title="Click to copy the code" aria-label="Copy code ' | append: code_name_safe | append: '">' | append: code_name_safe | append: '</button>'
+  assign code_line = code_template | escape | replace: '{price}', code_money | replace: '{code}', code_button | replace: '{amount}', code_saving_money | replace: '{percent}', code_percent
+-%}
+<discounted-price
+  class="dp"
+  data-money-format="{{ shop.money_format | escape }}"
+  data-currency="{{ currency }}"
+  data-variant-id="{{ variant_id }}"
+  data-show-savings="{% if show_savings %}true{% else %}false{% endif %}"
+  data-savings-text="{{ savings_template | escape }}"
+  data-auto-text="{{ auto_template | escape }}"
+  data-code-text="{{ code_template | escape }}"
+  {%- if look %}
+  style="--dp-margin:{{ look.margin | default: 0 }}px;{% if look.size > 0 %}--dp-size:{{ look.size }}px;{% endif %}--dp-weight:{{ look.weight | default: '600' }};--dp-text:{{ look.textColour | default: 'inherit' }};--dp-sale:{{ look.saleColour | default: '#b12704' }};--dp-was:{{ look.wasColour | default: '#6b6b6b' }};--dp-save-bg:{{ look.saveBackground | default: '#b12704' }};--dp-save-text:{{ look.saveText | default: '#ffffff' }};--dp-auto:{{ look.autoColour | default: '#b12704' }};--dp-code:{{ look.codeColour | default: '#1e7e34' }}"
+  {%- endif %}
+  {{ block.shopify_attributes }}
+>
+  <p class="dp__line" data-role="line">
+    {%- if was_price > 0 -%}<span class="dp__sr">Sale price </span>{%- endif -%}
+    <span class="dp__now{% if was_price > 0 %} dp__now--sale{% endif %}">{{ now_price | money }}</span>
+    {%- if was_price > 0 -%}
+      <span class="dp__sr">Regular price </span><s class="dp__was">{{ was_price | money }}</s>
+      {%- if show_savings -%}<span class="dp__save">{{ savings_line | escape }}</span>{%- endif -%}
+    {%- endif -%}
+  </p>
+  <p class="dp__auto" data-role="auto"{% unless auto_applied %} hidden{% endunless %}>{% if auto_applied %}{{ auto_line | escape }}{% endif %}</p>
+  <p class="dp__code" data-role="code"{% unless show_code %} hidden{% endunless %}>{% if show_code %}{{ code_line }}{% endif %}</p>
+  <script type="application/json" data-rules>[{{ rules_json }}]</script>
+  <script type="application/json" data-variants>
+    [{%- for v in product.variants limit: 250 -%}{"id":{{ v.id }},"price":{{ v.price }},"compare_at_price":{{ v.compare_at_price | default: 0 }}}{% unless forloop.last %},{% endunless %}{%- endfor -%}]
+  </script>
+</discounted-price>
+
+{% schema %}
+{
+  "name": "Discounted price",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "javascript": "discounted-price.js",
+  "stylesheet": "discounted-price.css",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Shows the product's price, and the price after any discount that covers it. Its look and wording are set in the eCommerce Toolkit app under Discounted price. Place it where the theme's own price is, and remove the theme's price block."
+    }
+  ]
+}
+{% endschema %}

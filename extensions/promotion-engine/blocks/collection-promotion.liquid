@@ -1,0 +1,20 @@
+<script src="{{ 'promotion-ui.js' | asset_url }}" defer></script>
+{% assign current_collection = collection | default: closest.collection %}
+{% assign storefront_snapshot = app.metafields.promotion_engine.storefront.value %}
+{% assign storefront_metafields = app.metafields.promotion_engine %}
+{% render 'server-promotion', snapshot: storefront_snapshot, metafields: storefront_metafields, placement: 'collection', current_collection: current_collection, width_mode: block.settings.width_mode, block: block %}
+{% schema %}
+{
+  "name": "Collection promotion",
+  "target": "section",
+  "enabled_on": {"templates": ["collection"]},
+  "class": "pe-collection-app-block",
+  "javascript": "promotion-engine.js",
+  "stylesheet": "promotion-layout.css",
+  "settings": [
+    {"type":"paragraph","content":"Add as its own section above the product grid. Promotion content and styling are managed in the app."},
+    {"type":"select","id":"width_mode","label":"Banner width","default":"content","options":[{"value":"content","label":"Content width"},{"value":"full","label":"Full page width"}],"info":"Content width follows the theme section. Full page width extends to both screen edges."},
+    {"type":"range","id":"spacing","label":"Space above and below","min":0,"max":64,"step":4,"unit":"px","default":0}
+  ]
+}
+{% endschema %}

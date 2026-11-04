@@ -1,0 +1,162 @@
+{%- liquid
+  assign config = app.metafields.shipping_countdown.config.value
+  assign block_id = block.id | replace: '_', '' | downcase
+  assign variant = product.selected_or_first_available_variant
+  assign currency = cart.currency.iso_code
+  assign free = config.freeShipping
+  assign delivery = app.metafields.shipping_countdown.delivery.value
+  assign country_code = localization.country.iso_code
+  assign country_name = localization.country.name
+  assign entry = delivery.countries[country_code]
+  if entry == nil
+    assign entry = delivery.restOfWorld
+  endif
+  assign rate_label = entry.rate
+  if entry.rate != blank
+    assign rate_key = entry.rate | strip | downcase | replace: '  ', ' ' | replace: '  ', ' '
+    for service_setting in config.delivery.services
+      assign setting_key = service_setting.name | strip | downcase | replace: '  ', ' ' | replace: '  ', ' '
+      if setting_key == rate_key and service_setting.label != blank
+        assign rate_label = service_setting.label | strip
+        break
+      endif
+    endfor
+  endif
+  assign threshold = nil
+  assign show_free = false
+  assign free_text = ''
+  if free.enabled and entry.free and currency == delivery.currency
+    assign show_free = true
+    assign threshold = entry.thresholdMinor
+    assign with_item = cart.total_price | plus: variant.price
+    if cart.total_price >= threshold
+      assign free_text = free.textOver
+    elsif variant.price > 0 and with_item >= threshold
+      assign free_text = free.textAdd
+    else
+      assign free_text = free.textUnder
+    endif
+    assign threshold_text = threshold | money_without_trailing_zeros
+    assign free_text = free_text | replace: '{threshold}', threshold_text | replace: '{country}', country_name | replace: '{rate}', rate_label
+  endif
+  assign services_table = app.metafields.shipping_countdown.delivery_services.value
+  assign zone_key = services_table.countries[country_code]
+  if zone_key == nil
+    assign zone_key = services_table.restOfWorld
+  endif
+  assign service_zone = services_table.zones[zone_key]
+  assign show_services = false
+  if config.delivery.enabled and service_zone.services.size > 0 and currency == services_table.currency
+    assign show_services = true
+  endif
+  assign shop_today = 'now' | date: '%Y-%m-%d'
+  assign warning = config.warning
+  assign show_warning = false
+  if warning.enabled and warning.message != blank and shop_today >= warning.startDate and shop_today <= warning.endDate
+    assign show_warning = true
+  endif
+  assign day_names = 'Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday' | split: ','
+  assign day_order = '1,2,3,4,5,6,0' | split: ','
+  assign day_list = ''
+  for day_index in day_order
+    assign day_number = day_index | plus: 0
+    if config.shippingDays[day_number]
+      assign day_list = day_list | append: day_names[forloop.index0] | append: '|'
+    endif
+  endfor
+  assign day_list = day_list | split: '|' | join: ', '
+-%}
+
+{%- if config == blank -%}
+  {%- if request.design_mode -%}
+    <p class="sc-setup-note">Shipping countdown: open the eCommerce Toolkit app, choose Shipping countdown and save its settings to show this block.</p>
+  {%- endif -%}
+{%- else -%}
+  {%- assign look = config.style -%}
+  <shipping-countdown
+    class="sc"
+    id="shipping-countdown-{{ block_id }}"
+    {%- if look %}
+    data-align="{{ look.align }}"
+    data-padding="{{ look.padding }}"
+    data-border="{{ look.border }}"
+    style="--sc-margin:{{ look.margin }}px;--sc-radius:{{ look.radius }}px;--sc-border-width:{{ look.borderWidth }}px;--sc-size:{{ look.textSize }}px;--sc-weight:{{ look.fontWeight }};--sc-bg:{{ look.background }};--sc-text:{{ look.text }};--sc-accent:{{ look.accent }};--sc-dispatch:{{ look.dispatch }};--sc-muted:{{ look.muted }};--sc-icon:{{ look.icon }}{% if look.lineGap != nil %};--sc-gap:{{ look.lineGap }}px{% endif %}"
+    {%- endif %}
+    data-cart-total="{{ cart.total_price }}"
+    data-currency="{{ currency }}"
+    data-free-threshold="{{ threshold }}"
+    data-free-currency="{{ delivery.currency }}"
+    data-country="{{ country_name | escape }}"
+    data-free-rate="{{ rate_label | escape }}"
+    data-delivery-currency="{{ services_table.currency }}"
+    data-variant-id="{{ variant.id }}"
+    {{ block.shopify_attributes }}
+  >
+    {%- if warning.enabled and warning.message != blank -%}
+      <div
+        class="sc__warning"
+        data-role="warning"
+        style="--sc-warn-text:{{ warning.textColor }};--sc-warn-bg:{{ warning.backgroundColor }};--sc-warn-border:{{ warning.borderColor }}"
+        {% unless show_warning %}hidden{% endunless %}
+      >⚠️ {% render 'shipping-rich', text: warning.message %}</div>
+    {%- endif -%}
+
+    <div class="sc__content">
+      {%- if look == blank or look.showIcon -%}
+        <svg class="sc__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12,6 12,12 16,14"/>
+        </svg>
+      {%- endif -%}
+
+      {%- if free.enabled -%}
+        <p class="sc__free" data-role="free" aria-live="polite" {% unless show_free %}hidden{% endunless %}>{% render 'shipping-rich', text: free_text %}</p>
+      {%- endif -%}
+
+      {%- comment -%} The dispatch line is filled in by the script from London's clock; the space is held so nothing jumps. {%- endcomment -%}
+      <p class="sc__main" data-role="dispatch">&nbsp;</p>
+
+      {%- if config.showShippingDays and day_list != blank -%}
+        <p class="sc__days">{% render 'shipping-rich', text: config.shippingDaysPrefix %} {{ day_list }}</p>
+      {%- endif -%}
+
+      {%- comment -%} The services are written here; the script works out each date from London's clock and fills the list. {%- endcomment -%}
+      {%- if show_services -%}
+        {%- if config.delivery.alwaysOpen -%}
+        <div class="sc__delivery sc__delivery--open" data-role="delivery">
+          <ul class="sc__delivery-list" data-role="delivery-list"></ul>
+        </div>
+        {%- else -%}
+        <details class="sc__delivery" data-role="delivery"{% if config.delivery.buttonAlign %} data-button-align="{{ config.delivery.buttonAlign }}"{% endif %}{% if config.delivery.buttonSize %} style="--sc-delivery-size:{{ config.delivery.buttonSize }}px"{% endif %}>
+          <summary class="sc__delivery-heading">{% render 'shipping-rich', text: config.delivery.heading %}</summary>
+          <ul class="sc__delivery-list" data-role="delivery-list"></ul>
+        </details>
+        {%- endif -%}
+      {%- endif -%}
+    </div>
+
+    <script type="application/json" data-config>{{ config | json }}</script>
+    {%- if show_services -%}
+      <script type="application/json" data-services>{{ service_zone.services | json }}</script>
+    {%- endif -%}
+    <script type="application/json" data-variants>
+      [{%- for v in product.variants limit: 250 -%}{"id":{{ v.id }},"price":{{ v.price }},"available":{{ v.available | json }},"policy":{{ v.inventory_policy | json }},"managed":{% if v.inventory_management %}true{% else %}false{% endif %},"qty":{{ v.inventory_quantity | json }}}{% unless forloop.last %},{% endunless %}{%- endfor -%}]
+    </script>
+  </shipping-countdown>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Shipping countdown",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "javascript": "shipping-countdown.js",
+  "stylesheet": "shipping-countdown.css",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Everything about this block, its wording, dispatch rules, free shipping, warning notice and appearance, is set in the eCommerce Toolkit app under Shipping countdown. Add the block where you want it to appear."
+    }
+  ]
+}
+{% endschema %}

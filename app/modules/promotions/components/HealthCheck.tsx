@@ -22,7 +22,9 @@ export function HealthCheck({
       ? "✓"
       : tone === "critical"
         ? "!"
-        : "•";
+        : tone === "warning"
+          ? "!"
+          : "i";
 
   const symbolBackground =
     tone === "success"
@@ -42,16 +44,26 @@ export function HealthCheck({
           ? "#8a6116"
           : "#005bd3";
 
+  const rowBackground =
+    tone === "critical"
+      ? "#fff8f7"
+      : tone === "warning"
+        ? "#fffaf0"
+        : tone === "info"
+          ? "#f7fbff"
+          : "#fbfdfb";
+
   return (
     <div
       style={{
         display: "flex",
         alignItems: "flex-start",
         gap: "12px",
-        padding: "14px 0",
-        borderBottom: isLast
-          ? "none"
-          : "1px solid #eeeeee",
+        marginBottom: isLast ? 0 : "10px",
+        padding: "14px",
+        border: `1px solid ${symbolBackground}`,
+        borderRadius: "12px",
+        backgroundColor: rowBackground,
       }}
     >
       <div
@@ -60,14 +72,14 @@ export function HealthCheck({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          flex: "0 0 28px",
-          width: "28px",
-          height: "28px",
-          borderRadius: "50%",
+          flex: "0 0 30px",
+          width: "30px",
+          height: "30px",
+          borderRadius: "10px",
           backgroundColor: symbolBackground,
           color: symbolColour,
-          fontSize: "16px",
-          fontWeight: 700,
+          fontSize: "15px",
+          fontWeight: 750,
           lineHeight: 1,
         }}
       >
@@ -83,7 +95,8 @@ export function HealthCheck({
         <div
           style={{
             marginBottom: "3px",
-            fontWeight: 600,
+            color: "#202223",
+            fontWeight: 650,
             lineHeight: 1.4,
           }}
         >
@@ -94,7 +107,7 @@ export function HealthCheck({
           style={{
             color: "#616161",
             fontSize: "13px",
-            lineHeight: 1.4,
+            lineHeight: 1.5,
           }}
         >
           {description}

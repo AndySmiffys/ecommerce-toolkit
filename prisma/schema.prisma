@@ -8,9 +8,11 @@ generator client {
 // Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+// PostgreSQL, on any host. DATABASE_URL is a standard connection string, for example
+// postgresql://user:password@host:5432/database?sslmode=require
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
@@ -59,6 +61,8 @@ model PromotionSettings {
   textColour         String?
   badgeColour        String?
 
+  designJson         String?
+
   priority           Int      @default(0)
 
   lastSyncedAt       DateTime?
@@ -69,4 +73,183 @@ model PromotionSettings {
 
   @@unique([shop, shopifyDiscountId])
   @@index([shop])
+}
+
+model PromotionCodeBatch {
+  id                   String   @id @default(cuid())
+  shop                 String
+  requestKey           String
+  shopifyDiscountId    String?
+  configurationJson    String
+  codesJson            String
+  confirmedJson        String   @default("[]")
+  pendingJson          String   @default("[]")
+  activeJobId          String?
+  reconciliationCursor String?
+  reconciliationJson   String   @default("[]")
+  status               String   @default("NEW")
+  error                String?
+  leaseToken           String?
+  leaseUntil           DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  @@unique([shop, requestKey])
+  @@index([shop, shopifyDiscountId])
+}
+
+// A group in the Reports page: discounts whose code or title matches any of its rules are counted together, for example
+// every code starting WELCOME- or CART10- as "Dotdigital". One row per group, in the order the merchant arranged them.
+// `rules` is a JSON list of { matchOn, matchType, pattern }.
+model ReportGroup {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  name      String
+  rules     String   @default("[]")
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop])
+}
+
+// How many times each used discount had been redeemed at one moment, for the Reports page. Shopify only reports
+// lifetime totals, so the redemptions in a period are the difference between two snapshots. rowsJson holds one entry
+// per discount that has been used: id, title, first code, kind, creating app and uses.
+model ReportSnapshot {
+  id            Int      @id @default(autoincrement())
+  shop          String
+  takenAt       DateTime @default(now())
+  complete      Boolean  @default(true)
+  discountCount Int      @default(0)
+  rowsJson      String
+
+  @@index([shop, takenAt])
+}
+
+// What orders paid and saved, one row per day and per discount (a code, or an automatic discount's title), for the
+// Reports page. Two special keys per day: "*all" holds every order and "*discounted" the orders that used any discount,
+// each counted once. Amounts are in the shop's currency, in minor units (pence).
+model ReportOrderDay {
+  id            Int    @id @default(autoincrement())
+  shop          String
+  day           String
+  key           String
+  kind          String
+  label         String
+  orders        Int    @default(0)
+  valueCents    Int    @default(0)
+  refundCents   Int    @default(0)
+  discountCents Int    @default(0)
+
+  @@unique([shop, day, key])
+  @@index([shop, day])
+}
+
+// Where reading orders has got to for a shop. A bulk read from Shopify runs in the background; operationId is the one
+// in progress, and syncedThrough is the last day whose totals are stored.
+model ReportOrderSync {
+  shop          String    @id
+  operationId   String?
+  fromDay       String?
+  startedAt     DateTime?
+  syncedThrough String?
+  syncedAt      DateTime?
+  currency      String    @default("GBP")
+  error         String?
+  updatedAt     DateTime  @updatedAt
+}
+
+// A short record of every discount in the shop, kept so the Promotions list can filter by who created each one and
+// page quickly when other apps (such as Dotdigital) make thousands. Shopify stays the source of truth: only what the
+// list needs to filter is kept (title, first code, dates, creating app), and the list reads the full discount from
+// Shopify for each page. `other` is true when another app created it.
+model DiscountIndex {
+  shop      String
+  discountId String
+  numericId BigInt
+  kind      String
+  title     String
+  code      String
+  createdBy String
+  other     Boolean
+  ruleName  String?
+  startsAt  DateTime?
+  endsAt    DateTime?
+  updatedAt DateTime  @updatedAt
+
+  @@id([shop, discountId])
+  @@index([shop, other, numericId])
+  @@index([shop, createdBy])
+}
+
+// Where building the discount index has got to for a shop. A first scan reads every discount in pages, so it keeps its
+// place (scanCursor) and carries on after a restart; afterwards only what changed since refreshedAt is read.
+model DiscountIndexState {
+  shop        String    @id
+  scanCursor  String?
+  scanDone    Boolean   @default(false)
+  scanStarted DateTime?
+  refreshedAt DateTime?
+  count       Int       @default(0)
+  error       String?
+  updatedAt   DateTime  @updatedAt
+}
+
+// A rule the merchant set for the Promotions list: discounts whose code or title matches the pattern are treated as
+// another app's and kept out of the default view, even when Shopify records no creating app (as with Loox).
+model DiscountSourceRule {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  name      String
+  matchOn   String   @default("either")
+  matchType String   @default("starts_with")
+  pattern   String
+  createdAt DateTime @default(now())
+
+  @@index([shop])
+}
+
+// Orders that carried a manual discount (added by hand, such as on a replacement order for a dispatch or shipping
+// error), for the Manual discounts report. Only the order number, date, the reason typed and the amounts: nothing
+// that identifies a customer.
+model ReportManualOrder {
+  id            Int      @id @default(autoincrement())
+  shop          String
+  orderId       String
+  name          String
+  day           String
+  createdAt     DateTime
+  reasons       String
+  valueCents    Int      @default(0)
+  discountCents Int      @default(0)
+
+  @@unique([shop, orderId])
+  @@index([shop, day])
+}
+
+// A promotion the merchant chose to send to Google Merchant Center. The feed only ever holds the ones that pass
+// Google's rules; `status` and `issues` (a JSON list of plain sentences) say how the last check went. `title` is an
+// optional shorter title for Google (it allows 60 characters); `label` is the discount's own title, for the page.
+model GooglePromotion {
+  shop       String
+  discountId String
+  label      String    @default("")
+  title      String    @default("")
+  status     String    @default("pending")
+  issues     String    @default("[]")
+  checkedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@id([shop, discountId])
+}
+
+// The promotions file Merchant Center collects on a schedule. `token` is part of the private address, so only
+// someone who has it can read the file; `feedText` is the last file built, served without asking Shopify.
+model GoogleFeed {
+  shop      String    @id
+  token     String    @unique
+  feedText  String    @default("")
+  count     Int       @default(0)
+  builtAt   DateTime?
+  updatedAt DateTime  @updatedAt
 }

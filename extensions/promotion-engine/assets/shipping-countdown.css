@@ -1,0 +1,165 @@
+/* The look comes from the app's Shipping countdown settings: choices as data attributes, values as CSS variables (set on the element). */
+shipping-countdown {
+  --sc-pad-v: 16px;
+  --sc-pad-h: 24px;
+  display: block;
+  margin: var(--sc-margin, 16px) 0;
+  text-align: center;
+}
+shipping-countdown[data-align="left"] { text-align: left; }
+shipping-countdown[data-align="right"] { text-align: right; }
+shipping-countdown[data-padding="compact"] { --sc-pad-v: 12px; --sc-pad-h: 16px; }
+shipping-countdown[data-padding="roomy"] { --sc-pad-v: 24px; --sc-pad-h: 32px; }
+shipping-countdown[hidden] { display: none; }
+
+shipping-countdown .sc__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sc-gap, 8px);
+  box-sizing: border-box;
+  padding: var(--sc-pad-v) var(--sc-pad-h);
+  background-color: var(--sc-bg, #f8f9fa);
+  border: var(--sc-border-width, 6px) double var(--sc-dispatch, #1e7e34);
+  border-radius: var(--sc-radius, 8px);
+}
+shipping-countdown[data-border="solid"] .sc__content { border-style: solid; }
+shipping-countdown[data-border="none"] .sc__content { border: 0; }
+shipping-countdown[data-align="left"] .sc__content { align-items: flex-start; }
+shipping-countdown[data-align="right"] .sc__content { align-items: flex-end; }
+
+shipping-countdown .sc__main,
+shipping-countdown .sc__free {
+  margin: 0;
+  color: var(--sc-text, #333);
+  font-size: var(--sc-size, 16px);
+  font-weight: var(--sc-weight, 500);
+  line-height: 1.4;
+}
+/* Holds one line for the dispatch line until the script has the time. It must not hold more: a taller reserve leaves a bigger gap below a short message than between the other lines. */
+shipping-countdown .sc__main { min-height: 1.4em; }
+shipping-countdown .sc__free[hidden] { display: none; }
+shipping-countdown .sc__countdown { color: var(--sc-accent, #c2185b); font-weight: 600; }
+shipping-countdown .sc__dispatch { color: var(--sc-dispatch, #1e7e34); font-weight: 700; }
+shipping-countdown strong { font-weight: 700; }
+shipping-countdown .sc__expired { color: var(--sc-muted, #666); font-style: italic; }
+shipping-countdown .sc__days {
+  margin: 0;
+  color: var(--sc-muted, #666);
+  font-size: calc(var(--sc-size, 16px) * 0.875);
+  line-height: 1.4;
+}
+/* The delivery options: a native disclosure, so it opens without a script, listing each service with its price and date. */
+shipping-countdown .sc__delivery { width: 100%; text-align: left; }
+shipping-countdown .sc__delivery[hidden] { display: none; }
+/* The button that opens the list. Themes often reset how <summary> looks and hide the browser's own arrow, so the arrow is drawn here. */
+shipping-countdown .sc__delivery-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--sc-text, #333);
+  font-size: var(--sc-delivery-size, 16px);
+  font-weight: var(--sc-weight, 500);
+  line-height: 1.4;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+shipping-countdown .sc__delivery-heading::-webkit-details-marker { display: none; }
+shipping-countdown .sc__delivery-heading::marker { content: ""; }
+shipping-countdown .sc__delivery-heading::after {
+  content: "";
+  flex: none;
+  width: 0.45em;
+  height: 0.45em;
+  margin-top: -0.2em;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+shipping-countdown .sc__delivery[open] > .sc__delivery-heading::after { margin-top: 0.15em; transform: rotate(-135deg); }
+shipping-countdown .sc__delivery-heading:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+shipping-countdown .sc__delivery[data-button-align="center"] > .sc__delivery-heading { justify-content: center; }
+shipping-countdown .sc__delivery[data-button-align="right"] > .sc__delivery-heading { justify-content: flex-end; }
+/* Always open: the list on its own, with no button, so it sits where the button would. */
+shipping-countdown .sc__delivery--open > .sc__delivery-list { margin-top: 0; }
+shipping-countdown .sc__delivery-list { display: grid; gap: var(--sc-gap, 8px); margin: var(--sc-gap, 8px) 0 0; padding: 0; list-style: none; }
+shipping-countdown .sc__option { display: grid; gap: 2px; padding-top: var(--sc-gap, 8px); border-top: 1px solid rgba(0, 0, 0, 0.12); line-height: 1.4; }
+shipping-countdown .sc__option-name { color: var(--sc-text, #333); font-weight: 700; }
+shipping-countdown .sc__option-price { color: var(--sc-muted, #666); font-size: calc(var(--sc-size, 16px) * 0.875); }
+shipping-countdown .sc__option-date { color: var(--sc-text, #333); font-size: calc(var(--sc-size, 16px) * 0.9); }
+shipping-countdown .sc__icon {
+  display: block;
+  flex: none;
+  width: calc(var(--sc-size, 16px) * 1.5);
+  height: calc(var(--sc-size, 16px) * 1.5);
+  color: var(--sc-icon, #007bff);
+}
+
+shipping-countdown .sc__warning {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: var(--sc-gap, 8px);
+  padding: var(--sc-pad-v) var(--sc-pad-h);
+  color: var(--sc-warn-text, #8a4b00);
+  background: var(--sc-warn-bg, #fff4e5);
+  border: var(--sc-border-width, 6px) double var(--sc-warn-border, #f59e0b);
+  border-radius: var(--sc-radius, 8px);
+  font-size: var(--sc-size, 16px);
+  line-height: 1.4;
+}
+shipping-countdown[data-border="solid"] .sc__warning { border-style: solid; }
+shipping-countdown[data-border="none"] .sc__warning { border: 0; }
+shipping-countdown .sc__warning[hidden] { display: none; }
+
+@media screen and (max-width: 749px) {
+  shipping-countdown .sc__content,
+  shipping-countdown .sc__warning {
+    padding: calc(var(--sc-pad-v) * 0.8) calc(var(--sc-pad-h) * 0.8);
+  }
+  shipping-countdown .sc__main,
+  shipping-countdown .sc__free { font-size: calc(var(--sc-size, 16px) * 0.9); }
+  shipping-countdown .sc__days { font-size: calc(var(--sc-size, 16px) * 0.875 * 0.9); }
+}
+
+/* The header banner: one line across the top of every page. Its colours and size come from the app, as variables on the element. */
+shipping-countdown-banner {
+  display: block;
+  box-sizing: border-box;
+  /* Fill whatever it is placed in. Theme sections are often flex or grid containers that shrink a child to its text, so ask to stretch in all of them. */
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 100%;
+  align-self: stretch;
+  justify-self: stretch;
+  grid-column: 1 / -1;
+  padding: 10px 16px;
+  background-color: var(--scb-bg, #00507a);
+  color: var(--scb-text, #fff);
+  font-size: var(--scb-size, 14px);
+  line-height: 1.4;
+  text-align: center;
+}
+/* Shopify wraps an app block in its own element, which a theme's flex or grid section can shrink to the text. Stretch that wrapper too. */
+.shopify-block:has(> shipping-countdown-banner),
+.shopify-app-block:has(> shipping-countdown-banner) {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 100%;
+  align-self: stretch;
+  justify-self: stretch;
+  grid-column: 1 / -1;
+}
+shipping-countdown-banner[data-align="left"] { text-align: left; }
+shipping-countdown-banner[data-align="right"] { text-align: right; }
+shipping-countdown-banner[hidden] { display: none; }
+shipping-countdown-banner .scb__line { margin: 0; min-height: 1.4em; }
+shipping-countdown-banner .scb__hold { visibility: hidden; }
+shipping-countdown-banner .sc__countdown { color: var(--scb-highlight, #ffa3c8); font-weight: 600; }
+shipping-countdown-banner .sc__dispatch { color: var(--scb-dispatch, #ffc83d); font-weight: 700; }
+shipping-countdown-banner strong { font-weight: 700; }

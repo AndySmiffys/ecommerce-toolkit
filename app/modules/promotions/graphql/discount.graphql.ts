@@ -27,83 +27,35 @@ export const GET_DISCOUNT = `#graphql
           startsAt
           endsAt
           discountClasses
+          combinesWith { productDiscounts orderDiscounts shippingDiscounts productDiscountsWithTagsOnSameCartLine }
+          context {
+            ...DiscountContextFields
+          }
 
           customerGets {
-            value {
-              __typename
-
-              ... on DiscountPercentage {
-                percentage
-              }
-
-              ... on DiscountAmount {
-                amount {
-                  amount
-                  currencyCode
-                }
-
-                appliesOnEachItem
-              }
-            }
-
-            items {
-              __typename
-
-              ... on AllDiscountItems {
-                allItems
-              }
-
-              ... on DiscountProducts {
-                products(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-
-                productVariants(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
-
-              ... on DiscountCollections {
-                collections(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
-            }
+            ...CustomerGetsFields
           }
 
           minimumRequirement {
-            __typename
-
-            ... on DiscountMinimumSubtotal {
-              greaterThanOrEqualToSubtotal {
-                amount
-                currencyCode
-              }
-            }
-
-            ... on DiscountMinimumQuantity {
-              greaterThanOrEqualToQuantity
-            }
+            ...MinimumRequirementFields
           }
         }
 
         ... on DiscountCodeBasic {
+          usageLimit
+          appliesOncePerCustomer
           title
           status
           summary
           startsAt
           endsAt
           discountClasses
+          combinesWith { productDiscounts orderDiscounts shippingDiscounts productDiscountsWithTagsOnSameCartLine }
+          context {
+            ...DiscountContextFields
+          }
 
+          codesCount { count }
           codes(first: 5) {
             nodes {
               code
@@ -111,201 +63,294 @@ export const GET_DISCOUNT = `#graphql
           }
 
           customerGets {
-            value {
-              __typename
-
-              ... on DiscountPercentage {
-                percentage
-              }
-
-              ... on DiscountAmount {
-                amount {
-                  amount
-                  currencyCode
-                }
-
-                appliesOnEachItem
-              }
-            }
-
-            items {
-              __typename
-
-              ... on AllDiscountItems {
-                allItems
-              }
-
-              ... on DiscountProducts {
-                products(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-
-                productVariants(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
-
-              ... on DiscountCollections {
-                collections(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
-            }
+            ...CustomerGetsFields
           }
 
           minimumRequirement {
-            __typename
-
-            ... on DiscountMinimumSubtotal {
-              greaterThanOrEqualToSubtotal {
-                amount
-                currencyCode
-              }
-            }
-
-            ... on DiscountMinimumQuantity {
-              greaterThanOrEqualToQuantity
-            }
+            ...MinimumRequirementFields
           }
         }
 
         ... on DiscountAutomaticBxgy {
+          usesPerOrderLimit
           title
           status
           summary
           startsAt
           endsAt
           discountClasses
+          combinesWith { productDiscounts orderDiscounts shippingDiscounts productDiscountsWithTagsOnSameCartLine }
+          context {
+            ...DiscountContextFields
+          }
+
+          customerBuys {
+            ...CustomerBuysFields
+          }
 
           customerGets {
-            value {
-              __typename
-
-              ... on DiscountPercentage {
-                percentage
-              }
-
-              ... on DiscountAmount {
-                amount {
-                  amount
-                  currencyCode
-                }
-
-                appliesOnEachItem
-              }
-            }
-
-            items {
-              __typename
-
-              ... on AllDiscountItems {
-                allItems
-              }
-
-              ... on DiscountProducts {
-                products(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-
-                productVariants(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
-
-              ... on DiscountCollections {
-                collections(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
-            }
+            ...CustomerGetsFields
           }
         }
 
         ... on DiscountCodeBxgy {
+          usesPerOrderLimit
+          usageLimit
+          appliesOncePerCustomer
           title
           status
           summary
           startsAt
           endsAt
           discountClasses
+          combinesWith { productDiscounts orderDiscounts shippingDiscounts productDiscountsWithTagsOnSameCartLine }
+          context {
+            ...DiscountContextFields
+          }
 
+          codesCount { count }
           codes(first: 5) {
             nodes {
               code
             }
           }
 
+          customerBuys {
+            ...CustomerBuysFields
+          }
+
           customerGets {
-            value {
-              __typename
+            ...CustomerGetsFields
+          }
+        }
 
-              ... on DiscountPercentage {
-                percentage
-              }
+        ... on DiscountAutomaticFreeShipping {
+          title
+          status
+          summary
+          startsAt
+          endsAt
+          discountClasses
+          combinesWith { productDiscounts orderDiscounts shippingDiscounts productDiscountsWithTagsOnSameCartLine }
+          context {
+            ...DiscountContextFields
+          }
+          appliesOnOneTimePurchase
+          appliesOnSubscription
 
-              ... on DiscountAmount {
-                amount {
-                  amount
-                  currencyCode
-                }
+          maximumShippingPrice {
+            amount
+            currencyCode
+          }
 
-                appliesOnEachItem
-              }
+          destinationSelection {
+            __typename
+
+            ... on DiscountCountryAll {
+              allCountries
             }
 
-            items {
-              __typename
-
-              ... on AllDiscountItems {
-                allItems
-              }
-
-              ... on DiscountProducts {
-                products(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-
-                productVariants(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
-
-              ... on DiscountCollections {
-                collections(first: 50) {
-                  nodes {
-                    id
-                    title
-                  }
-                }
-              }
+            ... on DiscountCountries {
+              countries
             }
+          }
+
+          minimumRequirement {
+            ...MinimumRequirementFields
+          }
+        }
+
+        ... on DiscountCodeFreeShipping {
+          usageLimit
+          appliesOncePerCustomer
+          title
+          status
+          summary
+          startsAt
+          endsAt
+          discountClasses
+          combinesWith { productDiscounts orderDiscounts shippingDiscounts productDiscountsWithTagsOnSameCartLine }
+          context {
+            ...DiscountContextFields
+          }
+          appliesOnOneTimePurchase
+          appliesOnSubscription
+
+          codesCount { count }
+          codes(first: 5) {
+            nodes {
+              code
+            }
+          }
+
+          maximumShippingPrice {
+            amount
+            currencyCode
+          }
+
+          destinationSelection {
+            __typename
+
+            ... on DiscountCountryAll {
+              allCountries
+            }
+
+            ... on DiscountCountries {
+              countries
+            }
+          }
+
+          minimumRequirement {
+            ...MinimumRequirementFields
           }
         }
       }
+    }
+  }
+
+  fragment DiscountContextFields on DiscountContext {
+    __typename
+
+    ... on DiscountBuyerSelectionAll {
+      all
+    }
+
+    ... on DiscountCustomers {
+      customers {
+        id
+        displayName
+      }
+    }
+
+    ... on DiscountCustomerSegments {
+      segments {
+        id
+        name
+      }
+    }
+  }
+
+  fragment CustomerBuysFields on DiscountCustomerBuys {
+    value {
+      __typename
+
+      ... on DiscountQuantity {
+        quantity
+      }
+
+      ... on DiscountPurchaseAmount {
+        amount
+      }
+    }
+
+    items {
+      ...DiscountItemsFields
+    }
+  }
+
+  fragment CustomerGetsFields on DiscountCustomerGets {
+    appliesOnOneTimePurchase
+    appliesOnSubscription
+    value {
+      __typename
+
+      ... on DiscountPercentage {
+        percentage
+      }
+
+      ... on DiscountAmount {
+        amount {
+          amount
+          currencyCode
+        }
+
+        appliesOnEachItem
+      }
+
+      ... on DiscountOnQuantity {
+        quantity {
+          quantity
+        }
+
+        effect {
+          __typename
+
+          ... on DiscountPercentage {
+            percentage
+          }
+
+          ... on DiscountAmount {
+            amount {
+              amount
+              currencyCode
+            }
+
+            appliesOnEachItem
+          }
+        }
+      }
+    }
+
+    items {
+      ...DiscountItemsFields
+    }
+  }
+
+  fragment DiscountItemsFields on DiscountItems {
+    __typename
+
+    ... on AllDiscountItems {
+      allItems
+    }
+
+    ... on DiscountProducts {
+      products(first: 50) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          title
+        }
+      }
+
+      productVariants(first: 50) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          title
+          product {
+            id
+            title
+          }
+        }
+      }
+    }
+
+    ... on DiscountCollections {
+      collections(first: 50) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          title
+          productsCount {
+            count
+          }
+        }
+      }
+    }
+  }
+
+  fragment MinimumRequirementFields on DiscountMinimumRequirement {
+    __typename
+
+    ... on DiscountMinimumSubtotal {
+      greaterThanOrEqualToSubtotal {
+        amount
+        currencyCode
+      }
+    }
+
+    ... on DiscountMinimumQuantity {
+      greaterThanOrEqualToQuantity
     }
   }
 `;

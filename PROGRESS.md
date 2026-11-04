@@ -1,0 +1,119 @@
+# Progress
+
+Status of the eCommerce Toolkit, a Shopify embedded app that creates and edits native Shopify discounts and manages how they appear on the storefront. Last updated 4 November 2026.
+
+Branch `chore/aws` (the one code line; the old `feature/free-shipping-support` was joined into it on 4 November), released to live as Shopify app version 20. 559 tests pass, and lint and typecheck are clean.
+
+For the architecture and the rules to follow when changing the code, see `CLAUDE.md`. For setup and storefront behaviour, see `docs/storefront-setup.md` and `docs/promotion-designs.md`.
+
+## What the app does
+
+- **Create and edit native Shopify discounts** (product, order, buy X get Y and free shipping; code or automatic) in one shared editor.
+- **Control how each promotion looks on the storefront** through four blocks: header announcement, collection banner, product offer and product badge.
+- **Rank promotions** in one drag-and-drop priority order.
+
+## Done
+
+### Discounts and codes
+- Shared create/edit editor for all four types, code or automatic. Existing discounts are updated, not replaced, and website-only edits skip the rule update.
+- Free-shipping countries come from the store's shipping setup. Customer segments, schedules, usage limits and combinations are editable.
+- One shared code by default. Generated code lists of up to 10,000, in resumable batches with CSV export.
+- Unsupported or oversized discounts open on a fallback page that edits the website promotion only.
+
+### The editor
+- **Six collapsible steps:** Type and method, Discount value (or Countries), Who can use it, Schedule, Advanced options and Website promotion. Steps after the first incomplete one are locked, Continue stays greyed until a step is valid, and steps show Complete or Needs attention once opened.
+- **One overview card at the top:** name, type, Shopify status, website visibility, a plain-English summary, the Website promotion status (Enabled or Draft), the priority position with a link to change it, and what is left before saving.
+- **Validation** reuses the server's own checks (`design/stepValidation.ts`), so Save only appears for a discount Shopify will accept.
+- **Native Shopify save bar,** with toasts for success and banners for failures and missing items.
+- The editor is split into `PromotionEditor.tsx` plus `components/editor/` (a form hook and a component per step).
+
+### Website promotion design
+- **Campaign content and colours set once:** headline, body, button, countdown label and images apply to Header, Collection and Product together. Fine-tune sections override per block and show the campaign wording in grey while following it.
+- **Campaign colours:** main colour, secondary colour, button text colour, and two text colours (on colour and on white), chosen per surface by contrast. Blocks showing an image get a white background. A live list shows where each colour is used and flags low contrast.
+- **One link destination picker** for collections, products, pages, blogs or a web address.
+- **Header block is always square.** The preview shows each block in a realistic mock storefront and can be enlarged.
+
+### Promotions list
+- **Paging and search:** the list shows 50 discounts a page, newest first, with Shopify doing the search (free text across fields) and the status filter. The table's own Previous and Next buttons turn the page, and the search, status and page are in the address, so a page can be reloaded or shared. The storefront data is refreshed when the plain newest page opens, not on every search or page turn. Selection is cleared when the page or search changes.
+- **Bulk actions:** tick promotions (or select all shown) and Activate or Deactivate the Shopify discounts, Enable on website or set the website to Draft, or Delete. Deleting removes the Shopify discount and the app's saved design and code batches, then republishes the storefront data. Delete and Deactivate ask first (Deactivate replaces the discount's end date with now). Up to 50 at a time; each result is reported on its own, and a failed promotion stays selected. Service: `bulkPromotions.server.ts`.
+
+### Priority
+- One drag-and-drop order for the whole storefront, with Move up and Move down for keyboard and touch. It lists only Active and Scheduled promotions that can appear on the website, and explains the rest.
+- A promotion that joins the order starts at the top, and the merchant is taken to place it. The editor never writes priority; it is stored in the existing `priority` number.
+- The "include in promotion sync" setting is removed: an enabled promotion syncs.
+
+### Storefront
+- **Served from Shopify:** published offers and badges make no requests to the app server (see `CLAUDE.md`). The old design asked the app on every page view, every 60 seconds and once per product card; for about 6,000,000 page views a year that was most of the load and used the shop's Admin API allowance. The app now works only when a promotion changes. Customer-specific offers are paused (not shown) until a logged-in-only path is built. Badges for discounts on collections list the products in those collections (read when publishing, cached 10 minutes, refreshed by the `collections/update` and `products/update` webhooks; a collection over 9,000 products is refused with a message naming the promotion). **After pulling:** run `shopify app deploy` for the theme extension, then open the app (it republishes version 3), and save or sync once. Check a collection page in the Network tab: no `/apps/promotion-engine` requests.
+- Public promotions are published to an app metafield and rendered in Shopify's first HTML response, so there is no layout shift. A desktop Lighthouse run went from CLS 0.222 to 0.0006.
+- Signed app-proxy route for customer-specific offers. Automatic badges for Dawn and Horizon.
+
+### Quality
+- The admin uses Shopify's native components (Polaris web components and App Bridge) throughout. The exceptions are listed in `CLAUDE.md`.
+- Tests render the real editor in a simulated browser (`tests/editor-render.test.cjs`, with a recorded baseline, and `tests/editor-flows.test.cjs`). Run with `npm test`.
+
+## Needs doing
+
+### Google Merchant Center: first live test (waiting for an active promotion on the live site)
+The feature is released on live but has not been tried against Merchant Center yet. Do this when a suitable promotion is running: a code for all customers, a percentage or amount off, with an end date no more than 183 days after its start.
+1. On Promotions, tick that one promotion and choose **Send to Google**. Open **Google Merchant Center** in the app and check it says Ready (or fix what it lists).
+2. Open the file (Open the file button) and check it has a header line and one promotion line.
+3. In Merchant Center (Marketing, Promotions) add a promotions source for the United Kingdom in English, choose Scheduled fetch, paste the address from the app, and run a fetch.
+4. If Merchant Center reports an error, send the exact message: the file layout comes from Google's attribute list (no published example), so a small fix may be needed.
+5. Once one promotion is accepted, send the rest. Google reviews each promotion, which can take up to a day.
+Later: Buy X get Y promotions, a Google product filter for promotions over 1,000 SKUs, and more territories (one file per country, each with its own currency).
+
+### Theme and store issues to fix (found by Lighthouse, not caused by the app)
+Mobile Lighthouse on a live product page, 29 Oct 2026, incognito: performance 0.48, accessibility 0.86, best practices 0.96, SEO 1.0, layout shift 0. The app's own files are a 2.4 KB stylesheet and a 10.4 KB script. These need changes to the theme or to other apps, which cannot be made from here yet.
+- **Slow to load (largest paint 5.6 s, blocking time 1.0 s, interactive 24 s).** The largest element is the main product image in the theme's slideshow; it is already high priority and not lazy, so the delay is the page waiting behind scripts.
+  - Defer or delay until the shopper scrolls or interacts: Loox reviews, Reamaze chat, the BOGO / cart upsell app, the Google Ads and Tag Manager tags, the Meta pixel, and the cookie consent app.
+  - The Analyzify scripts (`an_*.js`, `f-find-elem.js`) and the theme's `view-transitions.js` block rendering.
+  - The theme's own product page script takes about 1.6 s of main-thread time; find what it does at start-up.
+- **Console errors.** `https://ipapi.co/json/` is blocked by CORS (something looks up the visitor's location from the browser); `https://email.smiffys.com/_dmpt.js` does not resolve; and `SyntaxError: missing ) after argument list` repeats from inline scripts about 270 lines apart on the page (around lines 19925, 24277, 24547). None of these is from the app. Find which app or theme snippet writes them.
+- **Accessibility (theme markup).** Heading order; links without a name; images without alt text; iframes without a title; touch targets too small; prohibited ARIA attributes; visible labels that do not match their accessible names.
+- **Other.** One unsized image (a tiny layout shift); the page cannot be restored from the back button cache (four reasons given).
+- **Our colours, which can be fixed in the app.** The saved appearance still uses the old colours, which fail contrast. In Shipping countdown, click **Reset the banner colours and size** (Header banner step) and **Reset appearance to the original look** (Appearance), then save. Then run Lighthouse again.
+- **To check once the colours are reset:** that the header banner fills the full width in the live theme's Horizon "Section" (the app stretches Shopify's wrapper, but this has not been confirmed in the theme).
+
+### Needs checking in a browser
+None of the following has been seen in a real browser by the assistant, only tested in a simulated one: the priority page and dragging, the overview card and the status control, the stepped form, the preview and its modals, and the native event wiring on the Shopify components. Please try them in the dev store. Start with a new promotion, Enabled and Draft, and the priority page.
+
+### Storefront validation
+- Mobile Lighthouse.
+- A page with no eligible promotion, to confirm there is no blank space.
+- Future schedules, and customer or segment-restricted offers (these render live and can still shift layout).
+- Dawn and Horizon with variants, filters, quick-add and theme-editor reloads.
+- The newer rules on a live theme: white backgrounds on image blocks, button text colours and the square header.
+- Production deployment and field performance.
+
+### Housekeeping
+- **Database:** moved from SQLite to PostgreSQL (`DATABASE_URL`, see `docs/database.md`) so sessions and designs survive restarts and several instances can run. Production database not chosen yet (any host works). **Dev setup after pulling:** stop `shopify app dev`, run `npm ci`, create a hosted Postgres (for example Neon), put its URL in `.env` as `DATABASE_URL`, run `npm run setup`, then `npm run db:copy-sqlite` once to bring over the old dev data.
+- **Vulnerabilities:** `npm audit --omit=dev` reports 0. The Prisma CLI chain (`deepmerge-ts` stack exhaustion) is cleared by an `overrides` entry forcing `deepmerge-ts` 8.0.2, so the app stays on Prisma 6. A Prisma 7 upgrade was ruled out: `@shopify/shopify-app-session-storage-prisma` (latest 11.0.1) only supports Prisma ^6.19, and Prisma 7 is now the previous release (latest is 8.0 RC). Revisit when Shopify's package supports a newer Prisma, and remove the override then. 41 high-severity advisories remain in dev tooling only (codegen, ESLint, graphql-config).
+- **Config:** one app config, `shopify.app.toml`, for the app with client ID `c8717906a421013fbf5c47e976637862` (confirmed by Andy). The old second file (a different app ID) was removed. Webhook API version is 2026-07, matching `app/shopify.server.ts`. Run `shopify app deploy` to apply it: it adds the `app/uninstalled` and `app/scopes_update` subscriptions the live app was missing and moves the webhooks from 2026-10 to 2026-07.
+- The Shopify CLI may remove `include_config_on_deploy = true` from the real config when it deploys. Restore it if it does.
+
+### Platform
+- **Polaris 2.0 (release candidate):** prepared but switched off. The app's `polarisUrl` (one constant in `app/shopify.server.ts`, used by `shopifyApp()` and `AppProvider`) is set to the current `polaris.js`. The packages needed for Polaris 2 are in place (`@shopify/shopify-app-react-router` 3.0.2, Node 22+, `@shopify/polaris-types` 2.0.0-rc.3). When enabled with `polaris-2.0-rc.js`, a store without the new admin design showed a restyled page header (plain breadcrumb link, white pill buttons), and the edit page threw `saveBar.hide is not a function` from the App Bridge save bar. Switching back to `polaris.js` fixed both, so the Polaris 2 script (rc.3) is the cause and the package upgrade is fine. Before enabling it, test on a dev store with the new admin design (`shopify store create dev --feature-preview new_admin_design`) and one without it, find out why the save bar fails under Polaris 2 (it may need a newer release candidate or a change to how `PromotionSaveBar` is mounted), and check hand-written colours (the greys in the editor styles) and the Inter stylesheet in `app/root.tsx`. Built for Shopify apps have until 1 May 2027.
+
+## Known limitations
+
+
+- Arbitrary third-party themes are not guaranteed to work; badge selectors are configurable.
+- Checkout stays authoritative for geography, minimums and eligibility.
+- Shopify test orders did not increment the discount usage counter in an earlier test. No app-side fix exists.
+- Generated code imports pause when the page is closed and resume when it is reopened (no background worker). Uploaded Shopify Files stay after Discard so they can be reused.
+- Browser drag-and-drop does not work on touch, so the priority page also has Move up and Move down buttons.
+- Priority numbers of ended or draft promotions are left alone. A promotion that becomes active again slots in by its old number.
+
+## Deployment
+
+- The app was deployed with `shopify app deploy` after adding the `read_online_store_pages` scope, and Pages and Blogs now list in the link picker.
+- A git push never deploys to Shopify or activates theme blocks. Redeploy the extension for theme changes, and re-add blocks per theme.
+- Existing stores republish the storefront snapshot automatically the next time the app opens after the shared CSS changes.
+
+## Ideas
+
+- A duplicate-promotion action.
+- Templates, for example a Halloween 20% off that pre-fills the discount and the website design.
+- A storefront health panel on Home, showing whether the loader embed and blocks are set up.
+- A "why isn't mine showing?" hint on each priority row.
+- A preview of what a given visitor would see, such as a chosen customer or date.

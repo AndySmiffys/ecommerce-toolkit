@@ -1,3 +1,6 @@
+import { ensureStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
+import { ensurePricesCurrent } from "../modules/promotions/services/priceReport.server";
+import { ensureFreeDelivery } from "../modules/shipping/delivery/freeDeliverySync.server";
 import type {
   HeadersFunction,
   LoaderFunctionArgs,
@@ -22,49 +25,85 @@ import {
   AppProvider,
 } from "@shopify/shopify-app-react-router/react";
 
-import { authenticate } from "../shopify.server";
+import { useEmbeddedAppUrl } from "../modules/navigation/embeddedAppUrl";
+
+import { authenticate, polarisUrl } from "../shopify.server";
 
 export const loader = async ({
   request,
 }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  let storefrontSyncError: string | null = null;
+  try { await ensureStorefrontSnapshot(admin, session.shop); } catch (error) { storefrontSyncError = `Initial storefront display could not be synced: ${error instanceof Error ? error.message : "Please reopen the app to retry."}`; }
+  // The prices the Discounted price block shows must match Shopify's discounts; this catches a change that never reached the app. It runs
+  // in the background, at most every ten minutes, so opening the app is not slowed.
+  void ensurePricesCurrent(admin, session.shop).catch(error => console.error("The storefront prices could not be checked:", error instanceof Error ? error.message : error));
+  // Where free delivery is offered, for the shipping countdown block. Only reads shipping the first time; a failure here must not stop the app opening.
+  try { await ensureFreeDelivery(admin); } catch (error) { console.error("Free delivery could not be published:", error instanceof Error ? error.message : error); }
 
-  // eslint-disable-next-line no-undef
   return {
+    shop: session.shop,
+    storefrontSyncError,
+    polarisUrl,
+    host: new URL(request.url).searchParams.get("host"),
     apiKey:
       process.env.SHOPIFY_API_KEY || "",
   };
 };
 
 export default function App() {
-  const { apiKey } =
+  const appUrl = useEmbeddedAppUrl();
+  const { apiKey, polarisUrl, storefrontSyncError } =
     useLoaderData<typeof loader>();
 
   return (
     <AppProvider
-      embedded
       apiKey={apiKey}
+      polarisUrl={polarisUrl}
     >
       <NavMenu>
         <Link
-          to="/app"
+          to={appUrl("/app")}
           rel="home"
         >
-          Dashboard
+          Home
         </Link>
 
-        <Link to="/app/promotions">
+        <Link to={appUrl("/app/promotions")}>
           Promotions
+        </Link>
+
+        <Link to={appUrl("/app/storefront-priorities")}>
+          Storefront priority
+        </Link>
+
+        <Link to={appUrl("/app/shipping")}>
+          Shipping
+        </Link>
+
+        <Link to={appUrl("/app/shipping-countdown")}>
+          Shipping countdown
+        </Link>
+
+        <Link to={appUrl("/app/discounted-price")}>
+          Discounted price
+        </Link>
+
+        <Link to={appUrl("/app/reports")}>
+          Reports
+        </Link>
+
+        <Link to={appUrl("/app/google")}>
+          Google Merchant Center
         </Link>
       </NavMenu>
 
+      {storefrontSyncError && <div style={{ padding: 20 }}><s-banner tone="warning">{storefrontSyncError}</s-banner></div>}
       <Outlet />
     </AppProvider>
   );
 }
 
-// Shopify needs React Router to catch some thrown responses,
-// so their headers are included in the response.
 export function ErrorBoundary() {
   return boundary.error(
     useRouteError(),

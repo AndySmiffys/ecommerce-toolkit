@@ -1,0 +1,15 @@
+<script src="{{ 'promotion-ui.js' | asset_url }}" defer></script>
+{% assign storefront_snapshot = app.metafields.promotion_engine.storefront.value %}
+{% render 'server-promotion', snapshot: storefront_snapshot, placement: 'header', block: block %}
+{% schema %}
+{
+  "name": "Header promotion",
+  "target": "section",
+  "class": "pe-header-app-block",
+  "javascript": "promotion-engine.js",
+  "stylesheet": "promotion-layout.css",
+  "settings": [
+    {"type":"paragraph","content":"Add to the header group where your theme supports app sections, or as the first page section. Public announcements render with the page to reduce layout shifts. Announcements only appear where a Header promotion block is added."}
+  ]
+}
+{% endschema %}

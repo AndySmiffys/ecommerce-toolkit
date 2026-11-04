@@ -1,0 +1,4 @@
+<script src="{{ 'promotion-ui.js' | asset_url }}" defer></script>
+{% comment %}Pass the product card's product to this snippet; the badge appears only when that product qualifies.{% endcomment %}
+<promotion-engine data-placement="badge" data-product-id="{{ product.id }}" data-proxy-path="/apps/promotion-engine"></promotion-engine>
+<script src="{{ 'promotion-engine.js' | asset_url }}" defer></script>

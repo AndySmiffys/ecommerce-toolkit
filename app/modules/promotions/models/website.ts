@@ -1,5 +1,4 @@
 export type PromotionWebsiteSettings = {
-  included: boolean;
   websiteEnabled: boolean;
 
   showProductPage: boolean;
@@ -18,6 +17,8 @@ export type PromotionWebsiteSettings = {
   backgroundColour: string | null;
   textColour: string | null;
   badgeColour: string | null;
+
+  designJson?: string | null;
 
   priority: number;
 

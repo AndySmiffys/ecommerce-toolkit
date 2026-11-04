@@ -1,10 +1,30 @@
+import { withImageRatios } from "../modules/promotions/services/promotionAssets.server";
+import { syncStorefrontSnapshot } from "../modules/promotions/services/storefrontSnapshot.server";
+import { getShippingCountries, validateShippingCountries } from "../modules/promotions/services/shippingCountries.server";
+import { PromotionSaveBar } from "../modules/promotions/components/PromotionSaveBar";
+import { SaveNotices, draftSavedWarning } from "../modules/promotions/components/SaveNotices";
+import { useAppBridge } from "@shopify/app-bridge-react";
+import { getPromotionCodeBatch } from "../modules/promotions/services/promotionCodeBatches.server";
+import { getEditableDiscount } from "../modules/promotions/services/editableDiscount.server";
+import { PromotionEditor } from "../modules/promotions/components/PromotionEditor";
+import { discountToEditorDraft, toLocalDateTime, type EditorDiscountDraft } from "../modules/promotions/design/editorDraft";
+import { getPromotionEditorResources } from "../modules/promotions/services/promotionEditorResources.server";
+import { promotionEditorAction } from "../modules/promotions/services/promotionEditorAction.server";
+import { updateShopifyPromotion } from "../modules/promotions/services/updatePromotion.server";
+import { buildGoogleFeed, saveGoogleChoice } from "../modules/promotions/services/googleFeed.server";
+import { promotionDiscountId } from "../modules/promotions/design/discountIdentity";
+import db from "../db.server";
+import type { CreateDiscountDraft } from "../modules/promotions/services/createPromotion.server";
+import { useEmbeddedAppUrl } from "../modules/navigation/embeddedAppUrl";
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import type {
+  ShouldRevalidateFunctionArgs,
   ActionFunctionArgs,
   LoaderFunctionArgs,
 } from "react-router";
@@ -13,10 +33,23 @@ import {
   Form,
   useActionData,
   useLoaderData,
+  useNavigate,
   useNavigation,
 } from "react-router";
 
 import { authenticate } from "../shopify.server";
+import { readWebsite, websiteFromSettings, websiteStorage, validateWebsite, type Placement } from "../modules/promotions/design/design";
+import { PromotionWebsiteEditor } from "../modules/promotions/components/PromotionWebsiteEditor";
+import { PromotionPreview } from "../modules/promotions/components/PromotionPreview";
+import { FormStep } from "../modules/promotions/components/FormStep";
+import { PriorityNote } from "../modules/promotions/components/PriorityNote";
+import { PromotionOverview } from "../modules/promotions/components/PromotionOverview";
+import { getPriorityPosition } from "../modules/promotions/services/promotionPriorities.server";
+import { canRank, isRanked, rankBlocker } from "../modules/promotions/design/ranking";
+import { ModalOverlay } from "../modules/promotions/components/ModalOverlay";
+import { editorCss } from "../modules/promotions/components/editor/editorStyles";
+import { summaryDate } from "../modules/promotions/design/promotionSummary";
+import { getPreviewProducts } from "../modules/promotions/services/previewProducts.server";
 
 import {
   getDiscount,
@@ -25,16 +58,7 @@ import {
 
 import { mapDiscountToPromotion } from "../modules/promotions/mappers/promotionMapper";
 
-import { getPromotionCoverage } from "../modules/promotions/coverage/coverage.server";
-
-import {
-  PromotionTabs,
-  type PromotionTab,
-} from "../modules/promotions/components/PromotionTabs";
-
 import { PromotionGeneralTab } from "../modules/promotions/components/PromotionGeneralTab";
-
-import { PromotionProductsTab } from "../modules/promotions/components/PromotionProductsTab";
 
 import { PromotionCustomersTab } from "../modules/promotions/components/PromotionCustomersTab";
 
@@ -44,6 +68,7 @@ import { PromotionScheduleTab } from "../modules/promotions/components/Promotion
 
 import {
   attachPromotionSettings,
+  priorityForSave,
   updatePromotionWebsiteSettings,
 } from "../modules/promotions/services/promotionSettings.server";
 
@@ -65,10 +90,7 @@ export async function loader({
     );
   }
 
-  const discountNode = await getDiscount(
-    admin,
-    getDiscountNodeId(promotionId),
-  );
+  const discountNode = await getEditableDiscount(admin, getDiscountNodeId(promotionId));
 
   if (!discountNode) {
     throw new Response(
@@ -100,57 +122,24 @@ export async function loader({
   const selectedCollections =
     promotion.shopify.products.collections;
 
-  const coverage =
-    selectedCollections.length > 0
-      ? await getPromotionCoverage(
-        admin,
-        selectedCollections,
-      )
-      : null;
-
-  return {
-    promotion,
-    coverage,
-  };
+  const previewProducts = await getPreviewProducts(admin, [...promotion.shopify.products.products.map(p=>p.id), ...promotion.shopify.products.variants.flatMap(v=>v.productId ? [v.productId] : [])], selectedCollections.map(c=>c.id));
+  let editorDiscount: EditorDiscountDraft | null = null;
+  let editRulesMessage: string | null = null;
+  try { editorDiscount = discountToEditorDraft(discountNode); } catch (error) { editRulesMessage = error instanceof Error ? error.message : "Edit this discount's rules in Shopify."; }
+  const codeBatch = await getPromotionCodeBatch(session.shop, discountNode.id);
+  if (editorDiscount && codeBatch) Object.assign(editorDiscount, { codeMode: "bulk", codeCount: String(codeBatch.total), codePrefix: codeBatch.prefix, codeSuffix: codeBatch.suffix, codeListTitle: codeBatch.title });
+  const resources = editorDiscount ? await getPromotionEditorResources(admin) : { products: [], collections: [] };
+  const shippingCountries = editorDiscount?.discountType === "shipping" ? await getShippingCountries(admin) : null;
+  const priorityInfo = isRanked(promotion) ? await getPriorityPosition(admin, session.shop, promotion.id) : null;
+  const googleRow = await db.googlePromotion.findUnique({ where: { shop_discountId: { shop: session.shop, discountId: promotionDiscountId(promotion.id) } } });
+  const google = googleRow ? { enabled: true, title: googleRow.title, status: googleRow.status, issues: JSON.parse(googleRow.issues) as string[], checkedAt: googleRow.checkedAt?.toISOString() ?? null } : null;
+  return { promotion, priorityInfo, google, previewProducts, editorDiscount, editRulesMessage, products: resources.products, codeBatch, shippingCountries };
 }
-function getOptionalString(
-  formData: FormData,
-  name: string,
-): string | null {
-  const value = formData.get(name);
-
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmedValue = value.trim();
-
-  return trimmedValue.length > 0
-    ? trimmedValue
-    : null;
-}
-
-function getPriority(formData: FormData): number {
-  const value = formData.get("priority");
-
-  if (typeof value !== "string") {
-    return 0;
-  }
-
-  const parsedValue = Number.parseInt(value, 10);
-
-  if (!Number.isFinite(parsedValue)) {
-    return 0;
-  }
-
-  return Math.max(0, parsedValue);
-}
-
 export async function action({
   request,
   params,
 }: ActionFunctionArgs) {
-  const { session } =
+  const { admin, session } =
     await authenticate.admin(request);
 
   const promotionId = params.promotionId;
@@ -162,7 +151,34 @@ export async function action({
     };
   }
 
+  const delegatedRequest = request.clone();
   const formData = await request.formData();
+  const intent = formData.get("intent");
+  if (["searchResources", "searchEligibility", "resolveFile"].includes(String(intent))) return promotionEditorAction({ request: delegatedRequest });
+  if (intent === "updatePromotion") {
+    let discountUpdated = false;
+    try {
+      const node = await getEditableDiscount(admin, getDiscountNodeId(promotionId));
+      if (!node) throw new Error("This discount no longer exists.");
+      const payload = JSON.parse(String(formData.get("payload") ?? "{}"));
+      const website = await withImageRatios(admin, readWebsite(payload.website));
+      if (website.websiteEnabled && ((node.discount.codesCount?.count ?? node.discount.codes?.nodes.length ?? 0) > 1 || await getPromotionCodeBatch(session.shop, node.id))) throw new Error("Individual code lists must stay in website Draft status.");
+      const errors = validateWebsite(website, payload.updateRules === false ? node.discount.endsAt : payload.discount?.endsAt);
+      if (errors.length) throw new Error(errors.join(" "));
+      if (payload.updateRules !== false) {
+        await validateShippingCountries(admin, payload.discount, node.discount.destinationSelection?.countries ?? []);
+        await updateShopifyPromotion(admin, node, payload.discount as CreateDiscountDraft);
+        discountUpdated = true;
+      }
+      const rankEntry = payload.rankEntry === true;
+      await updatePromotionWebsiteSettings(session.shop, node.id, { ...websiteStorage(website), priority: await priorityForSave(session.shop, node.id, rankEntry) });
+      await syncStorefrontSnapshot(admin, session.shop);
+      if (await saveGoogleChoice(session.shop, node.id, payload.google)) void buildGoogleFeed(admin, session.shop).catch(error => console.error("The Google promotions file could not be built:", error instanceof Error ? error.message : error));
+      return { success: true, savedId: node.id, rankEntry };
+    } catch (error) {
+      return { success: false, error: (discountUpdated ? "The Shopify discount was updated, but website saving or storefront sync did not finish. Retry saving to finish. " : "") + (error instanceof Error ? error.message : "The promotion could not be saved.") };
+    }
+  }
 
   const shopifyDiscountId =
     formData.get("shopifyDiscountId");
@@ -178,70 +194,21 @@ export async function action({
   }
 
   try {
-    await updatePromotionWebsiteSettings(
-      session.shop,
-      shopifyDiscountId,
-      {
-        included: formData.has("included"),
-
-        websiteEnabled:
-          formData.has("websiteEnabled"),
-
-        showProductPage:
-          formData.has("showProductPage"),
-
-        showCollectionPage:
-          formData.has("showCollectionPage"),
-
-        showProductBadge:
-          formData.has("showProductBadge"),
-
-        showCountdown:
-          formData.has("showCountdown"),
-
-        showHeaderBanner:
-          formData.has("showHeaderBanner"),
-
-        headline:
-          getOptionalString(formData, "headline"),
-
-        body:
-          getOptionalString(formData, "body"),
-
-        badgeText:
-          getOptionalString(formData, "badgeText"),
-
-        countdownText:
-          getOptionalString(
-            formData,
-            "countdownText",
-          ),
-
-        buttonText:
-          getOptionalString(formData, "buttonText"),
-
-        buttonUrl:
-          getOptionalString(formData, "buttonUrl"),
-
-        backgroundColour:
-          getOptionalString(
-            formData,
-            "backgroundColour",
-          ),
-
-        textColour:
-          getOptionalString(formData, "textColour"),
-
-        badgeColour:
-          getOptionalString(formData, "badgeColour"),
-
-        priority: getPriority(formData),
-      },
-    );
+    if (shopifyDiscountId.split("/").pop() !== promotionId.split("/").pop()) throw new Error("The discount does not match this page.");
+    const discount = await getDiscount(admin, shopifyDiscountId);
+    if (!discount) throw new Error("This discount no longer exists.");
+    const website = await withImageRatios(admin, readWebsite(JSON.parse(String(formData.get("website") ?? "{}"))));
+    if (website.websiteEnabled && ((discount.discount.codesCount?.count ?? discount.discount.codes?.nodes.length ?? 0) > 1 || await getPromotionCodeBatch(session.shop, shopifyDiscountId))) throw new Error("Individual code lists must stay in website Draft status.");
+    const errors = validateWebsite(website, discount.discount.endsAt);
+    if (errors.length) throw new Error(errors.join(" "));
+    const rankEntry = formData.get("rankEntry") === "true";
+    await updatePromotionWebsiteSettings(session.shop, shopifyDiscountId, { ...websiteStorage(website), priority: await priorityForSave(session.shop, shopifyDiscountId, rankEntry) });
+    await syncStorefrontSnapshot(admin, session.shop);
 
     return {
       success: true,
       error: null,
+      rankEntry,
     };
   } catch (error) {
     console.error(
@@ -252,23 +219,14 @@ export async function action({
     return {
       success: false,
       error:
-        "The promotion settings could not be saved.",
+        error instanceof Error ? error.message : "The promotion settings could not be saved.",
     };
   }
 }
 
-type WebsiteSettingsState = {
-  included: boolean;
-  websiteEnabled: boolean;
-  showProductPage: boolean;
-  showCollectionPage: boolean;
-  showProductBadge: boolean;
-  showCountdown: boolean;
-  showHeaderBanner: boolean;
-};
-
 export default function PromotionDetailsPage() {
-  const { promotion, coverage } =
+  const appUrl = useEmbeddedAppUrl();
+  const { promotion, priorityInfo, google, previewProducts, editorDiscount, editRulesMessage, products, codeBatch, shippingCountries } =
     useLoaderData<typeof loader>();
 
   const general = promotion.shopify.general;
@@ -276,648 +234,118 @@ export default function PromotionDetailsPage() {
   const actionData =
     useActionData<typeof action>();
 
+  const [dismissedAction, setDismissedAction] = useState<typeof actionData>();
+  const saveSucceeded = useRef(false);
+  saveSucceeded.current = Boolean(actionData?.success);
   const navigation = useNavigation();
 
   const isSaving =
-    navigation.state === "submitting";
+    navigation.state !== "idle";
 
-  const [settings, setSettings] =
-    useState<WebsiteSettingsState>({
-      included:
-        promotion.settings.included,
-
-      websiteEnabled:
-        promotion.settings.websiteEnabled,
-
-      showProductPage:
-        promotion.settings.showProductPage,
-
-      showCollectionPage:
-        promotion.settings.showCollectionPage,
-
-      showProductBadge:
-        promotion.settings.showProductBadge,
-
-      showCountdown:
-        promotion.settings.showCountdown,
-
-      showHeaderBanner:
-        promotion.settings.showHeaderBanner,
-    });
-
-  const [messages, setMessages] = useState({
-    headline: promotion.settings.headline ?? "",
-    body: promotion.settings.body ?? "",
-    badgeText: promotion.settings.badgeText ?? "",
-    countdownText:
-      promotion.settings.countdownText ?? "",
-    buttonText:
-      promotion.settings.buttonText ?? "",
-    buttonUrl:
-      promotion.settings.buttonUrl ?? "",
-    backgroundColour:
-      promotion.settings.backgroundColour ??
-      "#ffffff",
-    textColour:
-      promotion.settings.textColour ??
-      "#000000",
-    badgeColour:
-      promotion.settings.badgeColour ??
-      "#d72c0d",
-    priority: String(
-      promotion.settings.priority ?? 0,
-    ),
-  });
-
-  const [activeTab, setActiveTab] =
-    useState<PromotionTab>("general");
-
+  const savedWebsite = useMemo(() => websiteFromSettings(promotion.settings), [promotion.settings]);
+  const [website, setWebsite] = useState(savedWebsite);
+  const [assetsBusy, setAssetsBusy] = useState(false);
+  const [previewPlacement, setPreviewPlacement] = useState<Placement | undefined>();
+  const formRef = useRef<HTMLFormElement>(null);
+  const previousSavedWebsite = useRef(savedWebsite);
+  const submittedWebsite = useRef(savedWebsite);
+  // The website settings are what can be changed here, so that section opens first.
+  const [openSection, setOpenSection] = useState<string | null>("website");
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   useEffect(() => {
-    setSettings({
-      included:
-        promotion.settings.included,
+    const previous = JSON.stringify(previousSavedWebsite.current);
+    const submitted = JSON.stringify(submittedWebsite.current);
+    setWebsite(current => JSON.stringify(current) === previous || (saveSucceeded.current && JSON.stringify(current) === submitted) ? savedWebsite : current);
+    previousSavedWebsite.current = savedWebsite;
+  }, [savedWebsite]);
+  function resetFormState() { setWebsite(savedWebsite); setDismissedAction(actionData); }
+  const hasUnsavedChanges = JSON.stringify(website) !== JSON.stringify(savedWebsite);
+  const shopify = useAppBridge();
+  const [draftSaved, setDraftSaved] = useState(false);
+  useEffect(() => {
+    if (!actionData?.success) return;
+    const draft = !website.websiteEnabled;
+    setDraftSaved(draft);
+    shopify.toast.show(draft ? "Promotion saved. Website status is Draft, so it is not showing on the storefront." : "Promotion saved", draft ? { duration: 8000 } : undefined);
+    // Only react to a new save result, not to later edits of the status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionData, shopify]);
+  const saveIssue = validateWebsite(website, promotion.endsAt)[0] ?? null;
+  const navigate = useNavigate();
+  const rankInput = { endsAt: promotion.endsAt, website };
+  const rankable = canRank(rankInput);
+  const wasRanked = canRank({ endsAt: promotion.endsAt, website: savedWebsite });
+  useEffect(() => {
+    if (actionData && "rankEntry" in actionData && actionData.rankEntry) navigate(appUrl(`/app/storefront-priorities?highlight=${promotion.routeId}`));
+  }, [actionData, appUrl, navigate, promotion.routeId]);
 
-      websiteEnabled:
-        promotion.settings.websiteEnabled,
+  if (editorDiscount) return <PromotionEditor key={promotion.id} products={products} initialDiscount={editorDiscount} initialWebsite={savedWebsite} promotionId={promotion.id} shopifyStatus={general.status} codeBatch={codeBatch} shippingCountries={shippingCountries} priorityInfo={priorityInfo} initialGoogle={google ?? undefined} />;
 
-      showProductPage:
-        promotion.settings.showProductPage,
-
-      showCollectionPage:
-        promotion.settings.showCollectionPage,
-
-      showProductBadge:
-        promotion.settings.showProductBadge,
-
-      showCountdown:
-        promotion.settings.showCountdown,
-
-      showHeaderBanner:
-        promotion.settings.showHeaderBanner,
-    });
-
-    setMessages({
-      headline: promotion.settings.headline ?? "",
-      body: promotion.settings.body ?? "",
-      badgeText: promotion.settings.badgeText ?? "",
-      countdownText:
-        promotion.settings.countdownText ?? "",
-      buttonText:
-        promotion.settings.buttonText ?? "",
-      buttonUrl:
-        promotion.settings.buttonUrl ?? "",
-      backgroundColour:
-        promotion.settings.backgroundColour ??
-        "#ffffff",
-      textColour:
-        promotion.settings.textColour ??
-        "#000000",
-      badgeColour:
-        promotion.settings.badgeColour ??
-        "#d72c0d",
-      priority: String(
-        promotion.settings.priority ?? 0,
-      ),
-    });
-
-  }, [
-    promotion.id,
-    promotion.settings.included,
-    promotion.settings.websiteEnabled,
-    promotion.settings.showProductPage,
-    promotion.settings.showCollectionPage,
-    promotion.settings.showProductBadge,
-    promotion.settings.showCountdown,
-    promotion.settings.showHeaderBanner,
-    promotion.settings.headline,
-    promotion.settings.body,
-    promotion.settings.badgeText,
-    promotion.settings.countdownText,
-    promotion.settings.buttonText,
-    promotion.settings.buttonUrl,
-    promotion.settings.backgroundColour,
-    promotion.settings.textColour,
-    promotion.settings.badgeColour,
-    promotion.settings.priority,
-  ]);
-
-  function updateSetting(
-    name: keyof WebsiteSettingsState,
-    checked: boolean,
-  ) {
-    setSettings((current) => ({
-      ...current,
-      [name]: checked,
-    }));
-  }
-
-  function updateMessage(
-    name: keyof typeof messages,
-    value: string,
-  ) {
-    setMessages((current) => ({
-      ...current,
-      [name]: value,
-    }));
-  }
-
-  const hasUnsavedChanges = useMemo(() => {
-    const savedSettings = {
-      included:
-        promotion.settings.included,
-      websiteEnabled:
-        promotion.settings.websiteEnabled,
-      showProductPage:
-        promotion.settings.showProductPage,
-      showCollectionPage:
-        promotion.settings.showCollectionPage,
-      showProductBadge:
-        promotion.settings.showProductBadge,
-      showCountdown:
-        promotion.settings.showCountdown,
-      showHeaderBanner:
-        promotion.settings.showHeaderBanner,
-    };
-
-    const savedMessages = {
-      headline:
-        promotion.settings.headline ?? "",
-      body:
-        promotion.settings.body ?? "",
-      badgeText:
-        promotion.settings.badgeText ?? "",
-      countdownText:
-        promotion.settings.countdownText ?? "",
-      buttonText:
-        promotion.settings.buttonText ?? "",
-      buttonUrl:
-        promotion.settings.buttonUrl ?? "",
-      backgroundColour:
-        promotion.settings.backgroundColour ??
-        "#ffffff",
-      textColour:
-        promotion.settings.textColour ??
-        "#000000",
-      badgeColour:
-        promotion.settings.badgeColour ??
-        "#d72c0d",
-      priority: String(
-        promotion.settings.priority ?? 0,
-      ),
-    };
-
-    return (
-      JSON.stringify(settings) !==
-      JSON.stringify(savedSettings) ||
-      JSON.stringify(messages) !==
-      JSON.stringify(savedMessages)
-    );
-  }, [
-    settings,
-    messages,
-    promotion.settings,
-  ]);
+  const startsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.startsAt));
+  const endsOn = summaryDate(toLocalDateTime(promotion.shopify.schedule.endsAt));
+  const sections = [
+    { id: "general", title: "Discount details", summary: `${general.type}, ${general.method}${general.value ? `, ${general.value}` : ""}` },
+    { id: "customers", title: "Customers", summary: promotion.shopify.customers.appliesToAllCustomers ? "All customers" : "Selected customers or segments" },
+    { id: "conditions", title: "Conditions", summary: "Minimum requirements and usage limits" },
+    { id: "schedule", title: "Schedule", summary: `${startsOn ? `Starts ${startsOn}` : "Starts when saved"}, ${endsOn ? `ends ${endsOn}` : "no end date"}` },
+    { id: "website", title: "Website promotion", summary: website.websiteEnabled ? "Enabled" : "Draft" },
+  ];
+  const section = (id: string) => {
+    const index = sections.findIndex(item => item.id === id);
+    return { id, number: index + 1, title: sections[index].title, summary: sections[index].summary, open: openSection === id, onToggle: (open: boolean) => setOpenSection(current => open ? id : current === id ? null : current) };
+  };
 
   return (
-    <s-page heading={general.title}>
-      <s-stack
-        direction="block"
-        gap="large"
-      >
-        <s-stack direction="inline">
-          <s-button
-            href="/app/promotions"
-            variant="secondary"
-          >
-            Back to promotions
-          </s-button>
-        </s-stack>
-
-        <PromotionTabs
-          activeTab={activeTab}
-          onChange={setActiveTab}
-        />
-
-        <Form method="post">
-          <input
-            type="hidden"
-            name="shopifyDiscountId"
-            value={promotion.id}
+    <s-page heading={general.title} inlineSize="large">
+      <s-link slot="breadcrumb-actions" href={appUrl("/app/promotions")}>Promotions</s-link>
+      <s-button slot="secondary-actions" data-preview-toggle="" onClick={() => setIsPreviewOpen(true)}>Preview</s-button>
+      <s-button slot="secondary-actions" href={`shopify:admin/discounts/${promotion.routeId}`} target="_blank">Edit in Shopify</s-button>
+      <PromotionSaveBar dirty={hasUnsavedChanges} saving={isSaving} busy={assetsBusy} issue={saveIssue} showWhileIncomplete onSave={() => formRef.current?.requestSubmit()} onDiscard={resetFormState} />
+      <SaveNotices warning={draftSaved && !website.websiteEnabled ? draftSavedWarning : null} error={actionData !== dismissedAction ? actionData?.error : undefined} issue={hasUnsavedChanges ? saveIssue : null} onDismissError={() => setDismissedAction(actionData)} />
+      <div style={{ width: "100%" }}>
+        <s-stack direction="block" gap="large">
+          <PromotionOverview
+            title={general.title}
+            typeLabel={general.type}
+            discountStatus={general.status}
+            websiteVisible={rankable}
+            websiteEnabled={website.websiteEnabled}
+            onWebsiteEnabledChange={enabled => setWebsite(current => ({ ...current, websiteEnabled: enabled }))}
+            summary={sections[0].summary}
+            priority={<PriorityNote rankable={rankable} blocker={rankBlocker(rankInput)} wasRanked={wasRanked} info={priorityInfo} routeId={promotion.routeId} />}
           />
-
-          {/* General tab */}
-          <div
-            style={{
-              display:
-                activeTab === "general"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionGeneralTab promotion={promotion} />
-          </div>
-
-          {/* Products tab */}
-          <div
-            style={{
-              display:
-                activeTab === "products"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionProductsTab
-              promotion={promotion}
-              coverage={coverage}
-            />
-          </div>
-
-          {/* Customers tab */}
-          <div
-            style={{
-              display:
-                activeTab === "customers"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionCustomersTab promotion={promotion} />
-          </div>
-
-          {/* Conditions tab */}
-          <div
-            style={{
-              display:
-                activeTab === "conditions"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionConditionsTab promotion={promotion} />
-          </div>
-
-          {/* Schedule tab */}
-          <div
-            style={{
-              display:
-                activeTab === "schedule"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <PromotionScheduleTab promotion={promotion} />
-          </div>
-
-          {/* Website tab */}
-          <div
-            style={{
-              display:
-                activeTab === "website"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <s-section heading="Website settings">
-              <s-stack direction="block" gap="base">
-                <s-checkbox
-                  name="included"
-                  value="true"
-                  label="Include in promotion sync"
-                  details="Allow this promotion to be processed by the website promotion sync."
-                  checked={
-                    settings.included
-                      ? true
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    updateSetting(
-                      "included",
-                      event.currentTarget.checked,
-                    )
-                  }
-                />
-
-                <s-checkbox
-                  name="websiteEnabled"
-                  value="true"
-                  label="Enable website promotion"
-                  details="Allow promotional messaging for this promotion to appear on the website."
-                  checked={
-                    settings.websiteEnabled
-                      ? true
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    updateSetting(
-                      "websiteEnabled",
-                      event.currentTarget.checked,
-                    )
-                  }
-                />
-
-                <s-checkbox
-                  name="showProductPage"
-                  value="true"
-                  label="Show on product pages"
-                  checked={
-                    settings.showProductPage
-                      ? true
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    updateSetting(
-                      "showProductPage",
-                      event.currentTarget.checked,
-                    )
-                  }
-                />
-
-                <s-checkbox
-                  name="showCollectionPage"
-                  value="true"
-                  label="Show on collection pages"
-                  checked={
-                    settings.showCollectionPage
-                      ? true
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    updateSetting(
-                      "showCollectionPage",
-                      event.currentTarget.checked,
-                    )
-                  }
-                />
-
-                <s-checkbox
-                  name="showProductBadge"
-                  value="true"
-                  label="Show product badge"
-                  checked={
-                    settings.showProductBadge
-                      ? true
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    updateSetting(
-                      "showProductBadge",
-                      event.currentTarget.checked,
-                    )
-                  }
-                />
-
-                <s-checkbox
-                  name="showCountdown"
-                  value="true"
-                  label="Show countdown"
-                  checked={
-                    settings.showCountdown
-                      ? true
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    updateSetting(
-                      "showCountdown",
-                      event.currentTarget.checked,
-                    )
-                  }
-                />
-
-                <s-checkbox
-                  name="showHeaderBanner"
-                  value="true"
-                  label="Show header banner"
-                  checked={
-                    settings.showHeaderBanner
-                      ? true
-                      : undefined
-                  }
-                  onChange={(event) =>
-                    updateSetting(
-                      "showHeaderBanner",
-                      event.currentTarget.checked,
-                    )
-                  }
-                />
-              </s-stack>
-            </s-section>
-          </div>
-
-          {/* Messages tab */}
-          <div
-            style={{
-              display:
-                activeTab === "messages"
-                  ? "block"
-                  : "none",
-            }}
-          >
-            <s-section heading="Promotion messages">
-              <s-stack direction="block" gap="base">
-                <s-text-field
-                  name="headline"
-                  label="Headline"
-                  details="Main promotion message displayed to customers."
-                  placeholder="Save 20% today"
-                  value={messages.headline}
-                  maxLength={120}
-                  onInput={(event) =>
-                    updateMessage(
-                      "headline",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-text-area
-                  name="body"
-                  label="Body"
-                  details="Supporting promotion text."
-                  placeholder="Promotion applies to selected products while stocks last."
-                  value={messages.body}
-                  maxLength={500}
-                  rows={4}
-                  onInput={(event) =>
-                    updateMessage(
-                      "body",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-text-field
-                  name="badgeText"
-                  label="Badge text"
-                  placeholder="20% OFF"
-                  value={messages.badgeText}
-                  maxLength={40}
-                  onInput={(event) =>
-                    updateMessage(
-                      "badgeText",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-text-field
-                  name="countdownText"
-                  label="Countdown text"
-                  placeholder="Offer ends in"
-                  value={messages.countdownText}
-                  maxLength={80}
-                  onInput={(event) =>
-                    updateMessage(
-                      "countdownText",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-text-field
-                  name="buttonText"
-                  label="Button text"
-                  placeholder="Shop now"
-                  value={messages.buttonText}
-                  maxLength={60}
-                  onInput={(event) =>
-                    updateMessage(
-                      "buttonText",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-url-field
-                  name="buttonUrl"
-                  label="Button URL"
-                  placeholder="https://www.example.com/collections/sale"
-                  value={messages.buttonUrl}
-                  onInput={(event) =>
-                    updateMessage(
-                      "buttonUrl",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-number-field
-                  name="priority"
-                  label="Priority"
-                  details="Higher-priority promotions can be displayed before lower-priority promotions."
-                  min={0}
-                  step={1}
-                  inputMode="numeric"
-                  value={messages.priority}
-                  onInput={(event) =>
-                    updateMessage(
-                      "priority",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-color-field
-                  name="backgroundColour"
-                  label="Background colour"
-                  value={messages.backgroundColour}
-                  onInput={(event) =>
-                    updateMessage(
-                      "backgroundColour",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-color-field
-                  name="textColour"
-                  label="Text colour"
-                  value={messages.textColour}
-                  onInput={(event) =>
-                    updateMessage(
-                      "textColour",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-
-                <s-color-field
-                  name="badgeColour"
-                  label="Badge colour"
-                  value={messages.badgeColour}
-                  onInput={(event) =>
-                    updateMessage(
-                      "badgeColour",
-                      event.currentTarget.value,
-                    )
-                  }
-                />
-              </s-stack>
-            </s-section>
-          </div>
-
-          {/* Sticky save area */}
-          <div
-            style={{
-              position: "sticky",
-              bottom: "16px",
-              zIndex: 20,
-              marginTop: "24px",
-              paddingBottom: "8px",
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#ffffff",
-                border: "1px solid #d9d9d9",
-                borderRadius: "12px",
-                boxShadow:
-                  "0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.06)",
-                padding: "16px",
-              }}
-            >
-              <s-stack direction="block" gap="base">
-                {actionData?.success && (
-                  <s-banner tone="success">
-                    Promotion settings saved.
-                  </s-banner>
-                )}
-
-                {actionData?.error && (
-                  <s-banner tone="critical">
-                    {actionData.error}
-                  </s-banner>
-                )}
-
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "16px",
-                  }}
-                >
-                  <s-paragraph>
-                    {hasUnsavedChanges
-                      ? "You have unsaved changes."
-                      : "All changes saved."}
-                  </s-paragraph>
-
-                  <s-button
-                    type="submit"
-                    variant="primary"
-                    loading={isSaving}
-                    disabled={isSaving || !hasUnsavedChanges}
-                  >
-                    {isSaving ? "Saving..." : "Save promotion"}
-                  </s-button>
-                </div>
+          {editRulesMessage && <s-banner tone="info">{editRulesMessage}</s-banner>}
+          <Form ref={formRef} method="post" onSubmit={() => { submittedWebsite.current = website; setDismissedAction(actionData); }}>
+            <input type="hidden" name="shopifyDiscountId" value={promotion.id} />
+            <input type="hidden" name="website" value={JSON.stringify(website)} />
+            <input type="hidden" name="rankEntry" value={String(rankable && !wasRanked)} />
+            <div className="create-discount-layout" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "24px", alignItems: "start" }}>
+              <aside className="desktop-preview-panel" style={{ position: "sticky", top: "20px", maxHeight: "calc(100vh - 40px)", overflowY: "auto", scrollbarGutter: "stable", alignSelf: "start" }}>
+                <PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} />
+              </aside>
+              <s-stack direction="block" gap="large">
+                <FormStep {...section("general")}><PromotionGeneralTab promotion={promotion} /></FormStep>
+                <FormStep {...section("customers")}><PromotionCustomersTab promotion={promotion} /></FormStep>
+                <FormStep {...section("conditions")}><PromotionConditionsTab promotion={promotion} /></FormStep>
+                <FormStep {...section("schedule")}><PromotionScheduleTab promotion={promotion} /></FormStep>
+                <FormStep {...section("website")}>
+                  <PromotionWebsiteEditor onActiveBlockChange={setPreviewPlacement} value={website} onChange={setWebsite} endsAt={promotion.endsAt} onBusyChange={setAssetsBusy} />
+                </FormStep>
               </s-stack>
             </div>
-          </div>
-        </Form>
-
-
-      </s-stack>
+          </Form>
+        </s-stack>
+      </div>
+      <ModalOverlay open={isPreviewOpen} heading="Storefront preview" size="large" onClose={() => setIsPreviewOpen(false)}>
+        <PromotionPreview placement={previewPlacement} onPlacementChange={setPreviewPlacement} discountCode={promotion.code} offerNote={promotion.code ? `Use code: ${promotion.code}` : "Applied automatically at checkout."} value={website} products={previewProducts} endsAt={promotion.endsAt} allowEnlarge={false} />
+        <s-button slot="secondary-actions" onClick={() => setIsPreviewOpen(false)}>Close</s-button>
+      </ModalOverlay>
+      <style>{editorCss}</style>
     </s-page>
   );
+}
+
+export function shouldRevalidate({ formAction, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  if (formAction && new URL(formAction, "https://app.example").pathname === "/app/promotion-codes") return false;
+  return defaultShouldRevalidate;
 }

@@ -39,7 +39,7 @@ export function BreakdownList({
               padding: "12px 0",
               borderBottom: isLast
                 ? "none"
-                : "1px solid #eeeeee",
+                : "1px solid #e3e3e3",
             }}
           >
             <div

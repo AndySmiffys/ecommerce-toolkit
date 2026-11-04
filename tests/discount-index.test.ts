@@ -1,0 +1,200 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { withDatabase } from "./helpers/database";
+import { discountStatusAt, isOtherApp, sourceFromParam } from "../app/modules/promotions/design/discountSource";
+import { loadHomeStats } from "../app/modules/promotions/services/homeStats.server";
+import { buildIndex, creatorOf, creatorsOf, deleteSourceRule, forgetDiscounts, listSourceRules, saveSourceRule, indexIsDue, indexState, listFromIndex, madeByOtherApps, otherApps } from "../app/modules/promotions/services/discountIndex.server";
+import { bulkDiscountAction } from "../app/modules/promotions/services/bulkPromotions.server";
+
+const shop = "index-test.myshopify.com";
+const none = { source: "" as const, app: "", status: "", text: "", after: null, before: null };
+
+test("only a creator that is clearly another app counts as one", () => {
+  for (const mine of ["Shopify Web", "Shopify Flow", "Shopify Email", "eCommerce Toolkit", "eCommerce Toolkit (Test)", "Smiffys Promotion Engine", "Unknown", "", null, undefined]) assert.equal(isOtherApp(mine), false, String(mine));
+  for (const other of ["Dotdigital", "Klaviyo", "Smile: Loyalty"]) assert.equal(isOtherApp(other), true, other);
+  assert.equal(sourceFromParam(null), "");
+  assert.equal(sourceFromParam("other"), "other");
+  assert.equal(sourceFromParam("all"), "all");
+  assert.equal(sourceFromParam("junk"), "");
+  const now = new Date("2026-10-20T12:00:00Z");
+  assert.equal(discountStatusAt(null, null, now), "active");
+  assert.equal(discountStatusAt(new Date("2026-11-01T00:00:00Z"), null, now), "scheduled");
+  assert.equal(discountStatusAt(null, new Date("2026-10-01T00:00:00Z"), now), "expired");
+});
+
+test("who made a discount comes from the code when an app made it, else from the create event", () => {
+  const code = (createdBy: { title: string | null } | null, events: string[] = []) => ({ id: "gid://shopify/DiscountCodeNode/1", events: { nodes: events.map(appTitle => ({ appTitle })) }, discount: { __typename: "DiscountCodeBasic", title: "x", codes: { nodes: [{ code: "C", createdBy }] } } });
+  assert.equal(creatorOf(code({ title: "Dotdigital" })), "Dotdigital", "the code records the app, even when the event does not");
+  assert.equal(creatorOf(code({ title: null })), "Another app", "an app with no name is still an app");
+  assert.equal(creatorOf(code(null, ["Shopify Web"])), "Shopify Web", "made by hand: no app on the code");
+  assert.equal(creatorOf(code(null)), "Unknown");
+  assert.equal(creatorOf(code({ title: "Loox" }, ["Shopify Web"])), "Loox", "the code wins over the event");
+  assert.equal(isOtherApp(creatorOf(code({ title: null }))), true);
+});
+
+const node = (id: number, type: string, title: string, code: string | null, createdBy: string | null, startsAt: string | null = null, endsAt: string | null = null) => ({
+  id: `gid://shopify/DiscountCodeNode/${id}`,
+  events: { nodes: createdBy ? [{ appTitle: createdBy }] : [] },
+  discount: { __typename: type, title, startsAt, endsAt, ...(code ? { codes: { nodes: [{ code }] } } : {}) },
+});
+
+/** A stand-in for Shopify serving the nodes in pages of `size`, oldest first, and recording each request. */
+function fakeShopify(nodes: ReturnType<typeof node>[], size = 100) {
+  const requests: Array<{ after: string | null; query: string | null }> = [];
+  const admin = { graphql: async (_query: string, options?: { variables?: Record<string, unknown> }) => {
+    const variables = options?.variables ?? {};
+    requests.push({ after: (variables.after as string | null) ?? null, query: (variables.query as string | null) ?? null });
+    const start = variables.after ? Number(variables.after) : 0;
+    const filtered = nodes;
+    const page = filtered.slice(start, start + size);
+    const next = start + size;
+    return Response.json({ data: { discountNodes: { pageInfo: { hasNextPage: next < filtered.length, endCursor: String(next) }, nodes: page } } });
+  } };
+  return { admin, requests };
+}
+
+const catalogue = () => [
+  node(1, "DiscountCodeBasic", "Halloween", "HALLOWEEN", "Shopify Web"),
+  node(2, "DiscountAutomaticBasic", "Spring sale", null, "eCommerce Toolkit"),
+  node(3, "DiscountCodeBasic", "WELCOME-COUPON || a", "WELCOME-1A2B3C4D-9XY8ZQ", "Dotdigital"),
+  node(4, "DiscountCodeBasic", "WELCOME-COUPON || b", "WELCOME-5E6F7G8H-ABC123", "Dotdigital"),
+  node(5, "DiscountCodeBasic", "CART10-COUPON || c", "CART10-ABCD1234-QWERTY", "Dotdigital", "2026-12-01T00:00:00Z"),
+  node(6, "DiscountCodeBasic", "Old sale", "OLDSALE", "Shopify Web", null, "2026-01-01T00:00:00Z"),
+  node(7, "DiscountCodeBasic", "No creator recorded", "MYSTERY", null),
+];
+
+test("the index is built page by page, keeps its place, and the list pages from it by source, status and search", async () => withDatabase(async database => {
+  const t0 = Date.parse("2026-10-20T12:00:00Z");
+  assert.equal(await indexIsDue(shop, 60, database, t0), true);
+  const shopify = fakeShopify(catalogue(), 3);
+  let calls = 0;
+  const failOnce = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => { if (++calls === 2) return Response.json({ errors: [{ message: "Boom" }] }); return shopify.admin.graphql(query, options); } };
+  await buildIndex(async () => failOnce, shop, database, t0, async () => {});
+  let state = await indexState(shop, database);
+  assert.equal(state.ready, false, "the scan stopped partway");
+  assert.match(state.error ?? "", /Boom/);
+  await buildIndex(async () => shopify.admin, shop, database, t0 + 1000, async () => {});
+  assert.equal(shopify.requests[shopify.requests.length - 2].after, "3", "it carried on from the page it had reached, not from the start");
+  state = await indexState(shop, database);
+  assert.equal(state.ready, true);
+  assert.equal(state.count, 7);
+  assert.equal(state.error, null);
+  assert.equal(await indexIsDue(shop, 60, database, t0 + 30000), false);
+  assert.equal(await indexIsDue(shop, 60, database, t0 + 120000), true);
+
+  const now = new Date(t0);
+  const mine = await listFromIndex(shop, none, database, now);
+  assert.deepEqual(mine.ids.map(id => id.split("/").pop()), ["7", "6", "2", "1"], "newest first, without the other app's discounts; a discount with no recorded creator stays");
+  assert.equal(mine.total, 4);
+  const other = await listFromIndex(shop, { ...none, source: "other" }, database, now);
+  assert.deepEqual(other.ids.map(id => id.split("/").pop()), ["5", "4", "3"]);
+  assert.equal((await listFromIndex(shop, { ...none, source: "all" }, database, now)).total, 7);
+  assert.deepEqual((await listFromIndex(shop, { ...none, source: "other", app: "Klaviyo" }, database, now)).ids, []);
+  assert.deepEqual((await listFromIndex(shop, { ...none, source: "other", app: "Dotdigital", status: "scheduled" }, database, now)).ids.map(id => id.split("/").pop()), ["5"]);
+  assert.deepEqual((await listFromIndex(shop, { ...none, status: "expired" }, database, now)).ids.map(id => id.split("/").pop()), ["6"]);
+  assert.deepEqual((await listFromIndex(shop, { ...none, status: "current" }, database, now)).ids.map(id => id.split("/").pop()), ["7", "2", "1"], "active and scheduled: the expired one is left out");
+  assert.deepEqual((await listFromIndex(shop, { ...none, source: "all", status: "current" }, database, now)).ids.map(id => id.split("/").pop()), ["7", "5", "4", "3", "2", "1"], "a scheduled discount is in, an expired one is not");
+  assert.deepEqual((await listFromIndex(shop, { ...none, status: "active" }, database, now)).ids.map(id => id.split("/").pop()), ["7", "2", "1"]);
+  assert.deepEqual((await listFromIndex(shop, { ...none, source: "all", text: "welcome-5e" }, database, now)).ids.map(id => id.split("/").pop()), ["4"], "search looks at the code and the title, ignoring case");
+  assert.deepEqual((await listFromIndex(shop, { ...none, text: "spring" }, database, now)).ids.map(id => id.split("/").pop()), ["2"]);
+  assert.deepEqual(await otherApps(shop, database), [{ name: "Dotdigital", count: 3 }]);
+  assert.deepEqual(await creatorsOf(shop, ["gid://shopify/DiscountNode/3", "gid://shopify/DiscountCodeNode/1", "gid://shopify/DiscountNode/99"], database), { "gid://shopify/DiscountNode/3": "Dotdigital", "gid://shopify/DiscountNode/1": "Shopify Web" });
+  assert.deepEqual(await madeByOtherApps(shop, ["gid://shopify/DiscountNode/3", "gid://shopify/DiscountNode/1"], database), { "gid://shopify/DiscountNode/3": "Dotdigital" });
+  await forgetDiscounts(shop, ["gid://shopify/DiscountNode/3"], database);
+  assert.equal((await listFromIndex(shop, { ...none, source: "other" }, database, now)).total, 2);
+}));
+
+test("paging walks the list newest first in both directions, and a later read only fetches what changed", async () => withDatabase(async database => {
+  const t0 = Date.parse("2026-10-20T12:00:00Z");
+  const many = Array.from({ length: 120 }, (_, index) => node(index + 1, "DiscountCodeBasic", `Promo ${index + 1}`, `P${index + 1}`, "Shopify Web"));
+  await buildIndex(async () => fakeShopify(many).admin, shop, database, t0, async () => {});
+  const now = new Date(t0);
+  const first = await listFromIndex(shop, none, database, now);
+  assert.equal(first.ids.length, 50);
+  assert.deepEqual([first.pageInfo.hasNextPage, first.pageInfo.hasPreviousPage], [true, false]);
+  assert.equal(first.ids[0].split("/").pop(), "120");
+  const second = await listFromIndex(shop, { ...none, after: first.pageInfo.endCursor }, database, now);
+  assert.equal(second.ids[0].split("/").pop(), "70", "the next page carries on where the last ended");
+  assert.deepEqual([second.pageInfo.hasNextPage, second.pageInfo.hasPreviousPage], [true, true]);
+  const third = await listFromIndex(shop, { ...none, after: second.pageInfo.endCursor }, database, now);
+  assert.equal(third.ids.length, 20);
+  assert.deepEqual([third.pageInfo.hasNextPage, third.pageInfo.hasPreviousPage], [false, true]);
+  const back = await listFromIndex(shop, { ...none, before: third.pageInfo.startCursor }, database, now);
+  assert.deepEqual(back.ids, second.ids, "going back returns the page just left, in the same order");
+  assert.equal((await listFromIndex(shop, { ...none, after: "not a number" }, database, now)).ids[0].split("/").pop(), "120", "a cursor that is not ours starts again from the newest");
+  // A later read asks only for what changed since the last one.
+  const again = fakeShopify([node(121, "DiscountCodeBasic", "New one", "NEW", "Dotdigital")]);
+  await buildIndex(async () => again.admin, shop, database, t0 + 3600000, async () => {});
+  assert.match(again.requests[0].query ?? "", /^updated_at:>=2026-10-20T11:55:00\.000Z$/, "from a few minutes before the last read");
+  assert.equal((await listFromIndex(shop, { ...none, source: "other" }, database, now)).total, 1);
+  assert.equal((await listFromIndex(shop, none, database, now)).total, 120);
+}));
+
+test("a discount another app made is left alone by activate, deactivate and delete, and the rest still go through", async () => withDatabase(async database => {
+  await buildIndex(async () => fakeShopify(catalogue()).admin, shop, database, Date.now(), async () => {});
+  const calls: string[] = [];
+  const admin = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
+    calls.push(String(options?.variables?.id ?? ""));
+    if (query.includes("codeDiscountNode(") || query.includes("discountNode(")) return Response.json({ data: { codeDiscountNode: { id: String(options?.variables?.id) }, automaticDiscountNode: null } });
+    return Response.json({ data: { discountCodeDeactivate: { codeDiscountNode: { id: "x" }, userErrors: [] }, discountAutomaticDeactivate: { automaticDiscountNode: { id: "x" }, userErrors: [] } } });
+  } };
+  const outcome = await bulkDiscountAction(admin, shop, "deactivate", ["gid://shopify/DiscountNode/3", "gid://shopify/DiscountNode/1"], database, async () => {});
+  const refused = outcome.failed.find(item => item.id === "gid://shopify/DiscountNode/3");
+  assert.match(refused?.message ?? "", /Dotdigital made this discount/);
+  assert.equal(calls.some(id => id.endsWith("/3")), false, "Shopify was never asked to change it");
+}));
+
+test("a rule hides discounts by pattern even when Shopify names no app, and removing it brings them back", async () => withDatabase(async database => {
+  const t0 = Date.parse("2026-10-20T12:00:00Z");
+  const loox = [
+    node(1, "DiscountCodeBasic", "Halloween", "HALLOWEEN", "Shopify Web"),
+    node(2, "DiscountCodeBasic", "Loox Referrals - Friend Discount - LXZ-CNQ23GT", "LXZ-CNQ23GT", null),
+    node(3, "DiscountCodeBasic", "Loox Referrals - Friend Discount - LXZ-AAA", "LXZ-AAA", null),
+  ];
+  await buildIndex(async () => fakeShopify(loox).admin, shop, database, t0, async () => {});
+  const now = new Date(t0);
+  const ids = async (filter: Parameters<typeof listFromIndex>[1]) => (await listFromIndex(shop, filter, database, now)).ids.map(id => id.split("/").pop());
+  assert.deepEqual(await ids(none), ["3", "2", "1"], "no app is named, so they show until a rule says otherwise");
+  await saveSourceRule(shop, { name: "Loox", matchOn: "title", matchType: "starts_with", pattern: "loox referrals" }, database);
+  assert.deepEqual(await ids(none), ["1"], "the rule applies to what is already indexed");
+  assert.deepEqual(await ids({ ...none, source: "other" }), ["3", "2"]);
+  assert.deepEqual(await ids({ ...none, source: "other", app: "Loox" }), ["3", "2"], "and the rule's name is the app");
+  assert.deepEqual(await otherApps(shop, database), [{ name: "Loox", count: 2 }]);
+  assert.deepEqual(await creatorsOf(shop, ["gid://shopify/DiscountNode/2"], database), { "gid://shopify/DiscountNode/2": "Loox" });
+  assert.deepEqual(await madeByOtherApps(shop, ["gid://shopify/DiscountNode/2", "gid://shopify/DiscountNode/1"], database), { "gid://shopify/DiscountNode/2": "Loox" }, "so they are left alone by bulk changes");
+  // A discount made later is caught as it is indexed.
+  const later = fakeShopify([node(4, "DiscountCodeBasic", "Loox Referrals - Friend Discount - LXZ-NEW", "LXZ-NEW", null)]);
+  await buildIndex(async () => later.admin, shop, database, t0 + 3600000, async () => {});
+  assert.deepEqual(await ids(none), ["1"]);
+  assert.equal((await listFromIndex(shop, { ...none, source: "other" }, database, now)).total, 3);
+  const rule = (await listSourceRules(shop, database))[0];
+  await deleteSourceRule(shop, rule.id, database);
+  assert.deepEqual(await ids(none), ["4", "3", "2", "1"], "removing the rule brings them back");
+  await assert.rejects(saveSourceRule(shop, { name: "", matchOn: "title", matchType: "contains", pattern: "x" }, database), /name/);
+  await assert.rejects(saveSourceRule(shop, { name: "X", matchOn: "title", matchType: "contains", pattern: " " }, database), /text to look for/);
+}));
+
+test("the home page's counts come from what the app keeps: running, scheduled and ending soon, only the merchant's own, plus the website and Google counts", async () => withDatabase(async database => {
+  const now = new Date("2026-10-21T12:00:00Z");
+  const day = 86400000;
+  assert.equal((await loadHomeStats(shop, database, now)).promotions, null, "nothing is counted until the discounts have been read");
+  const make = (id: number, change: Record<string, unknown> = {}) => ({ shop, discountId: `gid://shopify/DiscountNode/${id}`, numericId: BigInt(id), kind: "code", title: `P${id}`, code: `C${id}`, createdBy: "Shopify Web", other: false, startsAt: null, endsAt: null, ...change });
+  await database.discountIndex.createMany({ data: [
+    make(1),
+    make(2, { endsAt: new Date(now.getTime() + 3 * day) }),
+    make(3, { endsAt: new Date(now.getTime() + 30 * day) }),
+    make(4, { startsAt: new Date(now.getTime() + 5 * day) }),
+    make(5, { endsAt: new Date(now.getTime() - day) }),
+    make(6, { other: true, createdBy: "Dotdigital" }),
+    make(7, { ruleName: "Loox" }),
+    make(8, { endsAt: new Date(now.getTime() + 2 * day), other: true, createdBy: "Dotdigital" }),
+  ] });
+  await database.discountIndexState.create({ data: { shop, scanDone: true } });
+  await database.promotionSettings.create({ data: { shop, shopifyDiscountId: "gid://shopify/DiscountNode/1", websiteEnabled: true, priority: 1 } });
+  await database.googlePromotion.createMany({ data: [{ shop, discountId: "gid://shopify/DiscountNode/1", status: "ready" }, { shop, discountId: "gid://shopify/DiscountNode/2", status: "issues" }, { shop, discountId: "gid://shopify/DiscountNode/3", status: "pending" }] });
+  const stats = await loadHomeStats(shop, database, now);
+  assert.deepEqual(stats.promotions, { active: 3, scheduled: 1, endingSoon: 1 }, "1, 2 and 3 are running; 4 is scheduled; 5 has ended; other apps' discounts are not counted");
+  assert.equal(stats.websiteEnabled, 1);
+  assert.deepEqual(stats.google, { chosen: 3, ready: 1, issues: 1 });
+  assert.deepEqual((await loadHomeStats("other.myshopify.com", database, now)).google, { chosen: 0, ready: 0, issues: 0 }, "another shop has its own counts");
+}));

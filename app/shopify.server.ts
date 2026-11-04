@@ -7,7 +7,13 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
+// The Polaris script both shopifyApp() and the AppProvider in app/routes/app.tsx load. They must use the same URL.
+// Polaris 1 (current). To try Polaris 2, use "https://cdn.shopify.com/shopifycloud/polaris-2.0-rc.js" and test on a dev store
+// with the new admin design (see PROGRESS.md): it restyles the page header, buttons and breadcrumbs.
+export const polarisUrl = "https://cdn.shopify.com/shopifycloud/polaris.js";
+
 const shopify = shopifyApp({
+  polarisUrl,
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.July26,

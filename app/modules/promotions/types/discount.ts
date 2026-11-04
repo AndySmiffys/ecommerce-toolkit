@@ -1,3 +1,14 @@
+import {
+  getPromotionMethodFromShopifyType,
+  getPromotionTypeFromShopifyDiscount,
+  type ShopifyDiscountTypename,
+} from "../adapters/shopifyDiscountRegistry";
+
+import type {
+  PromotionMethod,
+  PromotionType,
+} from "../models/shopify";
+
 export type ShopifyDiscountNode = {
   id: string;
 
@@ -13,14 +24,34 @@ export type ShopifyDiscountNode = {
   };
 
   discount: {
-    __typename: string;
+    __typename: ShopifyDiscountTypename | string;
     title?: string;
     status?: string;
     summary?: string | null;
     startsAt?: string | null;
     endsAt?: string | null;
     discountClasses?: string[];
+    usageLimit?: number | null;
+    appliesOncePerCustomer?: boolean;
+    usesPerOrderLimit?: string | number | null;
+    combinesWith?: { productDiscounts: boolean; orderDiscounts: boolean; shippingDiscounts: boolean; productDiscountsWithTagsOnSameCartLine?: string[] | null };
+    customerBuys?: { value: { __typename: string; quantity?: string; amount?: string }; items: NonNullable<ShopifyDiscountNode["discount"]["customerGets"]>["items"] };
 
+
+    context?: {
+      __typename: string;
+      all?: string;
+      customers?: Array<{
+        id: string;
+        displayName: string;
+      }>;
+      segments?: Array<{
+        id: string;
+        name: string;
+      }>;
+    };
+
+    codesCount?: { count: number } | null;
     codes?: {
       nodes: Array<{
         code: string;
@@ -28,42 +59,49 @@ export type ShopifyDiscountNode = {
     };
 
     customerGets?: {
+      appliesOnOneTimePurchase?: boolean;
+      appliesOnSubscription?: boolean;
       value: {
         __typename: string;
-
+        quantity?: { quantity: string };
+        effect?: { __typename: string; percentage?: number; amount?: { amount: string; currencyCode: string }; appliesOnEachItem?: boolean };
         percentage?: number;
-
         amount?: {
           amount: string;
           currencyCode: string;
         };
-
         appliesOnEachItem?: boolean;
       };
 
       items: {
         __typename: string;
-
         allItems?: boolean;
-
         products?: {
+          pageInfo?: { hasNextPage: boolean; endCursor?: string | null };
           nodes: Array<{
             id: string;
             title: string;
           }>;
         };
-
         productVariants?: {
+          pageInfo?: { hasNextPage: boolean; endCursor?: string | null };
           nodes: Array<{
             id: string;
             title: string;
+            product?: {
+              id: string;
+              title: string;
+            };
           }>;
         };
-
         collections?: {
+          pageInfo?: { hasNextPage: boolean; endCursor?: string | null };
           nodes: Array<{
             id: string;
             title: string;
+            productsCount?: {
+              count: number;
+            };
           }>;
         };
       };
@@ -71,13 +109,25 @@ export type ShopifyDiscountNode = {
 
     minimumRequirement?: {
       __typename: string;
-
       greaterThanOrEqualToSubtotal?: {
         amount: string;
         currencyCode: string;
       };
-
       greaterThanOrEqualToQuantity?: string;
+    } | null;
+
+    appliesOnOneTimePurchase?: boolean;
+    appliesOnSubscription?: boolean;
+
+    maximumShippingPrice?: {
+      amount: string;
+      currencyCode: string;
+    } | null;
+
+    destinationSelection?: {
+      __typename: string;
+      allCountries?: boolean;
+      countries?: string[];
     } | null;
   };
 };
@@ -111,29 +161,11 @@ export function getDiscountCreator(
 
 export function getDiscountType(
   node: ShopifyDiscountNode,
-): string {
-  const classes = node.discount.discountClasses ?? [];
-
-  if (
-    node.discount.__typename === "DiscountCodeBxgy" ||
-    node.discount.__typename === "DiscountAutomaticBxgy"
-  ) {
-    return "Buy X get Y";
-  }
-
-  if (classes.includes("PRODUCT")) {
-    return "Amount off product";
-  }
-
-  if (classes.includes("ORDER")) {
-    return "Amount off order";
-  }
-
-  if (classes.includes("SHIPPING")) {
-    return "Free shipping";
-  }
-
-  return node.discount.__typename;
+): PromotionType {
+  return getPromotionTypeFromShopifyDiscount(
+    node.discount.__typename,
+    node.discount.discountClasses,
+  );
 }
 
 export function shouldSyncDiscount(
@@ -149,21 +181,26 @@ export function shouldSyncDiscount(
 
 export function getDiscountMethod(
   node: ShopifyDiscountNode,
-): string {
-  return node.discount.__typename.includes("Automatic")
-    ? "Automatic"
-    : "Code";
+): PromotionMethod {
+  return getPromotionMethodFromShopifyType(
+    node.discount.__typename,
+  );
 }
 
 export function getDiscountCode(
   node: ShopifyDiscountNode,
 ): string | null {
+  if ((node.discount.codesCount?.count ?? node.discount.codes?.nodes.length ?? 0) > 1) return null;
   return node.discount.codes?.nodes[0]?.code ?? null;
 }
 
 export function getDiscountValue(
   node: ShopifyDiscountNode,
 ): string {
+  if (getDiscountType(node) === "Shipping") {
+    return "Free shipping";
+  }
+
   const value = node.discount.customerGets?.value;
 
   if (!value) {
@@ -197,6 +234,22 @@ export function getDiscountValue(
 export function getDiscountAppliesTo(
   node: ShopifyDiscountNode,
 ): string {
+  if (getDiscountType(node) === "Shipping") {
+    const destination = node.discount.destinationSelection;
+
+    if (destination?.allCountries) {
+      return "All countries";
+    }
+
+    const countryCount = destination?.countries?.length ?? 0;
+
+    if (countryCount > 0) {
+      return `${countryCount} selected ${countryCount === 1 ? "country" : "countries"}`;
+    }
+
+    return "Shipping destinations";
+  }
+
   const items = node.discount.customerGets?.items;
 
   if (!items) {
@@ -210,8 +263,7 @@ export function getDiscountAppliesTo(
   if (items.__typename === "DiscountCollections") {
     const count = items.collections?.nodes.length ?? 0;
 
-    return `${count} selected ${count === 1 ? "collection" : "collections"
-      }`;
+    return `${count} selected ${count === 1 ? "collection" : "collections"}`;
   }
 
   if (items.__typename === "DiscountProducts") {
@@ -222,8 +274,7 @@ export function getDiscountAppliesTo(
       return `${productCount} products and ${variantCount} variants`;
     }
 
-    return `${productCount} selected ${productCount === 1 ? "product" : "products"
-      }`;
+    return `${productCount} selected ${productCount === 1 ? "product" : "products"}`;
   }
 
   return "Unknown";

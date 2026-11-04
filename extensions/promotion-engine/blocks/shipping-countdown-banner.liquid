@@ -1,0 +1,34 @@
+{%- liquid
+  assign config = app.metafields.shipping_countdown.config.value
+  assign banner = config.banner
+  assign hold = banner.message | replace: '{time}', '23 hours 59 minutes' | replace: '{date}', 'Wednesday 28 Oct'
+-%}
+{%- if banner.enabled -%}
+  <shipping-countdown-banner
+    class="scb"
+    data-align="{{ banner.align }}"
+    style="--scb-size:{{ banner.textSize }}px;--scb-bg:{{ banner.background }};--scb-text:{{ banner.text }};--scb-highlight:{{ banner.highlight }};--scb-dispatch:{{ banner.dispatch }}"
+    {{ block.shopify_attributes }}
+  >
+    {%- comment -%} The message is written by the script from London's clock. Until then the line holds the room the longest message will take (invisibly), so a message that wraps on a phone does not push the page down when it arrives. {%- endcomment -%}
+    <p class="scb__line" data-role="line"><span class="scb__hold" aria-hidden="true">{% render 'shipping-rich', text: hold %}</span></p>
+    <script type="application/json" data-config>{"cutoffTime":{{ config.cutoffTime | json }},"shippingDays":{{ config.shippingDays | json }},"bankHolidays":{{ config.bankHolidays | json }},"delayDays":{{ config.delayDays | json }},"delayMessage":{{ config.delayMessage | json }},"banner":{{ banner | json }}}</script>
+  </shipping-countdown-banner>
+{%- elsif request.design_mode -%}
+  <p class="sc-setup-note">Shipping countdown banner: open the eCommerce Toolkit app, choose Shipping countdown, switch on the Header banner step and save to show this block.</p>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Shipping countdown banner",
+  "target": "section",
+  "javascript": "shipping-countdown.js",
+  "stylesheet": "shipping-countdown.css",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Add this to your header group as an announcement. Its wording, colours and size are set in the eCommerce Toolkit app under Shipping countdown, in the Header banner step. It uses the same cut-off, shipping days, bank holidays and delay as the product page block."
+    }
+  ]
+}
+{% endschema %}

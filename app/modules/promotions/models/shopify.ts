@@ -15,6 +15,27 @@ export type PromotionStatus =
   | "EXPIRED"
   | "UNKNOWN";
 
+export type PromotionCapabilities = {
+  supportsProducts: boolean;
+  supportsShipping: boolean;
+  supportsCustomers: boolean;
+  supportsConditions: boolean;
+  supportsCombinations: boolean;
+  supportsWebsiteBadge: boolean;
+  supportsCountdown: boolean;
+  supportsLandingPage: boolean;
+  supportsAnalytics: boolean;
+  supportsHealthChecks: boolean;
+};
+
+/**
+ * How much a product or order discount takes off, as Shopify gives it (not the text for people that `value` holds). A percentage is the
+ * fraction Shopify uses (0.2 is 20%). An amount is in major units, and `perItem` says whether it comes off each item or off the whole order.
+ */
+export type PromotionReduction =
+  | { kind: "percentage"; percentage: number }
+  | { kind: "amount"; amount: number; currency: string; perItem: boolean };
+
 export type PromotionGeneral = {
   title: string;
   summary: string;
@@ -24,6 +45,8 @@ export type PromotionGeneral = {
   status: PromotionStatus;
 
   value: string;
+  /** Null for buy X get Y, shipping and anything else that is not a plain percentage or amount off. */
+  reduction?: PromotionReduction | null;
   code: string | null;
 
   createdBy: string;
@@ -37,11 +60,14 @@ export type PromotionProductReference = {
 export type PromotionVariantReference = {
   id: string;
   title: string;
+  productId: string | null;
+  productTitle: string | null;
 };
 
 export type PromotionCollectionReference = {
   id: string;
   title: string;
+  productCount: number | null;
 };
 
 export type PromotionProducts = {
@@ -52,6 +78,42 @@ export type PromotionProducts = {
   products: PromotionProductReference[];
   variants: PromotionVariantReference[];
   collections: PromotionCollectionReference[];
+};
+
+export type PromotionBxgyRewardType =
+  | "FREE"
+  | "PERCENTAGE"
+  | "FIXED_AMOUNT"
+  | "UNKNOWN";
+
+export type PromotionBxgy = {
+  buy: {
+    quantity: number | null;
+    purchaseAmount: string | null;
+    products: PromotionProducts;
+  };
+
+  get: {
+    quantity: number | null;
+    rewardType: PromotionBxgyRewardType;
+    rewardValue: number | null;
+    rewardCurrencyCode: string | null;
+    products: PromotionProducts;
+  };
+};
+
+export type PromotionShipping = {
+  appliesTo: string;
+  allCountries: boolean;
+  countries: string[];
+
+  maximumShippingPrice: {
+    amount: string;
+    currencyCode: string;
+  } | null;
+
+  appliesOnOneTimePurchase: boolean;
+  appliesOnSubscription: boolean;
 };
 
 export type PromotionCustomers = {
@@ -95,7 +157,10 @@ export type PromotionCombinations = {
 
 export type ShopifyPromotion = {
   general: PromotionGeneral;
+  capabilities: PromotionCapabilities;
   products: PromotionProducts;
+  bxgy: PromotionBxgy | null;
+  shipping: PromotionShipping | null;
   customers: PromotionCustomers;
   conditions: PromotionConditions;
   schedule: PromotionSchedule;

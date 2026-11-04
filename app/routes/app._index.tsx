@@ -1,74 +1,36 @@
+import type { LoaderFunctionArgs } from "react-router";
+import { useLoaderData, useRevalidator } from "react-router";
+import { useEffect } from "react";
+import { authenticate, unauthenticated } from "../shopify.server";
+import { emptyFilter, lastDays } from "../modules/promotions/design/orderReport";
+import { loadHomeStats } from "../modules/promotions/services/homeStats.server";
+import { driveOrderSync, loadOrderReport, orderSyncIsDue } from "../modules/promotions/services/orderReport.server";
+import { HomeDashboard } from "../modules/promotions/components/HomeDashboard";
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const { session } = await authenticate.admin(request);
+  // Opening the app keeps the figures fresh: orders are read in the background if they are over six hours old.
+  if (await orderSyncIsDue(session.shop, 6)) void driveOrderSync(async () => (await unauthenticated.admin(session.shop)).admin, session.shop);
+  const range = lastDays(30);
+  const [current, stats] = await Promise.all([
+    // With the 30 days before them, so each figure can show whether it is up or down.
+    loadOrderReport(session.shop, emptyFilter(range.from, range.to), undefined, { compare: true }),
+    loadHomeStats(session.shop),
+  ]);
+  return { current, stats };
+}
+
 export default function DashboardPage() {
+  const { current, stats } = useLoaderData<typeof loader>();
+  const revalidator = useRevalidator();
+  useEffect(() => {
+    if (!current.syncing) return;
+    const timer = setTimeout(() => revalidator.revalidate(), 6000);
+    return () => clearTimeout(timer);
+  }, [current.syncing, current.syncedAt, revalidator]);
   return (
-    <s-page heading="Smiffys Toolkit">
-      <s-stack direction="block" gap="large">
-
-        <s-section heading="Welcome">
-          <s-text>
-            Welcome to the Smiffys internal toolkit.
-          </s-text>
-        </s-section>
-
-        <s-grid
-          gridTemplateColumns="repeat(auto-fit, minmax(240px,1fr))"
-          gap="base"
-        >
-
-          <s-box
-            borderWidth="base"
-            borderRadius="base"
-            padding="base"
-          >
-            <h2 style={{ margin: 0 }}>
-              Promotions
-            </h2>
-
-            <s-text>
-              View and synchronise Shopify promotions.
-            </s-text>
-
-            <br />
-
-            <s-button href="/app/promotions">
-              Open
-            </s-button>
-          </s-box>
-
-          <s-box
-            borderWidth="base"
-            borderRadius="base"
-            padding="base"
-          >
-
-            <h2 style={{ margin: 0 }}>
-              Product Tools
-            </h2>
-
-            <s-text>
-              Coming soon
-            </s-text>
-
-          </s-box>
-
-          <s-box
-            borderWidth="base"
-            borderRadius="base"
-            padding="base"
-          >
-
-            <h2 style={{ margin: 0 }}>
-              Reports
-            </h2>
-
-            <s-text>
-              Coming soon
-            </s-text>
-
-          </s-box>
-
-        </s-grid>
-
-      </s-stack>
+    <s-page heading="eCommerce Toolkit" inlineSize="large">
+      <HomeDashboard current={current} stats={stats} />
     </s-page>
   );
 }
