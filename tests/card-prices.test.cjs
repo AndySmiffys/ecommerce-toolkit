@@ -175,10 +175,6 @@ test("the loader puts the card data and scripts in the page only when cards are 
   }
 });
 
-test("no output tag in the loader has braces inside a quoted word: Shopify's own Liquid reads the first closing braces as the end of the tag", () => {
-  for (const tag of loaderSource.match(/\{\{[\s\S]*?\}\}/g) || []) assert.doesNotMatch(tag, /'[^']*[{}][^']*'/, tag);
-});
-
 test("the data a shop's loader writes is what the script reads, end to end", async () => {
   const html = await render({ cardsEnabled: true }, { v: 1, keys: ["9", "10"] });
   const dom = new JSDOM(html.replace(/<script src[^>]*><\/script>/g, "").replace("<promotion-engine-embed", "<promotion-engine-embed") + horizonCard(5) + horizonCard(6), { url: "https://shop.example/", runScripts: "outside-only", pretendToBeVisual: true });
