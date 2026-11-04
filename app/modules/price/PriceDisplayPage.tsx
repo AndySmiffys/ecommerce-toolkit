@@ -10,6 +10,7 @@ import { editorCss } from "../promotions/components/editor/editorStyles";
 import { PolarisCheckbox, PolarisNumberField, PolarisSelect } from "../promotions/components/PolarisControls";
 import { contrastRatio } from "../promotions/design/design";
 import blockCss from "../../../extensions/promotion-engine/assets/discounted-price.css?raw";
+import cardCss from "../../../extensions/promotion-engine/assets/card-prices.css?raw";
 import { ColourField, PlaceholderList, TextField } from "../shipping/ShippingCountdownPage";
 import { autoPlaceholders, codePlaceholders, defaultPriceDisplay, savingsPlaceholders, validatePriceDisplay, type PriceDisplayConfig } from "./config";
 import { priceVars } from "./appearance";
@@ -17,7 +18,7 @@ import { priceLogic, type PriceRuleInput, type PriceVariant } from "./logic";
 
 export type PriceResult = { ok: boolean; intent: string; errors: string[]; config?: PriceDisplayConfig };
 
-type Form = { showSavings: boolean; savingsText: string; autoText: string; codeText: string; size: string; weight: string; margin: string; textColour: string; saleColour: string; wasColour: string; autoColour: string; saveBackground: string; saveText: string; codeColour: string };
+type Form = { showSavings: boolean; savingsText: string; autoText: string; codeText: string; size: string; weight: string; margin: string; textColour: string; saleColour: string; wasColour: string; autoColour: string; saveBackground: string; saveText: string; codeColour: string; cardsEnabled: boolean; cardSavingsText: string };
 
 const toForm = (c: PriceDisplayConfig): Form => ({ ...c, size: String(c.size), margin: String(c.margin) });
 const toInput = (f: Form) => ({ version: 1, ...f, size: f.size.trim() === "" ? 0 : f.size, margin: f.margin.trim() === "" ? 0 : f.margin });
@@ -56,6 +57,21 @@ function PricePreview({ config, scenario }: { config: PriceDisplayConfig; scenar
   </>;
 }
 
+/** A product card's price as the card script writes it (same stylesheet and variables), for an automatic discount of 20% off a £25.00 product. */
+function CardPricePreview({ config }: { config: PriceDisplayConfig }) {
+  const money = (minor: number) => priceLogic.formatMoney(minor, previewFormat);
+  const was = 2500;
+  const now = was - Math.floor((was * 2000 + 5000) / 10000);
+  return <>
+    <style>{cardCss}</style>
+    <span className="pe-cp" style={{ "--dp-weight": config.weight, "--dp-sale": config.saleColour, "--dp-was": config.wasColour, "--dp-save-bg": config.saveBackground, "--dp-save-text": config.saveText } as CSSProperties}>
+      <span className="pe-cp__now">{money(now)}</span>
+      <s className="pe-cp__was">{money(was)}</s>
+      <span className="pe-cp__save">{priceLogic.fillText(config.cardSavingsText, { amount: money(was - now), percent: "20" })}</span>
+    </span>
+  </>;
+}
+
 /** Text that is hard to read on its background (white, as the preview's page is; the theme's own background may differ). */
 function contrastNotes(config: PriceDisplayConfig) {
   const pairs: Array<[string, string, string]> = [
@@ -67,9 +83,9 @@ function contrastNotes(config: PriceDisplayConfig) {
 }
 
 const panelStyle: CSSProperties = { border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)", padding: 16, display: "grid", gap: 16, minWidth: 0 };
-const stepOrder = ["wording", "appearance"] as const;
+const stepOrder = ["wording", "cards", "appearance"] as const;
 type StepId = (typeof stepOrder)[number];
-const stepTitles: Record<StepId, string> = { wording: "Savings and codes", appearance: "Appearance" };
+const stepTitles: Record<StepId, string> = { wording: "Savings and codes", appearance: "Appearance", cards: "Product cards" };
 
 /**
  * The Discounted price block's settings, laid out like the other editors: the preview stays in view on the left and the settings are
@@ -225,6 +241,19 @@ export function PriceDisplayPage({ initial, saved, notShown = null, prices = nul
               <TextField label="Code message" value={form.codeText} maxLength={100} onChange={value => set({ codeText: value })} details="Shown under the price when a code would make it lower, for example “{price} with code {code}” or “{percent}% off with code {code}”. It must include {price} and {code}." />
             </>)}
 
+            {step("cards", form.cardsEnabled ? "Shown on cards" : "Off", <>
+              <PolarisCheckbox label="Show the discounted price on product cards" checked={form.cardsEnabled} details="On collection pages, search results and product scrollers. A card shows the price with the best automatic discount that covers its product, the old price struck through and what is saved. Codes are never shown on a card. Needs the eCommerce Toolkit loader turned on in the theme; built for Horizon, and Dawn as far as its markup allows. A card whose price cannot be read keeps the theme's own price." onChange={event => set({ cardsEnabled: event.currentTarget.checked })} />
+              {form.cardsEnabled && <>
+                <PlaceholderList placeholders={savingsPlaceholders} examples={{ amount: money(500), percent: "20" }} onCopy={copyPlaceholder} heading="Placeholders you can use in the card message" exampleHeading="For the example below" />
+                <TextField label="Card saving message" value={form.cardSavingsText} maxLength={100} onChange={value => set({ cardSavingsText: value })} details="For example “Save {amount} ({percent}%)” or “{percent}% off”. It is worked out against the price before any discount." />
+                {config && <div style={{ border: "1px solid #e3e3e3", borderRadius: 8, padding: 16, background: "#fff", display: "grid", gap: 6 }} data-section="card-preview">
+                  <span style={{ fontSize: 13, color: "#616161" }}>Product card (example: 20% off £25.00)</span>
+                  <CardPricePreview config={config} />
+                </div>}
+                <s-text color="subdued">The colours and weight are the ones set under Appearance, below. The theme&rsquo;s own text size and font are used.</s-text>
+              </>}
+            </>)}
+
             {step("appearance", `${Number(form.size) > 0 ? `${form.size}px` : "Theme's text size"} · weight ${form.weight}`, <>
               <s-text color="subdued">How the price lines look. Leave the size at 0 to use the theme&rsquo;s own text size.</s-text>
               <s-grid gridTemplateColumns="1fr 1fr" gap="base" alignItems="start">
@@ -250,7 +279,7 @@ export function PriceDisplayPage({ initial, saved, notShown = null, prices = nul
                 {notes.length > 0 && <s-banner tone="warning" heading="Some text may be hard to read">
                   {notes.map(item => `${item.label} on its background is ${item.ratio.toFixed(1)} to 1`).join("; ")}. Aim for at least 4.5 to 1. Prices are checked on a white page; your theme&rsquo;s background may differ.
                 </s-banner>}
-                <div><s-button type="button" variant="tertiary" onClick={() => setForm(current => ({ ...toForm(defaultPriceDisplay), showSavings: current.showSavings, savingsText: current.savingsText, autoText: current.autoText, codeText: current.codeText }))}>Reset the appearance to the original look</s-button></div>
+                <div><s-button type="button" variant="tertiary" onClick={() => setForm(current => ({ ...toForm(defaultPriceDisplay), showSavings: current.showSavings, savingsText: current.savingsText, autoText: current.autoText, codeText: current.codeText, cardsEnabled: current.cardsEnabled, cardSavingsText: current.cardSavingsText }))}>Reset the appearance to the original look</s-button></div>
               </section>
             </>)}
           </s-stack>

@@ -1,0 +1,8 @@
+/* The discounted price on a product card. The loader embed sets the look as variables on each element; the theme's own text size and font are used. */
+.pe-cp { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0.15em 0.5em; font-weight: var(--dp-weight, 600); }
+.pe-cp__now { color: var(--dp-sale, #b12704); }
+.pe-cp__was { color: var(--dp-was, #6b6b6b); font-weight: 400; text-decoration: line-through; }
+.pe-cp__save { background: var(--dp-save-bg, #b12704); color: var(--dp-save-text, #ffffff); border-radius: 4px; padding: 0.05em 0.45em; font-size: 0.85em; font-weight: 600; }
+.pe-cp__sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* The theme's own price, while the discounted one is shown in its place. */
+[data-pe-card-hidden] { display: none !important; }

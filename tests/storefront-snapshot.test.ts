@@ -528,10 +528,12 @@ function automaticNode(id: number, changes: { value?: unknown; combines?: unknow
 const settingsRow = (id: number, extra: Record<string, unknown> = {}) => ({ id, shop: "test.myshopify.com", shopifyDiscountId: `gid://shopify/DiscountNode/${id}`, priority: 10 - id, included: true, websiteEnabled: true, showHeaderBanner: true, showProductPage: true, showCollectionPage: true, showProductBadge: false, showCountdown: false, headline: "H", body: "", badgeText: "", countdownText: "", buttonText: "", buttonUrl: "", backgroundColour: "#ffffff", textColour: "#000000", badgeColour: "#000000", designJson: JSON.stringify(defaultDesign()), lastSyncedAt: null, lastSyncError: null, createdAt: new Date(0), updatedAt: new Date(0), ...extra });
 
 /** A pretend Shopify with these discounts; returns what a sync publishes, by metafield key. */
-async function published(nodes: ShopifyDiscountNode[], rows: Array<ReturnType<typeof settingsRow>>, automaticIds: number[]) {
+async function published(nodes: ShopifyDiscountNode[], rows: Array<ReturnType<typeof settingsRow>>, automaticIds: number[], config: Record<string, unknown> | null = null, collectionMembers: string[] = []) {
   const written: Record<string, string> = {};
   const api = { graphql: async (query: string, options?: { variables?: Record<string, unknown> }) => {
     if (query.includes("PromotionInstallation")) return Response.json({ data: { currentAppInstallation: { id: "gid://shopify/AppInstallation/1", metafield: { value: "", compareDigest: "d" }, companions: { nodes: [] } } } });
+    if (query.includes("ShippingMetafieldRead")) return Response.json({ data: { currentAppInstallation: { metafield: config ? { value: JSON.stringify(config) } : null } } });
+    if (query.includes("CollectionProductIds")) return Response.json({ data: { collection: { products: { pageInfo: noNextPage, nodes: collectionMembers.map(product => ({ id: `gid://shopify/Product/${product}` })) } } } });
     if (query.includes("PromotionAutomaticDiscounts")) return Response.json({ data: { automaticDiscountNodes: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: automaticIds.map(id => ({ id: `gid://shopify/DiscountAutomaticNode/${id}`, automaticDiscount: { status: "ACTIVE" } })) } } });
     if (query.includes("GetDiscount")) return Response.json({ data: { discountNode: nodes.find(item => item.id.split("/").pop() === String(options?.variables?.id).split("/").pop()) ?? null } });
     for (const field of options!.variables!.metafields as Array<{ key: string; value: string }>) written[field.key] = field.value;
@@ -624,4 +626,24 @@ test("what is published is what the Discounted price block reads: the automatic 
   const can = await run({ productDiscounts: true, orderDiscounts: true, shippingDiscounts: false });
   assert.equal(can.querySelector(".dp__auto")!.textContent, "£15.00 with the automatic discount");
   assert.equal(can.querySelector(".dp__code")!.textContent, "", "the code takes 10%, not better than the automatic discount already shown");
+});
+
+
+test("product card prices are published only when cards are on, for automatic discounts only, with the products each one covers", async () => {
+  forgetCollectionProducts();
+  const everyProduct = automaticNode(9);
+  const listed = automaticNode(10, { items: { __typename: "DiscountProducts", products: { nodes: [{ id: "gid://shopify/Product/300", title: "Cape" }] } } });
+  const byCollection = automaticNode(11, { items: { __typename: "DiscountCollections", collections: { pageInfo: noNextPage, nodes: [{ id: "gid://shopify/Collection/5", title: "Wigs", productsCount: { count: 2 } }] } } });
+  const nodes = [codeNode(), everyProduct, listed, byCollection];
+
+  const off = await published(nodes, [settingsRow(1)], [9, 10, 11]);
+  assert.deepEqual(Object.keys(off.written).filter(key => key.startsWith("cardprice_")), [], "cards off: nothing is read or published for them");
+
+  const on = await published(nodes, [settingsRow(1)], [9, 10, 11], { version: 1, cardsEnabled: true }, ["700", "701"]);
+  assert.deepEqual(JSON.parse(on.written.cardprice_index).keys, ["9", "10", "11"], "the code promotion is not on a card");
+  assert.equal("cardprice_1" in on.written, false);
+  assert.deepEqual(JSON.parse(on.written.cardprice_9), { k: "9", s: 1790812800, e: 0, t: "a", v: 500, u: "GBP", a: 1, i: "" });
+  assert.deepEqual(decodeIds(JSON.parse(on.written.cardprice_10).i), [300]);
+  assert.deepEqual(decodeIds(JSON.parse(on.written.cardprice_11).i), [700, 701], "the products found in its collection");
+  forgetCollectionProducts();
 });

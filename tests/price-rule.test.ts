@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { priceEntryFor, priceProblem, priceRuleFor } from "../app/modules/promotions/design/priceRule";
+import { cardPriceFor, needsCollectionProducts, priceEntryFor, priceProblem, priceRuleFor } from "../app/modules/promotions/design/priceRule";
 import { isAutomaticDiscountId } from "../app/modules/promotions/design/discountIdentity";
 import { mapDiscountToPromotion } from "../app/modules/promotions/mappers/promotionMapper";
 import type { ShopifyDiscountNode } from "../app/modules/promotions/types/discount";
@@ -126,4 +126,29 @@ test("an automatic discount's id is told from a code discount's, so its changes 
   assert.equal(isAutomaticDiscountId("gid://shopify/DiscountNode/123"), false, "the app's own canonical id does not say which kind");
   assert.equal(isAutomaticDiscountId("gid://shopify/DiscountAutomaticNode/abc"), false);
   assert.equal(isAutomaticDiscountId(""), false);
+});
+
+const entry = (node: ShopifyDiscountNode) => entryOf(node)!;
+const encode = (ids: string[]) => ids.join("+");
+
+test("a product card is given an automatic discount for everything, or for products, and never a code", () => {
+  assert.deepEqual(cardPriceFor(entry(discount({ code: null, classes: ["ORDER"], items: everything })), null, encode), { k: "1", s: entry(discount({ code: null })).starts, e: 0, t: "p", v: 2000, a: 1, i: "" });
+  assert.deepEqual(cardPriceFor(entry(discount({ code: null })), null, encode), { k: "1", s: entry(discount({ code: null })).starts, e: 0, t: "p", v: 2000, a: 0, i: "1" });
+  assert.equal(cardPriceFor({ ...entry(discount({ code: null })), c: "SAVE20" }, null, encode), null, "the shopper has not entered a code on a card");
+  const amountOff = cardPriceFor(entry(discount({ code: null, value: { __typename: "DiscountAmount", amount: { amount: "5.0", currencyCode: "GBP" }, appliesOnEachItem: true } })), null, encode);
+  assert.deepEqual(amountOff && [amountOff.t, amountOff.v, amountOff.u], ["a", 500, "GBP"]);
+});
+
+test("a discount limited to certain variants, or to products nobody could list, is left off the cards rather than claimed", () => {
+  const base = entry(discount({ code: null }));
+  assert.equal(cardPriceFor({ ...base, products: [], variants: [{ id: "5", product: "1" }] }, null, encode), null);
+  assert.equal(cardPriceFor({ ...base, products: [] }, null, encode), null, "nothing to match a card against");
+  assert.equal(cardPriceFor({ ...base, products: [], collections: ["9"] }, null, encode), null, "a collection that was not read");
+  assert.equal(cardPriceFor({ ...base, products: [], collections: ["9"] }, ["7", "8"], encode)?.i, "7+8", "the products found in the collection");
+});
+
+test("only a discount that reaches its products through collections needs the collections read", () => {
+  assert.equal(needsCollectionProducts({ ...entry(discount({ code: null })), products: [], collections: ["9"] }), true);
+  assert.equal(needsCollectionProducts(entry(discount({ code: null }))), false, "it lists products");
+  assert.equal(needsCollectionProducts({ ...entry(discount({ code: null })), products: [], collections: ["9"], c: "SAVE" }), false, "codes are not on cards");
 });

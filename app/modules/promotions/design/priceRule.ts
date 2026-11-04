@@ -99,3 +99,26 @@ export function priceEntryFor(promotion: PromotionRecord, complete = true, now =
     co: Boolean(combines.orderDiscounts),
   };
 }
+
+/**
+ * One automatic discount as a product card reads it (the card script works out each card's price in the browser from the page's own data, so
+ * nothing is asked of the app). Cards are matched by product, and a card shows the first variant's price, so only discounts that take
+ * the same rule off every variant of the products are given: an automatic discount with a price rule, for everything or for products
+ * (`resolved` is the products found in its collections). A discount limited to certain variants is left out rather than claimed for a
+ * product it may not cover. Codes are never shown on a card: the shopper has not entered one.
+ */
+export type CardPriceEntry = { k: string; s: number; e: number; a: 0 | 1; i: string; t: "p" | "a"; v: number; u?: string };
+
+export function cardPriceFor(entry: PriceEntry, resolved: string[] | null, encode: (ids: string[]) => string): CardPriceEntry | null {
+  if (entry.c || !entry.price) return null;
+  const base = { k: shortId(entry.id), s: entry.starts, e: entry.ends, t: entry.price.t, v: entry.price.v, ...(entry.price.t === "a" ? { u: entry.price.u } : {}) };
+  if (entry.all) return { ...base, a: 1, i: "" };
+  if (entry.variants.length) return null;
+  const products = [...entry.products, ...(resolved ?? [])];
+  return products.length ? { ...base, a: 0, i: encode(products) } : null;
+}
+
+/** Whether an entry covers products only through collections, so the publisher has to read their products. */
+export function needsCollectionProducts(entry: PriceEntry): boolean {
+  return !entry.c && Boolean(entry.price) && !entry.all && !entry.variants.length && !entry.products.length && entry.collections.length > 0;
+}

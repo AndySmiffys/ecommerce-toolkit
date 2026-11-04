@@ -29,6 +29,10 @@ export type PriceDisplayConfig = {
   saveBackground: string;
   saveText: string;
   codeColour: string;
+  /** Show the discounted price on product cards (collection pages, search, scrollers). Off until turned on. */
+  cardsEnabled: boolean;
+  /** Said beside the price on a card when an automatic discount takes something off. Same placeholders as the saving message, against the price before any discount. */
+  cardSavingsText: string;
 };
 
 export const defaultPriceDisplay: PriceDisplayConfig = {
@@ -47,6 +51,8 @@ export const defaultPriceDisplay: PriceDisplayConfig = {
   saveBackground: "#b12704",
   saveText: "#ffffff",
   codeColour: "#1e7e34",
+  cardsEnabled: false,
+  cardSavingsText: "Save {amount} ({percent}%)",
 };
 
 /** What can be written in braces in the saving message and in the code message. */
@@ -118,6 +124,8 @@ export function validatePriceDisplay(input: unknown): PriceDisplayCheck {
     saveBackground: colour(source.saveBackground, "Saving background colour", d.saveBackground),
     saveText: colour(source.saveText, "Saving text colour", d.saveText),
     codeColour: colour(source.codeColour, "Code message colour", d.codeColour),
+    cardsEnabled: flag(source.cardsEnabled, d.cardsEnabled),
+    cardSavingsText: message(source.cardSavingsText, "Product card saving message", d.cardSavingsText, savingsPlaceholders, []),
   };
   return errors.length ? { ok: false, errors } : { ok: true, config };
 }
