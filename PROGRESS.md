@@ -1,8 +1,8 @@
 # Progress
 
-Status of the eCommerce Toolkit, a Shopify embedded app that creates and edits native Shopify discounts and manages how they appear on the storefront. Last updated 19 October 2026.
+Status of the eCommerce Toolkit, a Shopify embedded app that creates and edits native Shopify discounts and manages how they appear on the storefront. Last updated 4 November 2026.
 
-Branch `feature/free-shipping-support`, at `f2c6a00`, pushed and up to date with GitHub. 141 tests pass, and lint, typecheck and the build are clean.
+Branch `chore/aws` (the one code line; the old `feature/free-shipping-support` was joined into it on 4 November), released to live as Shopify app version 20. 559 tests pass, and lint and typecheck are clean.
 
 For the architecture and the rules to follow when changing the code, see `CLAUDE.md`. For setup and storefront behaviour, see `docs/storefront-setup.md` and `docs/promotion-designs.md`.
 
