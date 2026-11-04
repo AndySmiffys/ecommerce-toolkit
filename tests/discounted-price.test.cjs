@@ -258,6 +258,60 @@ test("a rule for some variants is sent to the script with those variants named, 
   p.close();
 });
 
+const variantRule = (ids, extra = {}) => ({ key: "v", ...entry, ...together, all: false, c: "", price: { t: "a", v: 500, u: "GBP" }, ...extra });
+const variantScope = ids => ({ v: { variants: ids.map(id => ({ id: String(id), product: "7" })) } });
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+test("a theme that announces the new variant before it updates the form still changes the price", async () => {
+  const p = await page({ prices: [variantRule()], scopes: variantScope([12]) });
+  assert.equal(p.shown().auto, null, "the first variant has no discount");
+  const form = p.dom.window.document.querySelector("input[name=id]");
+  p.dom.window.document.dispatchEvent(new p.dom.window.CustomEvent("variant:update", { detail: { resource: { id: 12 } } }));
+  assert.equal(p.shown().auto, autoLine(2833), "£33.33 less £5.00 for the variant with the discount, though the form still says the old one");
+  form.value = "12";
+  await delay(500);
+  assert.equal(p.shown().auto, autoLine(2833), "and it stays when the theme catches up");
+  p.dom.window.document.dispatchEvent(new p.dom.window.CustomEvent("variant:update", { detail: { resource: { id: 11 } } }));
+  form.value = "11";
+  await delay(500);
+  assert.equal(p.shown().auto, null, "back to the variant with none");
+  p.close();
+});
+
+test("a variant picked in the theme's own picker, which updates the form a moment later, is picked up", async () => {
+  const p = await page({ prices: [variantRule()], scopes: variantScope([12]) });
+  const document = p.dom.window.document;
+  document.body.insertAdjacentHTML("beforeend", '<fieldset><input type="radio" name="Colour" value="Red"></fieldset>');
+  const radio = document.querySelector("input[name=Colour]");
+  radio.dispatchEvent(new p.dom.window.Event("change", { bubbles: true }));
+  setTimeout(() => { document.querySelector("input[name=id]").value = "12"; }, 60);
+  await delay(600);
+  assert.equal(p.shown().auto, autoLine(2833));
+  p.close();
+});
+
+test("if the theme replaces the block's markup when the variant changes, the next change still shows", async () => {
+  const p = await page({ prices: [variantRule()], scopes: variantScope([12]) });
+  const host = p.host;
+  host.querySelector('[data-role="line"]').replaceWith(host.querySelector('[data-role="line"]').cloneNode(true));
+  host.querySelector('[data-role="auto"]').replaceWith(host.querySelector('[data-role="auto"]').cloneNode(true));
+  p.pick(12);
+  assert.equal(p.shown().auto, autoLine(2833));
+  p.close();
+});
+
+test("if the theme fetches the section again and writes the new variant's price into the block, going back to the old variant still shows its price", async () => {
+  const p = await page({ prices: [variantRule()], scopes: variantScope([12]) });
+  const host = p.host;
+  host.dataset.variantId = "12";
+  host.querySelector('[data-role="auto"]').hidden = false;
+  host.querySelector('[data-role="auto"]').textContent = autoLine(2833);
+  assert.equal(p.shown().auto, autoLine(2833), "what the theme wrote");
+  p.pick(11);
+  assert.equal(p.shown().auto, null, "the variant the page first loaded with, chosen again");
+  p.close();
+});
+
 test("a code promotion with no price is sent to the script as a place-holder, and speaks of nothing", async () => {
   const p = await page({ prices: [unpriced("NOPRICE", { k: "O", co: true }), percent(2000, "NEXT", together)] });
   const rules = JSON.parse(p.host.querySelector("script[data-rules]").textContent);

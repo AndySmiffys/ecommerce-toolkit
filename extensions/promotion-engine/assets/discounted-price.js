@@ -155,27 +155,29 @@
         this.rules = JSON.parse(this.querySelector('script[data-rules]').textContent);
         this.variants = JSON.parse(this.querySelector('script[data-variants]').textContent);
       } catch (error) { return; }
-      this.line = this.querySelector('[data-role="line"]');
-      this.autoLine = this.querySelector('[data-role="auto"]');
-      this.codeLine = this.querySelector('[data-role="code"]');
-      if (!this.line) return;
+      if (!this.querySelector('[data-role="line"]')) return;
       this.format = this.dataset.moneyFormat || '£{{amount}}';
       this.currency = this.dataset.currency || '';
       this.variantId = Number(this.dataset.variantId) || null;
       this.listeners = [];
       this.last = this.dataset.variantId;
+      this.seen = this.dataset.variantId;
       var refresh = function () { self.update(); };
       VARIANT_EVENTS.forEach(function (name) {
         self.listen(document, name, function (event) {
           var d = event.detail || {};
           var id = Number((d.resource && d.resource.id) || (d.variant && d.variant.id) || d.id) || null;
-          if (id) self.variantId = id;
+          // The theme says which variant it is now, and often updates the form and the address a moment later: until they change, believe it.
+          if (id) self.hint = { id: id, form: formVariantId(), url: urlVariantId() };
           refresh();
+          self.recheck();
         });
       });
+      // Any choice made in the page's own pickers (colour, size) may change the variant; the form and the address follow a moment later.
       this.listen(document, 'change', function (event) {
         var t = event.target;
-        if (t && t.matches && t.matches('input[name="id"], select[name="id"]')) refresh();
+        if (t && t.matches && t.matches('input[name="id"], select[name="id"]')) { self.hint = null; refresh(); return; }
+        if (t && t.closest && t.closest('form, fieldset, variant-picker, variant-selects, variant-radios')) self.recheck();
       });
       this.listen(this, 'click', function (event) {
         var button = event.target && event.target.closest && event.target.closest('.dp__copy');
@@ -186,6 +188,8 @@
     }
 
     disconnectedCallback() {
+      (this.timers || []).forEach(clearTimeout);
+      this.timers = [];
       (this.listeners || []).forEach(function (l) { l[0].removeEventListener(l[1], l[2]); });
       this.listeners = [];
     }
@@ -195,27 +199,53 @@
       this.listeners.push([target, name, handler]);
     }
 
-    /** The variant being looked at: the product form's, else the address's, else the one the server wrote. */
+    /**
+     * The variant being looked at: what the theme last announced until the form or the address says something different, else the product
+     * form's, else the address's, else the one the server wrote.
+     */
     selectedVariant() {
-      var form = document.querySelector(CART_FORMS);
-      var field = form && form.querySelector('[name="id"]');
-      var id = Number(field && field.value) || Number(new URLSearchParams(location.search).get('variant')) || this.variantId;
+      var form = formVariantId();
+      var url = urlVariantId();
+      var hint = this.hint;
+      var id;
+      if (hint && form === hint.form && url === hint.url) id = hint.id;
+      else id = form || url || this.variantId;
       for (var i = 0; i < this.variants.length; i++) if (this.variants[i].id === id) return this.variants[i];
       return null;
     }
 
     update() {
+      // A theme that fetches the page section again writes the server's price for the new variant into this element and changes its variant: that is what is shown now.
+      if (this.dataset.variantId !== this.seen) { this.seen = this.dataset.variantId; this.last = this.seen; }
       var variant = this.selectedVariant();
       if (!variant || String(variant.id) === this.last) return;
       this.last = String(variant.id);
       render(this, priceState(variant, this.rules, this.currency));
     }
+
+    /** Looks now, and again shortly after, because themes update the form, the address and their own markup a moment after they announce a change. */
+    recheck() {
+      var self = this;
+      (this.timers || []).forEach(clearTimeout);
+      this.timers = [0, 120, 350, 800].map(function (wait) { return setTimeout(function () { self.update(); }, wait); });
+    }
   }
+
+  function formVariantId() {
+    var form = document.querySelector(CART_FORMS);
+    var field = form && form.querySelector('[name="id"]');
+    return Number(field && field.value) || null;
+  }
+  function urlVariantId() { return Number(new URLSearchParams(location.search).get('variant')) || null; }
 
   /** Writes the price lines. Built from text nodes, so nothing in a message can become markup. */
   function render(host, state) {
     var format = host.format;
-    var line = host.line;
+    // The theme may have replaced this block's markup since the last time, so the lines are found again each time.
+    var line = host.querySelector('[data-role="line"]');
+    if (!line) return;
+    host.autoLine = host.querySelector('[data-role="auto"]');
+    host.codeLine = host.querySelector('[data-role="code"]');
     line.textContent = '';
     if (state.was) line.appendChild(el('span', 'dp__sr', host.dataset.saleLabel || 'Sale price '));
     line.appendChild(el('span', state.was ? 'dp__now dp__now--sale' : 'dp__now', formatMoney(state.now, format)));
